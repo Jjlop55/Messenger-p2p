@@ -20,29 +20,17 @@
             --status-online: #00ffcc;
             --status-afk: #ffcc00;
             --status-dnd: #ff3333;
-            --status-ingame: #b829ff;
         }
 
-        /* Тема: Неоновая */
         body.theme-neon {
-            --bg-dark: #05020a;
-            --glass-bg: rgba(30, 10, 40, 0.8);
-            --glass-border: rgba(255, 0, 127, 0.3);
-            --neon-accent: #ff007f;
-            --neon-blue: #b829ff;
+            --bg-dark: #05020a; --glass-bg: rgba(30, 10, 40, 0.8); --glass-border: rgba(255, 0, 127, 0.3);
+            --neon-accent: #ff007f; --neon-blue: #b829ff;
         }
 
-        /* Тема: WhatsApp */
         body.theme-whatsapp {
-            --bg-dark: #efeae2;
-            --glass-bg: #f0f2f5;
-            --glass-border: #d1d7db;
-            --neon-accent: #25d366;
-            --neon-magenta: #00a884;
-            --neon-blue: #34b7f1;
-            --text-main: #111b21;
-            --text-muted: #667781;
-            background-image: none;
+            --bg-dark: #efeae2; --glass-bg: #f0f2f5; --glass-border: #d1d7db;
+            --neon-accent: #25d366; --neon-magenta: #00a884; --neon-blue: #34b7f1;
+            --text-main: #111b21; --text-muted: #667781; background-image: none;
         }
         body.theme-whatsapp .top-bar { background: #008069; color: #ffffff; border-bottom: none; }
         body.theme-whatsapp .top-bar .chat-title, body.theme-whatsapp .top-bar .toggle-sidebar-btn, body.theme-whatsapp .top-bar .action-btn { color: #ffffff; border: none; background: transparent; }
@@ -58,189 +46,92 @@
         body.theme-whatsapp .form-input { background: #f0f2f5; color: #111b21; border: 1px solid #d1d7db; }
 
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-
-        body, html {
-            font-family: 'Montserrat', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            height: 100dvh; 
-            width: 100vw;
-            overflow: hidden;
-            display: flex;
-            background-image: radial-gradient(circle at 15% 50%, rgba(0, 255, 204, 0.08), transparent 25%), radial-gradient(circle at 85% 30%, rgba(255, 0, 127, 0.08), transparent 25%);
-            transition: background-color 0.3s, color 0.3s;
-        }
+        body, html { font-family: 'Montserrat', sans-serif; background-color: var(--bg-dark); color: var(--text-main); height: 100dvh; width: 100vw; overflow: hidden; display: flex; background-image: radial-gradient(circle at 15% 50%, rgba(0, 255, 204, 0.08), transparent 25%), radial-gradient(circle at 85% 30%, rgba(255, 0, 127, 0.08), transparent 25%); transition: 0.3s; }
 
         .app-container { display: flex; width: 100%; height: 100%; position: relative; }
 
-        /* Мобильное боковое меню (шторка) */
-        .sidebar {
-            position: absolute;
-            left: 0; top: 0;
-            width: 75px;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 12px 0;
-            background: var(--bg-dark);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-right: 1px solid var(--glass-border);
-            box-shadow: 5px 0 25px rgba(0,0,0,0.6);
-            transform: translateX(-100%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s;
-            z-index: 1000;
-        }
+        .sidebar { position: absolute; left: 0; top: 0; width: 75px; height: 100%; display: flex; flex-direction: column; align-items: center; padding: 12px 0; background: var(--bg-dark); backdrop-filter: blur(16px); border-right: 1px solid var(--glass-border); z-index: 1000; transform: translateX(-100%); transition: 0.3s; }
         .sidebar.mobile-open { transform: translateX(0); }
-
-        .chats-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-            flex: 1;
-            overflow-y: auto;
-            gap: 12px;
-        }
+        .chats-container { display: flex; flex-direction: column; align-items: center; width: 100%; flex: 1; overflow-y: auto; gap: 12px; }
         .chats-container::-webkit-scrollbar { display: none; }
-
-        .chat-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.05);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            cursor: pointer;
-            position: relative;
-            transition: all 0.3s ease;
-            flex-shrink: 0;
-        }
-        .chat-icon:active { transform: scale(0.9); }
-        .chat-icon.active {
-            border-radius: 35%;
-            background: var(--neon-accent);
-            color: var(--bg-dark);
-            box-shadow: 0 0 12px var(--neon-accent);
-        }
-
-        .add-chat-btn {
-            background: rgba(0, 255, 204, 0.1);
-            color: var(--neon-accent);
-            border: 1px dashed var(--neon-accent);
-            font-size: 24px;
-        }
-
-        .status-indicator {
-            position: absolute;
-            bottom: -2px;
-            right: -2px;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            border: 2px solid var(--bg-dark);
-        }
+        .chat-icon { width: 44px; height: 44px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; position: relative; transition: 0.3s; flex-shrink: 0; }
+        .chat-icon.active { border-radius: 35%; background: var(--neon-accent); color: var(--bg-dark); box-shadow: 0 0 12px var(--neon-accent); }
+        .status-indicator { position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg-dark); }
         .online { background: var(--status-online); box-shadow: 0 0 6px var(--status-online); }
         .dnd { background: var(--status-dnd); }
+        .divider { width: 35px; height: 2px; background: rgba(128,128,128,0.2); margin: 8px 0; border-radius: 2px; }
 
-        .divider { width: 35px; height: 2px; background: rgba(128,128,128,0.2); margin: 8px 0; border-radius: 2px; flex-shrink: 0; }
-
-        .main-chat { flex: 1; display: flex; flex-direction: column; height: 100%; position: relative; min-width: 0; width: 100%; }
+        .main-chat { flex: 1; display: flex; flex-direction: column; height: 100%; position: relative; width: 100%; }
+        .top-bar { height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--glass-border); background: var(--glass-bg); backdrop-filter: blur(10px); z-index: 10; }
+        .chat-info { display: flex; align-items: center; gap: 8px; }
+        .toggle-sidebar-btn { background: none; border: none; color: var(--neon-accent); font-size: 20px; cursor: pointer; }
+        .chat-title { font-weight: 800; font-size: 14px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+        .encryption-badge { font-size: 10px; color: var(--status-online); border: 1px solid var(--status-online); padding: 2px 6px; border-radius: 10px; font-weight: 600; display: none; }
         
-        /* Компактная верхняя панель под масштаб скриншота */
-        .top-bar {
-            height: 50px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between;
-            padding: 0 12px; 
-            border-bottom: 1px solid var(--glass-border);
-            background: var(--glass-bg); 
-            backdrop-filter: blur(10px); 
-            z-index: 10;
-        }
-
-        .chat-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
-        .toggle-sidebar-btn { background: none; border: none; color: var(--neon-accent); font-size: 20px; cursor: pointer; flex-shrink: 0; display: block; }
-        .chat-title { font-weight: 800; font-size: 14px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 4px; }
-        .chat-title::before { content: '#'; color: var(--text-muted); font-weight: 400; }
-        
-        .top-actions { display: flex; gap: 6px; flex-shrink: 0; }
-        .action-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(128,128,128,0.2); border-radius: 10px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--text-main); font-size: 14px; cursor: pointer; transition: 0.2s; }
+        .top-actions { display: flex; gap: 6px; }
+        .action-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(128,128,128,0.2); border-radius: 10px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--text-main); font-size: 14px; cursor: pointer; }
 
         .chat-window { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .chat-window::-webkit-scrollbar { width: 3px; }
-        .chat-window::-webkit-scrollbar-thumb { background: var(--neon-accent); border-radius: 10px; }
-
         .msg-wrapper { display: flex; gap: 8px; max-width: 90%; animation: slideIn 0.3s ease forwards; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .msg-wrapper.sent { align-self: flex-end; flex-direction: row-reverse; }
-
-        .msg-avatar { width: 30px; height: 30px; border-radius: 8px; background: #2a2a35; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(128,128,128,0.2); flex-shrink: 0; font-weight: bold; font-size: 13px; color: var(--neon-accent); }
-        .msg-bubble-container { display: flex; flex-direction: column; max-width: 100%; }
+        .msg-avatar { width: 30px; height: 30px; border-radius: 8px; background: #2a2a35; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(128,128,128,0.2); font-weight: bold; font-size: 13px; color: var(--neon-accent); }
+        .msg-bubble-container { display: flex; flex-direction: column; }
         .msg-sender-name { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
         .msg-wrapper.sent .msg-sender-name { text-align: right; color: var(--neon-accent); }
-        .msg-bubble { background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 0 12px 12px 12px; border: 1px solid rgba(128,128,128,0.1); font-size: 13px; line-height: 1.4; word-break: break-word; }
-        .msg-wrapper.sent .msg-bubble { background: rgba(0, 255, 204, 0.1); border: 1px solid rgba(0, 255, 204, 0.3); border-radius: 12px 0 12px 12px; color: #fff; }
-
-        .media-content { max-width: 100%; max-height: 220px; border-radius: 6px; margin-top: 4px; object-fit: cover; }
-        .audio-content { max-width: 100%; margin-top: 4px; height: 32px; outline: none; }
-        
-        .system-msg { align-self: center; background: rgba(128, 128, 128, 0.1); border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; text-align: center; margin: 6px 0; }
+        .msg-bubble { background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 0 12px 12px 12px; font-size: 13px; word-break: break-word; }
+        .msg-wrapper.sent .msg-bubble { background: rgba(0, 255, 204, 0.1); border-radius: 12px 0 12px 12px; color: #fff; }
+        .msg-time { font-size: 9px; color: var(--text-muted); margin-top: 4px; text-align: right; }
+        .media-content { max-width: 100%; border-radius: 6px; }
+        .system-msg { align-self: center; background: rgba(128, 128, 128, 0.1); color: var(--text-muted); padding: 5px 12px; border-radius: 16px; font-size: 11px; margin: 6px 0; }
 
         .input-panel { padding: 8px 10px; background: var(--glass-bg); border-top: 1px solid var(--glass-border); display: flex; align-items: center; gap: 6px; }
-        .input-btn { background: none; border: none; color: var(--text-muted); font-size: 18px; width: 32px; height: 32px; cursor: pointer; flex-shrink: 0; }
-        .input-btn.recording { color: var(--status-dnd); animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
-        
-        .chat-input { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(128,128,128,0.2); border-radius: 18px; padding: 7px 12px; color: var(--text-main); outline: none; min-width: 0; font-size: 13px; }
-        .chat-input:focus { border-color: var(--neon-accent); }
-        .send-btn { background: var(--neon-accent); border: none; width: 34px; height: 34px; border-radius: 50%; color: #fff; font-weight: bold; cursor: pointer; flex-shrink: 0; }
+        .input-btn { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; }
+        .chat-input { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(128,128,128,0.2); border-radius: 18px; padding: 7px 12px; color: var(--text-main); outline: none; font-size: 13px; }
+        .send-btn { background: var(--neon-accent); border: none; width: 34px; height: 34px; border-radius: 50%; color: #fff; cursor: pointer; }
 
-        .profile-bar { margin-top: auto; width: 100%; padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; border-top: 1px solid rgba(128,128,128,0.1); flex-shrink: 0; }
-        .profile-avatar { width: 38px; height: 38px; border-radius: 10px; background: #1e1e2e; border: 2px solid var(--neon-magenta); display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; color: #fff; }
+        /* Экран звонка */
+        .call-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 3000; display: none; flex-direction: column; }
+        .call-overlay.active { display: flex; }
+        .call-videos { flex: 1; position: relative; background: #000; }
+        #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
+        #localVideo { width: 100px; height: 150px; position: absolute; bottom: 20px; right: 20px; border-radius: 12px; object-fit: cover; border: 2px solid var(--neon-accent); background: #222; }
+        .call-controls { height: 80px; display: flex; justify-content: center; align-items: center; gap: 20px; background: var(--glass-bg); }
+        .call-btn { width: 50px; height: 50px; border-radius: 50%; border: none; font-size: 24px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .btn-end { background: var(--status-dnd); }
+        .btn-accept { background: var(--status-online); color: #000; }
 
-        /* Модальные окна */
-        .modal-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 2000; opacity: 0; transition: opacity 0.3s; }
-        .modal-overlay.active { display: flex; opacity: 1; }
-        .modal-content { background: var(--bg-dark); border: 1px solid var(--glass-border); border-radius: 16px; padding: 16px; width: 90%; max-width: 340px; position: relative; transform: translateY(15px); transition: transform 0.3s; max-height: 85vh; overflow-y: auto; }
-        .modal-overlay.active .modal-content { transform: translateY(0); }
-        .close-modal { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
-        .form-group { margin-bottom: 10px; }
-        .form-group label { display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 3px; text-transform: uppercase; }
-        .form-input { width: 100%; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 6px; padding: 8px; color: var(--text-main); outline: none; font-size: 13px; }
-        .save-btn { width: 100%; background: var(--neon-magenta); color: #fff; border: none; padding: 8px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 6px; font-size: 13px; }
+        .modal-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.65); display: none; justify-content: center; align-items: center; z-index: 2000; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: var(--bg-dark); border: 1px solid var(--glass-border); border-radius: 16px; padding: 16px; width: 90%; max-width: 340px; position: relative; }
+        .close-modal { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--text-muted); font-size: 20px; }
+        .form-input { width: 100%; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 6px; padding: 8px; color: var(--text-main); margin-bottom: 10px; outline: none; }
+        .save-btn { width: 100%; background: var(--neon-magenta); color: #fff; border: none; padding: 8px; border-radius: 6px; cursor: pointer; }
     </style>
 </head>
 <body class="theme-cyber">
 
-<div class="app-container" id="appContainer">
+<div class="app-container">
 
-    <!-- Мобильное Боковое меню -->
     <div class="sidebar" id="sidebar">
         <div class="chats-container" id="chatsList"></div>
         <div class="divider"></div>
-        <div class="profile-bar">
-            <div class="action-btn" onclick="openModal('networkModal')" style="width: 32px; height: 32px; font-size: 15px; border-color: var(--neon-blue);" title="Сеть">🌐</div>
-            <div class="action-btn" onclick="openModal('settingsModal')" style="width: 32px; height: 32px; font-size: 15px;" title="Настройки">⚙️</div>
-            <div class="profile-avatar" onclick="openModal('profileModal')" id="sidebarAvatar">?</div>
+        <div class="profile-bar" style="margin-top: auto; padding: 10px 0; display: flex; flex-direction: column; gap: 8px;">
+            <div class="action-btn" onclick="openModal('networkModal')">🌐</div>
+            <div class="action-btn" onclick="openModal('settingsModal')">⚙️</div>
+            <div class="msg-avatar" onclick="openModal('profileModal')" id="sidebarAvatar" style="cursor: pointer; border-color: var(--neon-magenta);">?</div>
         </div>
     </div>
 
-    <!-- Главная область чата -->
     <div class="main-chat" id="mainChatArea">
         <div class="top-bar">
             <div class="chat-info">
-                <button class="toggle-sidebar-btn" onclick="toggleSidebar(event)">☰</button>
-                <div class="chat-title" id="chatTitleText">local-notes</div>
-                <button class="action-btn" style="width: 22px; height: 22px; font-size: 11px; background: transparent; border: none; color: var(--status-dnd);" onclick="deleteCurrentChat()" title="Удалить чат">🗑️</button>
+                <button class="toggle-sidebar-btn" onclick="toggleSidebar()">☰</button>
+                <div class="chat-title"><span id="chatTitleText">local-notes</span> <span class="encryption-badge" id="encBadge">🔒 E2E</span></div>
             </div>
             <div class="top-actions">
-                <button class="action-btn" onclick="openModal('networkModal')" title="P2P Сеть">🔗</button>
-                <button class="action-btn" onclick="toggleFullScreen()" title="Полный экран">🔲</button>
+                <button class="action-btn" id="callBtn" onclick="startCall()" style="display:none;" title="Позвонить">📞</button>
+                <button class="action-btn" onclick="openModal('networkModal')" title="Найти по юзернейму">🔍</button>
             </div>
         </div>
 
@@ -248,342 +139,266 @@
 
         <div class="input-panel">
             <input type="file" id="fileInput" accept="image/*,video/*" style="display: none;">
-            <button class="input-btn" id="attachBtn" title="Прикрепить фото/видео">📎</button>
-            <button class="input-btn" id="recordBtn" title="Голосовое сообщение">🎤</button>
-            <input type="text" class="chat-input" id="messageInput" placeholder="Сообщение..." autocomplete="off">
+            <button class="input-btn" id="attachBtn">📎</button>
+            <input type="text" class="chat-input" id="messageInput" placeholder="Сообщение...">
             <button class="send-btn" onclick="handleSendText()">➤</button>
         </div>
     </div>
 
+    <!-- Экран звонка -->
+    <div class="call-overlay" id="callOverlay">
+        <div class="call-videos">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+        <div class="call-controls">
+            <button class="call-btn btn-accept" id="acceptCallBtn" style="display: none;" onclick="answerCall()">📞</button>
+            <button class="call-btn btn-end" onclick="endCall()">✖</button>
+        </div>
+    </div>
+
     <!-- Модалки -->
-    <div class="modal-overlay" id="profileModal" onclick="closeModalOnOutside(event, 'profileModal')">
+    <div class="modal-overlay" id="profileModal">
         <div class="modal-content">
             <button class="close-modal" onclick="closeModal('profileModal')">×</button>
-            <h2 style="color: var(--neon-magenta); margin-bottom: 12px; font-size: 16px;">Профиль</h2>
-            <div class="form-group"><label>Никнейм</label><input type="text" class="form-input" id="editNickname"></div>
-            <div class="form-group"><label>Уровень / Статус</label><input type="text" class="form-input" id="editRank"></div>
-            <button class="save-btn" onclick="saveProfile()">Сохранить</button>
+            <h2 style="color: var(--neon-magenta); font-size: 16px; margin-bottom: 10px;">Профиль</h2>
+            <label style="font-size: 10px; color: var(--text-muted);">Имя</label>
+            <input type="text" class="form-input" id="editNickname">
+            <label style="font-size: 10px; color: var(--text-muted);">@Юзернейм (для поиска)</label>
+            <input type="text" class="form-input" id="editUsername" placeholder="Например: my_nick">
+            <button class="save-btn" onclick="saveProfile()">Сохранить & Подключиться к сети</button>
         </div>
     </div>
 
-    <div class="modal-overlay" id="settingsModal" onclick="closeModalOnOutside(event, 'settingsModal')">
+    <div class="modal-overlay" id="settingsModal">
         <div class="modal-content">
             <button class="close-modal" onclick="closeModal('settingsModal')">×</button>
-            <h2 style="color: var(--text-main); margin-bottom: 12px; font-size: 16px;">Настройки</h2>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px;"><span>Автопрокрутка</span><input type="checkbox" id="autoScrollToggle" checked style="transform: scale(1.2);"></div>
-            <div class="form-group" style="margin-top: 8px;">
-                <label>Тема оформления</label>
-                <select class="form-input" id="themeSelect" onchange="changeTheme(this.value)">
-                    <option value="cyber">Темная (Киберпанк)</option>
-                    <option value="neon">Неоновый фиолет</option>
-                    <option value="whatsapp">Светлая (WhatsApp стиль)</option>
-                </select>
-            </div>
-            <button class="save-btn" style="background: var(--status-dnd); margin-top: 12px;" onclick="clearCurrentChat()">Очистить историю в этом чате</button>
+            <h2 style="font-size: 16px; margin-bottom: 10px;">Настройки</h2>
+            <select class="form-input" id="themeSelect" onchange="changeTheme(this.value)">
+                <option value="cyber">Темная (Киберпанк)</option>
+                <option value="neon">Неоновый фиолет</option>
+                <option value="whatsapp">Светлая (WhatsApp стиль)</option>
+            </select>
         </div>
     </div>
 
-    <div class="modal-overlay" id="networkModal" onclick="closeModalOnOutside(event, 'networkModal')">
+    <div class="modal-overlay" id="networkModal">
         <div class="modal-content">
             <button class="close-modal" onclick="closeModal('networkModal')">×</button>
-            <h2 style="color: var(--neon-blue); margin-bottom: 8px; font-size: 16px;">P2P Сеть</h2>
-            <div class="form-group"><label>Твой ID</label><input type="text" class="form-input" id="myPeerId" readonly onclick="this.select(); document.execCommand('copy'); alert('ID скопирован!');"></div>
-            <div class="form-group" style="margin-top: 8px;"><label>ID друга</label><input type="text" class="form-input" id="friendPeerId"></div>
-            <button class="save-btn" style="background: var(--neon-blue);" onclick="connectToFriend()">Подключиться</button>
-            <div id="connectionStatus" style="font-size: 10px; margin-top: 6px; text-align: center; color: var(--status-afk);">Ожидание...</div>
+            <h2 style="color: var(--neon-blue); font-size: 16px; margin-bottom: 10px;">Найти друга</h2>
+            <div style="font-size: 11px; color: var(--status-online); margin-bottom: 10px;" id="myNetStatus">Сеть отключена. Настрой юзернейм в профиле!</div>
+            <label style="font-size: 10px; color: var(--text-muted);">@Юзернейм друга</label>
+            <input type="text" class="form-input" id="friendUsername" placeholder="Введи ник друга">
+            <button class="save-btn" style="background: var(--neon-blue);" onclick="connectToFriend()">Начать чат</button>
+            <div id="connectionStatus" style="font-size: 11px; margin-top: 8px; text-align: center;">Ожидание...</div>
         </div>
     </div>
 
 </div>
 
 <script>
-    let userProfile = {
-        nickname: "Пользователь_" + Math.floor(Math.random() * 9000),
-        rank: "Новичок",
-        theme: "cyber"
-    };
-
+    let userProfile = { name: "Гость", username: "", theme: "cyber" };
     let chatsData = {
-        'local': { id: 'local', title: 'local-notes', icon: '📝', messages: [{ type: 'system', text: 'Локальный чат. Сохраняется на устройстве.' }] },
-        'p2p': { id: 'p2p', title: 'p2p-direct', icon: '🔗', isP2P: true, messages: [{ type: 'system', text: 'Прямой P2P чат. Подключитесь через 🌐' }] }
+        'local': { id: 'local', title: 'Локальные заметки', icon: '📝', messages: [{ type: 'system', text: 'Заметки только на твоем устройстве.' }] },
+        'p2p': { id: 'p2p', title: 'P2P Чат', icon: '🔗', isP2P: true, messages: [{ type: 'system', text: 'Зашифрованный P2P канал.' }] }
     };
-    
     let currentChatId = 'local';
-
-    function loadData() {
-        const savedProfile = localStorage.getItem('cyberLink_profile');
-        if (savedProfile) userProfile = { ...userProfile, ...JSON.parse(savedProfile) };
-
-        const savedChats = localStorage.getItem('cyberLink_chats');
-        if (savedChats) {
-            const parsedChats = JSON.parse(savedChats);
-            for (let key in parsedChats) chatsData[key] = parsedChats[key];
-        }
-    }
-
-    function saveData() {
-        localStorage.setItem('cyberLink_profile', JSON.stringify(userProfile));
-        try {
-            localStorage.setItem('cyberLink_chats', JSON.stringify(chatsData));
-        } catch (e) {
-            console.error("Storage error:", e);
-            if (e.name === 'QuotaExceededError') alert('Память браузера переполнена! Очистите историю старых чатов.');
-        }
-    }
-
-    const chatWindow = document.getElementById('chatWindow');
-    const messageInput = document.getElementById('messageInput');
-    const sidebar = document.getElementById('sidebar');
-    const mainChatArea = document.getElementById('mainChatArea');
-    const chatsList = document.getElementById('chatsList');
+    
+    // Сеть и звонки
+    let peer = null; let p2pConnection = null; let currentCall = null; let localStream = null;
 
     function initApp() {
-        loadData();
-        document.getElementById('editNickname').value = userProfile.nickname;
-        document.getElementById('editRank').value = userProfile.rank;
-        document.getElementById('themeSelect').value = userProfile.theme;
-        changeTheme(userProfile.theme, false);
+        const saved = localStorage.getItem('cyblink_prof');
+        if (saved) userProfile = JSON.parse(saved);
+        
+        const savedChats = localStorage.getItem('cyblink_chats');
+        if (savedChats) chatsData = JSON.parse(savedChats);
 
-        updateAvatar();
+        document.getElementById('editNickname').value = userProfile.name;
+        document.getElementById('editUsername').value = userProfile.username;
+        changeTheme(userProfile.theme);
+
         renderSidebarChats();
-        switchChat(currentChatId);
-        requestPermissions();
+        switchChat('local');
+        updateAvatar();
+
+        // Если юзернейм есть, сразу логинимся в сеть
+        if(userProfile.username) initPeer();
     }
 
-    function renderSidebarChats() {
-        chatsList.innerHTML = '';
-        Object.values(chatsData).forEach(chat => {
-            const div = document.createElement('div');
-            div.className = `chat-icon ${chat.id === currentChatId ? 'active' : ''}`;
-            div.title = chat.title;
-            div.onclick = () => switchChat(chat.id);
-            div.innerHTML = chat.icon;
-            if (chat.isP2P) div.innerHTML += `<div class="status-indicator dnd" id="p2p-status"></div>`;
-            chatsList.appendChild(div);
+    function initPeer() {
+        if(peer) peer.destroy();
+        // Используем юзернейм как уникальный ID для серверов PeerJS (добавляем префикс для уникальности приложения)
+        const myPeerId = 'clink-' + userProfile.username.toLowerCase().trim();
+        
+        peer = new Peer(myPeerId);
+        
+        peer.on('open', (id) => {
+            document.getElementById('myNetStatus').innerText = `В сети как: @${userProfile.username}`;
         });
 
-        const addBtn = document.createElement('div');
-        addBtn.className = 'chat-icon add-chat-btn';
-        addBtn.title = "Создать новый чат";
-        addBtn.innerHTML = '+';
-        addBtn.onclick = createNewChat;
-        chatsList.appendChild(addBtn);
+        peer.on('connection', (conn) => setupP2P(conn));
+        
+        // Входящий звонок
+        peer.on('call', (call) => {
+            currentCall = call;
+            document.getElementById('callOverlay').classList.add('active');
+            document.getElementById('acceptCallBtn').style.display = 'flex';
+        });
     }
-
-    function createNewChat() {
-        const title = prompt("Введите название нового чата:");
-        if (!title) return;
-        const newId = 'chat_' + Date.now();
-        chatsData[newId] = {
-            id: newId, title: title, icon: title.charAt(0).toUpperCase(),
-            messages: [{ type: 'system', text: `Создан кастомный чат: ${title}` }]
-        };
-        saveData();
-        renderSidebarChats();
-        switchChat(newId);
-    }
-
-    function deleteCurrentChat() {
-        if (currentChatId === 'local' || currentChatId === 'p2p') {
-            alert("Системные чаты нельзя удалить, но можно очистить их историю в настройках.");
-            return;
-        }
-        if (confirm(`Удалить чат "${chatsData[currentChatId].title}" навсегда?`)) {
-            delete chatsData[currentChatId];
-            saveData();
-            switchChat('local');
-            renderSidebarChats();
-        }
-    }
-
-    async function requestPermissions() {
-        try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }); stream.getTracks().forEach(track => track.stop()); } 
-        catch (err) { console.warn("Медиа-права отклонены"); }
-    }
-
-    function updateAvatar() { document.getElementById('sidebarAvatar').innerText = userProfile.nickname.charAt(0).toUpperCase(); }
 
     function saveProfile() {
-        userProfile.nickname = document.getElementById('editNickname').value || "User";
-        userProfile.rank = document.getElementById('editRank').value;
+        userProfile.name = document.getElementById('editNickname').value || "User";
+        userProfile.username = document.getElementById('editUsername').value.replace('@','').trim();
+        localStorage.setItem('cyblink_prof', JSON.stringify(userProfile));
         updateAvatar();
-        saveData();
         closeModal('profileModal');
-        if (p2pConnection && p2pConnection.open) p2pConnection.send({ type: 'profile_update', nickname: userProfile.nickname });
+        if(userProfile.username) initPeer();
     }
 
-    function switchChat(chatId) {
-        if (!chatsData[chatId]) chatId = 'local';
-        currentChatId = chatId;
-        document.getElementById('chatTitleText').innerText = chatsData[chatId].title;
-        renderSidebarChats();
-        renderMessages();
-        toggleSidebar(null, true);
+    function connectToFriend() {
+        let friend = document.getElementById('friendUsername').value.replace('@','').trim().toLowerCase();
+        if(!friend || !peer) return;
+        
+        document.getElementById('connectionStatus').innerText = "Ищем " + friend + "...";
+        const conn = peer.connect('clink-' + friend);
+        setupP2P(conn);
     }
 
-    function toggleSidebar(event, forceClose = false) {
-        if (event && event.stopPropagation) event.stopPropagation();
-        if (forceClose) sidebar.classList.remove('mobile-open');
-        else sidebar.classList.toggle('mobile-open');
+    function setupP2P(conn) {
+        p2pConnection = conn;
+        conn.on('open', () => {
+            document.getElementById('connectionStatus').innerText = "Подключено!";
+            addMsg('p2p', { type: 'system', text: 'Защищенное соединение E2E установлено.' });
+            switchChat('p2p');
+            closeModal('networkModal');
+        });
+        conn.on('data', (data) => {
+            if (data.type === 'chat') { 
+                data.senderId = 'friend'; 
+                addMsg('p2p', data); 
+            }
+        });
+        conn.on('close', () => addMsg('p2p', { type: 'system', text: 'Собеседник отключился.' }));
     }
-    
-    mainChatArea.addEventListener('click', () => { 
-        if (sidebar.classList.contains('mobile-open')) toggleSidebar(null, true); 
-    });
+
+    // ЗВОНКИ
+    async function getMediaStream() {
+        try {
+            return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch (err) { alert("Разреши доступ к камере и микрофону!"); return null; }
+    }
+
+    async function startCall() {
+        if (!p2pConnection) return alert("Сначала подключись к другу в поиске!");
+        localStream = await getMediaStream();
+        if(!localStream) return;
+        
+        document.getElementById('localVideo').srcObject = localStream;
+        document.getElementById('callOverlay').classList.add('active');
+        document.getElementById('acceptCallBtn').style.display = 'none';
+
+        currentCall = peer.call(p2pConnection.peer, localStream);
+        handleCallEvents(currentCall);
+    }
+
+    async function answerCall() {
+        localStream = await getMediaStream();
+        if(!localStream) return;
+        document.getElementById('localVideo').srcObject = localStream;
+        document.getElementById('acceptCallBtn').style.display = 'none';
+        
+        currentCall.answer(localStream);
+        handleCallEvents(currentCall);
+    }
+
+    function handleCallEvents(call) {
+        call.on('stream', (remoteStream) => {
+            document.getElementById('remoteVideo').srcObject = remoteStream;
+        });
+        call.on('close', endCall);
+    }
+
+    function endCall() {
+        if(currentCall) currentCall.close();
+        if(localStream) localStream.getTracks().forEach(track => track.stop());
+        document.getElementById('callOverlay').classList.remove('active');
+        document.getElementById('remoteVideo').srcObject = null;
+        document.getElementById('localVideo').srcObject = null;
+    }
+
+    // ЧАТ & UI
+    function handleSendText() {
+        const text = document.getElementById('messageInput').value.trim();
+        if (!text) return;
+        
+        const msg = { type: 'chat', senderId: 'me', senderName: userProfile.name, text: text, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) };
+        addMsg(currentChatId, msg);
+        
+        if(currentChatId === 'p2p' && p2pConnection) p2pConnection.send(msg);
+        document.getElementById('messageInput').value = '';
+    }
+
+    function addMsg(chatId, msg) {
+        chatsData[chatId].messages.push(msg);
+        localStorage.setItem('cyblink_chats', JSON.stringify(chatsData));
+        if(currentChatId === chatId) renderMessages();
+    }
 
     function renderMessages() {
-        chatWindow.innerHTML = '';
+        const cw = document.getElementById('chatWindow');
+        cw.innerHTML = '';
         chatsData[currentChatId].messages.forEach(msg => {
             const div = document.createElement('div');
             if (msg.type === 'system') {
                 div.className = 'system-msg'; div.innerText = msg.text;
             } else {
-                const isSentByMe = (msg.senderId === 'me');
-                div.className = `msg-wrapper ${isSentByMe ? 'sent' : 'received'}`;
-                let contentHtml = '';
-                if (msg.msgType === 'image') contentHtml = `<img src="${msg.data}" class="media-content">`;
-                else if (msg.msgType === 'video') contentHtml = `<video src="${msg.data}" controls class="media-content"></video>`;
-                else if (msg.msgType === 'audio') contentHtml = `<audio src="${msg.data}" controls class="audio-content"></audio>`;
-                else contentHtml = escapeHTML(msg.text);
-
+                div.className = `msg-wrapper ${msg.senderId === 'me' ? 'sent' : 'received'}`;
+                const textHTML = msg.text.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
                 div.innerHTML = `
                     <div class="msg-avatar">${msg.senderName.charAt(0).toUpperCase()}</div>
                     <div class="msg-bubble-container">
-                        <div class="msg-sender-name">${escapeHTML(msg.senderName)}</div>
-                        <div class="msg-bubble">${contentHtml}</div>
+                        <div class="msg-sender-name">${msg.senderName}</div>
+                        <div class="msg-bubble">${textHTML}</div>
+                        <div class="msg-time">${msg.time || ''}</div>
                     </div>`;
             }
-            chatWindow.appendChild(div);
+            cw.appendChild(div);
         });
-        if (document.getElementById('autoScrollToggle').checked) chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+        cw.scrollTo(0, cw.scrollHeight);
     }
 
-    messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendText(); });
-
-    function handleSendText() {
-        const text = messageInput.value.trim();
-        if (!text) return;
-        sendMessage({ msgType: 'text', text: text });
-        messageInput.value = '';
+    function switchChat(id) {
+        currentChatId = id;
+        document.getElementById('chatTitleText').innerText = chatsData[id].title;
+        document.getElementById('encBadge').style.display = (id === 'p2p') ? 'inline-block' : 'none';
+        document.getElementById('callBtn').style.display = (id === 'p2p') ? 'flex' : 'none';
+        renderSidebarChats();
+        renderMessages();
+        document.getElementById('sidebar').classList.remove('mobile-open');
     }
 
-    function sendMessage(payload) {
-        const msgObject = {
-            type: 'chat', senderId: 'me', senderName: userProfile.nickname,
-            msgType: payload.msgType, text: payload.text || '', data: payload.data || null
-        };
-        addMessageToHistory(currentChatId, msgObject);
-
-        if (currentChatId === 'p2p' && p2pConnection && p2pConnection.open) {
-            p2pConnection.send(msgObject);
-        } else if (currentChatId === 'p2p') {
-            addMessageToHistory('p2p', { type: 'system', text: 'Ошибка: Нет соединения с другом.' });
-        }
-    }
-
-    function addMessageToHistory(chatId, msgObject) {
-        chatsData[chatId].messages.push(msgObject);
-        saveData();
-        if (currentChatId === chatId) renderMessages();
-    }
-
-    const fileInput = document.getElementById('fileInput');
-    document.getElementById('attachBtn').onclick = () => fileInput.click();
-    fileInput.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => sendMessage({ msgType: file.type.startsWith('video/') ? 'video' : 'image', data: ev.target.result });
-        reader.readAsDataURL(file);
-        fileInput.value = '';
-    };
-
-    let mediaRecorder; let audioChunks = []; let isRecording = false;
-    const recordBtn = document.getElementById('recordBtn');
-    recordBtn.onclick = async () => {
-        if (!isRecording) {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                mediaRecorder.start(); isRecording = true; recordBtn.classList.add('recording'); audioChunks = [];
-                mediaRecorder.addEventListener("dataavailable", e => audioChunks.push(e.data));
-                mediaRecorder.addEventListener("stop", () => {
-                    const reader = new FileReader();
-                    reader.readAsDataURL(new Blob(audioChunks, { type: 'audio/webm' }));
-                    reader.onloadend = () => sendMessage({ msgType: 'audio', data: reader.result });
-                    stream.getTracks().forEach(t => t.stop());
-                });
-            } catch (err) { alert("Ошибка микрофона."); }
-        } else { mediaRecorder.stop(); isRecording = false; recordBtn.classList.remove('recording'); }
-    };
-
-    let peer = null; let p2pConnection = null; let friendNickname = "Друг";
-    try {
-        peer = new Peer(); 
-        peer.on('open', (id) => {
-            document.getElementById('myPeerId').value = id;
-            document.getElementById('connectionStatus').innerText = "Готово к работе.";
-            document.getElementById('connectionStatus').style.color = "var(--status-online)";
-        });
-        peer.on('connection', (conn) => setupConnectionLogic(conn));
-    } catch(e) { console.error(e); }
-
-    function connectToFriend() {
-        const friendId = document.getElementById('friendPeerId').value.trim();
-        if (!friendId) return;
-        document.getElementById('connectionStatus').innerText = "Подключение...";
-        setupConnectionLogic(peer.connect(friendId));
-    }
-
-    function setupConnectionLogic(conn) {
-        p2pConnection = conn;
-        conn.on('open', () => {
-            document.getElementById('connectionStatus').innerText = "Успешно!";
-            const statusIcon = document.getElementById('p2p-status');
-            if (statusIcon) statusIcon.className = "status-indicator online";
-            addMessageToHistory('p2p', { type: 'system', text: 'Соединение установлено!' });
-            conn.send({ type: 'profile_update', nickname: userProfile.nickname });
-            switchChat('p2p'); closeModal('networkModal');
-        });
-        conn.on('data', (data) => {
-            if (data.type === 'profile_update') friendNickname = data.nickname;
-            else if (data.type === 'chat') { data.senderId = 'friend'; data.senderName = data.senderName || friendNickname; addMessageToHistory('p2p', data); }
-        });
-        conn.on('close', () => {
-            const statusIcon = document.getElementById('p2p-status');
-            if (statusIcon) statusIcon.className = "status-indicator dnd";
-            addMessageToHistory('p2p', { type: 'system', text: 'Соединение закрыто.' });
-            p2pConnection = null;
+    function renderSidebarChats() {
+        const cl = document.getElementById('chatsList');
+        cl.innerHTML = '';
+        Object.values(chatsData).forEach(chat => {
+            const d = document.createElement('div');
+            d.className = `chat-icon ${chat.id === currentChatId ? 'active' : ''}`;
+            d.onclick = () => switchChat(chat.id);
+            d.innerText = chat.icon;
+            if(chat.isP2P) d.innerHTML += `<div class="status-indicator ${p2pConnection ? 'online' : 'dnd'}"></div>`;
+            cl.appendChild(d);
         });
     }
 
-    function changeTheme(themeName, doSave = true) {
-        document.body.className = '';
-        if (themeName !== 'cyber') document.body.classList.add(`theme-${themeName}`);
-        if (doSave) {
-            userProfile.theme = themeName;
-            saveData();
-        }
-    }
-
-    function clearCurrentChat() {
-        if (confirm("Очистить историю сообщений в этом чате?")) {
-            chatsData[currentChatId].messages = [{ type: 'system', text: 'История очищена.' }];
-            saveData();
-            renderMessages();
-            closeModal('settingsModal');
-        }
-    }
-
-    function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); }
-    function toggleFullScreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(()=>{}); }
+    function changeTheme(t) { document.body.className = t === 'cyber' ? '' : `theme-${t}`; userProfile.theme = t; localStorage.setItem('cyblink_prof', JSON.stringify(userProfile)); }
+    function updateAvatar() { document.getElementById('sidebarAvatar').innerText = userProfile.name.charAt(0).toUpperCase(); }
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('mobile-open'); }
     function openModal(id) { document.getElementById(id).classList.add('active'); }
     function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-    function closeModalOnOutside(e, id) { if (e.target.id === id) closeModal(id); }
 
     initApp();
 </script>
 
 </body>
 </html>
-
