@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CyberLink P2P Messenger</title>
+    <title>CyberLink Messenger</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         :root {
             --bg-dark: #07070b;
@@ -16,9 +15,7 @@
             --neon-blue: #0088ff;
             --text-main: #e2e8f0;
             --text-muted: #94a3b8;
-            
             --status-online: #00ffcc;
-            --status-afk: #ffcc00;
             --status-dnd: #ff3333;
         }
 
@@ -58,7 +55,6 @@
         .chat-icon.active { border-radius: 35%; background: var(--neon-accent); color: var(--bg-dark); box-shadow: 0 0 12px var(--neon-accent); }
         .status-indicator { position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg-dark); }
         .online { background: var(--status-online); box-shadow: 0 0 6px var(--status-online); }
-        .dnd { background: var(--status-dnd); }
         .divider { width: 35px; height: 2px; background: rgba(128,128,128,0.2); margin: 8px 0; border-radius: 2px; }
 
         .main-chat { flex: 1; display: flex; flex-direction: column; height: 100%; position: relative; width: 100%; }
@@ -66,7 +62,7 @@
         .chat-info { display: flex; align-items: center; gap: 8px; }
         .toggle-sidebar-btn { background: none; border: none; color: var(--neon-accent); font-size: 20px; cursor: pointer; }
         .chat-title { font-weight: 800; font-size: 14px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
-        .encryption-badge { font-size: 10px; color: var(--status-online); border: 1px solid var(--status-online); padding: 2px 6px; border-radius: 10px; font-weight: 600; display: none; }
+        .encryption-badge { font-size: 10px; color: var(--status-online); border: 1px solid var(--status-online); padding: 2px 6px; border-radius: 10px; font-weight: 600; }
         
         .top-actions { display: flex; gap: 6px; }
         .action-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(128,128,128,0.2); border-radius: 10px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--text-main); font-size: 14px; cursor: pointer; }
@@ -82,24 +78,11 @@
         .msg-bubble { background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 0 12px 12px 12px; font-size: 13px; word-break: break-word; }
         .msg-wrapper.sent .msg-bubble { background: rgba(0, 255, 204, 0.1); border-radius: 12px 0 12px 12px; color: #fff; }
         .msg-time { font-size: 9px; color: var(--text-muted); margin-top: 4px; text-align: right; }
-        .media-content { max-width: 100%; border-radius: 6px; }
         .system-msg { align-self: center; background: rgba(128, 128, 128, 0.1); color: var(--text-muted); padding: 5px 12px; border-radius: 16px; font-size: 11px; margin: 6px 0; }
 
         .input-panel { padding: 8px 10px; background: var(--glass-bg); border-top: 1px solid var(--glass-border); display: flex; align-items: center; gap: 6px; }
-        .input-btn { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; }
         .chat-input { flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(128,128,128,0.2); border-radius: 18px; padding: 7px 12px; color: var(--text-main); outline: none; font-size: 13px; }
         .send-btn { background: var(--neon-accent); border: none; width: 34px; height: 34px; border-radius: 50%; color: #fff; cursor: pointer; }
-
-        /* Экран звонка */
-        .call-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 3000; display: none; flex-direction: column; }
-        .call-overlay.active { display: flex; }
-        .call-videos { flex: 1; position: relative; background: #000; }
-        #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
-        #localVideo { width: 100px; height: 150px; position: absolute; bottom: 20px; right: 20px; border-radius: 12px; object-fit: cover; border: 2px solid var(--neon-accent); background: #222; }
-        .call-controls { height: 80px; display: flex; justify-content: center; align-items: center; gap: 20px; background: var(--glass-bg); }
-        .call-btn { width: 50px; height: 50px; border-radius: 50%; border: none; font-size: 24px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .btn-end { background: var(--status-dnd); }
-        .btn-accept { background: var(--status-online); color: #000; }
 
         .modal-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.65); display: none; justify-content: center; align-items: center; z-index: 2000; }
         .modal-overlay.active { display: flex; }
@@ -109,71 +92,54 @@
         .save-btn { width: 100%; background: var(--neon-magenta); color: #fff; border: none; padding: 8px; border-radius: 6px; cursor: pointer; }
     </style>
 </head>
-<body class="theme-cyber">
+<body>
 
 <div class="app-container">
 
     <div class="sidebar" id="sidebar">
-        <div class="chats-container" id="chatsList"></div>
+        <div class="chats-container" id="chatsList">
+            <div class="chat-icon active" title="Общий чат">💬<div class="status-indicator online"></div></div>
+        </div>
         <div class="divider"></div>
-        <div class="profile-bar" style="margin-top: auto; padding: 10px 0; display: flex; flex-direction: column; gap: 8px;">
-            <div class="action-btn" onclick="openModal('networkModal')">🌐</div>
+        <div style="margin-top: auto; padding: 10px 0; display: flex; flex-direction: column; gap: 8px;">
             <div class="action-btn" onclick="openModal('settingsModal')">⚙️</div>
             <div class="msg-avatar" onclick="openModal('profileModal')" id="sidebarAvatar" style="cursor: pointer; border-color: var(--neon-magenta);">?</div>
         </div>
     </div>
 
-    <div class="main-chat" id="mainChatArea">
+    <div class="main-chat">
         <div class="top-bar">
             <div class="chat-info">
                 <button class="toggle-sidebar-btn" onclick="toggleSidebar()">☰</button>
-                <div class="chat-title"><span id="chatTitleText">local-notes</span> <span class="encryption-badge" id="encBadge">🔒 E2E</span></div>
+                <div class="chat-title"><span>CyberLink Global</span> <span class="encryption-badge">🟢 Live</span></div>
             </div>
             <div class="top-actions">
-                <button class="action-btn" id="callBtn" onclick="startCall()" style="display:none;" title="Позвонить">📞</button>
-                <button class="action-btn" onclick="openModal('networkModal')" title="Найти по юзернейму">🔍</button>
+                <button class="action-btn" onclick="openModal('profileModal')" title="Профиль">👤</button>
             </div>
         </div>
 
         <div class="chat-window" id="chatWindow"></div>
 
         <div class="input-panel">
-            <input type="file" id="fileInput" accept="image/*,video/*" style="display: none;">
-            <button class="input-btn" id="attachBtn">📎</button>
-            <input type="text" class="chat-input" id="messageInput" placeholder="Сообщение...">
+            <input type="text" class="chat-input" id="messageInput" placeholder="Сообщение..." onkeypress="if(event.key === 'Enter') handleSendText()">
             <button class="send-btn" onclick="handleSendText()">➤</button>
         </div>
     </div>
 
-    <!-- Экран звонка -->
-    <div class="call-overlay" id="callOverlay">
-        <div class="call-videos">
-            <video id="remoteVideo" autoplay playsinline></video>
-            <video id="localVideo" autoplay muted playsinline></video>
-        </div>
-        <div class="call-controls">
-            <button class="call-btn btn-accept" id="acceptCallBtn" style="display: none;" onclick="answerCall()">📞</button>
-            <button class="call-btn btn-end" onclick="endCall()">✖</button>
-        </div>
-    </div>
-
     <!-- Модалки -->
-    <div class="modal-overlay" id="profileModal">
+    <div class="modal-overlay active" id="profileModal">
         <div class="modal-content">
-            <button class="close-modal" onclick="closeModal('profileModal')">×</button>
-            <h2 style="color: var(--neon-magenta); font-size: 16px; margin-bottom: 10px;">Профиль</h2>
-            <label style="font-size: 10px; color: var(--text-muted);">Имя</label>
-            <input type="text" class="form-input" id="editNickname">
-            <label style="font-size: 10px; color: var(--text-muted);">@Юзернейм (для поиска)</label>
-            <input type="text" class="form-input" id="editUsername" placeholder="Например: my_nick">
-            <button class="save-btn" onclick="saveProfile()">Сохранить & Подключиться к сети</button>
+            <h2 style="color: var(--neon-magenta); font-size: 16px; margin-bottom: 10px;">Твой профиль</h2>
+            <label style="font-size: 10px; color: var(--text-muted);">Как тебя зовут?</label>
+            <input type="text" class="form-input" id="editNickname" placeholder="Например: Елисей">
+            <button class="save-btn" onclick="saveProfile()">Войти в чат</button>
         </div>
     </div>
 
     <div class="modal-overlay" id="settingsModal">
         <div class="modal-content">
             <button class="close-modal" onclick="closeModal('settingsModal')">×</button>
-            <h2 style="font-size: 16px; margin-bottom: 10px;">Настройки</h2>
+            <h2 style="font-size: 16px; margin-bottom: 10px;">Настройки темы</h2>
             <select class="form-input" id="themeSelect" onchange="changeTheme(this.value)">
                 <option value="cyber">Темная (Киберпанк)</option>
                 <option value="neon">Неоновый фиолет</option>
@@ -182,184 +148,119 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="networkModal">
-        <div class="modal-content">
-            <button class="close-modal" onclick="closeModal('networkModal')">×</button>
-            <h2 style="color: var(--neon-blue); font-size: 16px; margin-bottom: 10px;">Найти друга</h2>
-            <div style="font-size: 11px; color: var(--status-online); margin-bottom: 10px;" id="myNetStatus">Сеть отключена. Настрой юзернейм в профиле!</div>
-            <label style="font-size: 10px; color: var(--text-muted);">@Юзернейм друга</label>
-            <input type="text" class="form-input" id="friendUsername" placeholder="Введи ник друга">
-            <button class="save-btn" style="background: var(--neon-blue);" onclick="connectToFriend()">Начать чат</button>
-            <div id="connectionStatus" style="font-size: 11px; margin-top: 8px; text-align: center;">Ожидание...</div>
-        </div>
-    </div>
-
 </div>
 
 <script>
-    let userProfile = { name: "Гость", username: "", theme: "cyber" };
-    let chatsData = {
-        'local': { id: 'local', title: 'Локальные заметки', icon: '📝', messages: [{ type: 'system', text: 'Заметки только на твоем устройстве.' }] },
-        'p2p': { id: 'p2p', title: 'P2P Чат', icon: '🔗', isP2P: true, messages: [{ type: 'system', text: 'Зашифрованный P2P канал.' }] }
-    };
-    let currentChatId = 'local';
-    
-    // Сеть и звонки
-    let peer = null; let p2pConnection = null; let currentCall = null; let localStream = null;
+    let userProfile = { name: "", theme: "cyber" };
+    let messagesData = [
+        { senderName: "Система", text: "Добро пожаловать! Открой сайт с другого устройства или браузера, и сообщения сразу синхронизируются.", time: "12:00" }
+    ];
+    let ws = null;
 
     function initApp() {
         const saved = localStorage.getItem('cyblink_prof');
-        if (saved) userProfile = JSON.parse(saved);
-        
-        const savedChats = localStorage.getItem('cyblink_chats');
-        if (savedChats) chatsData = JSON.parse(savedChats);
-
-        document.getElementById('editNickname').value = userProfile.name;
-        document.getElementById('editUsername').value = userProfile.username;
-        changeTheme(userProfile.theme);
-
-        renderSidebarChats();
-        switchChat('local');
+        if (saved) {
+            userProfile = JSON.parse(saved);
+            document.getElementById('editNickname').value = userProfile.name;
+            if (userProfile.name) {
+                closeModal('profileModal');
+                connectWebSocket();
+            }
+        }
+        changeTheme(userProfile.theme || "cyber");
+        renderMessages();
         updateAvatar();
-
-        // Если юзернейм есть, сразу логинимся в сеть
-        if(userProfile.username) initPeer();
-    }
-
-    function initPeer() {
-        if(peer) peer.destroy();
-        // Используем юзернейм как уникальный ID для серверов PeerJS (добавляем префикс для уникальности приложения)
-        const myPeerId = 'clink-' + userProfile.username.toLowerCase().trim();
-        
-        peer = new Peer(myPeerId);
-        
-        peer.on('open', (id) => {
-            document.getElementById('myNetStatus').innerText = `В сети как: @${userProfile.username}`;
-        });
-
-        peer.on('connection', (conn) => setupP2P(conn));
-        
-        // Входящий звонок
-        peer.on('call', (call) => {
-            currentCall = call;
-            document.getElementById('callOverlay').classList.add('active');
-            document.getElementById('acceptCallBtn').style.display = 'flex';
-        });
     }
 
     function saveProfile() {
-        userProfile.name = document.getElementById('editNickname').value || "User";
-        userProfile.username = document.getElementById('editUsername').value.replace('@','').trim();
+        const name = document.getElementById('editNickname').value.trim();
+        if (!name) return alert("Введи имя!");
+        userProfile.name = name;
         localStorage.setItem('cyblink_prof', JSON.stringify(userProfile));
         updateAvatar();
         closeModal('profileModal');
-        if(userProfile.username) initPeer();
+        connectWebSocket();
     }
 
-    function connectToFriend() {
-        let friend = document.getElementById('friendUsername').value.replace('@','').trim().toLowerCase();
-        if(!friend || !peer) return;
-        
-        document.getElementById('connectionStatus').innerText = "Ищем " + friend + "...";
-        const conn = peer.connect('clink-' + friend);
-        setupP2P(conn);
+    function connectWebSocket() {
+        // Подключаемся к общему публичному каналу реального времени
+        const apiKey = 'oCdCMcMPQpbvNjUIzqtvF1d2X2okWpDQj4AwARJuAgtjhzKxVEjQU6IdCjwm';
+        const channelId = 'cyberlink_global_room_2026';
+        const url = `wss://demo.piesocket.com/v3/${channelId}?api_key=${apiKey}&notify_self=1`;
+
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+            addSystemMsg("Соединение с сервером установлено. Чат активен!");
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data && data.text) {
+                    messagesData.push(data);
+                    renderMessages();
+                }
+            } catch(e) {}
+        };
+
+        ws.onerror = () => {
+            addSystemMsg("Ошибка сети. Попытка переподключения...");
+        };
+
+        ws.onclose = () => {
+            setTimeout(connectWebSocket, 3000);
+        };
     }
 
-    function setupP2P(conn) {
-        p2pConnection = conn;
-        conn.on('open', () => {
-            document.getElementById('connectionStatus').innerText = "Подключено!";
-            addMsg('p2p', { type: 'system', text: 'Защищенное соединение E2E установлено.' });
-            switchChat('p2p');
-            closeModal('networkModal');
-        });
-        conn.on('data', (data) => {
-            if (data.type === 'chat') { 
-                data.senderId = 'friend'; 
-                addMsg('p2p', data); 
-            }
-        });
-        conn.on('close', () => addMsg('p2p', { type: 'system', text: 'Собеседник отключился.' }));
-    }
-
-    // ЗВОНКИ
-    async function getMediaStream() {
-        try {
-            return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        } catch (err) { alert("Разреши доступ к камере и микрофону!"); return null; }
-    }
-
-    async function startCall() {
-        if (!p2pConnection) return alert("Сначала подключись к другу в поиске!");
-        localStream = await getMediaStream();
-        if(!localStream) return;
-        
-        document.getElementById('localVideo').srcObject = localStream;
-        document.getElementById('callOverlay').classList.add('active');
-        document.getElementById('acceptCallBtn').style.display = 'none';
-
-        currentCall = peer.call(p2pConnection.peer, localStream);
-        handleCallEvents(currentCall);
-    }
-
-    async function answerCall() {
-        localStream = await getMediaStream();
-        if(!localStream) return;
-        document.getElementById('localVideo').srcObject = localStream;
-        document.getElementById('acceptCallBtn').style.display = 'none';
-        
-        currentCall.answer(localStream);
-        handleCallEvents(currentCall);
-    }
-
-    function handleCallEvents(call) {
-        call.on('stream', (remoteStream) => {
-            document.getElementById('remoteVideo').srcObject = remoteStream;
-        });
-        call.on('close', endCall);
-    }
-
-    function endCall() {
-        if(currentCall) currentCall.close();
-        if(localStream) localStream.getTracks().forEach(track => track.stop());
-        document.getElementById('callOverlay').classList.remove('active');
-        document.getElementById('remoteVideo').srcObject = null;
-        document.getElementById('localVideo').srcObject = null;
-    }
-
-    // ЧАТ & UI
     function handleSendText() {
-        const text = document.getElementById('messageInput').value.trim();
+        const input = document.getElementById('messageInput');
+        const text = input.value.trim();
         if (!text) return;
         
-        const msg = { type: 'chat', senderId: 'me', senderName: userProfile.name, text: text, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) };
-        addMsg(currentChatId, msg);
-        
-        if(currentChatId === 'p2p' && p2pConnection) p2pConnection.send(msg);
-        document.getElementById('messageInput').value = '';
+        if (!userProfile.name) {
+            openModal('profileModal');
+            return;
+        }
+
+        const msg = {
+            senderName: userProfile.name,
+            text: text,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(msg));
+        } else {
+            alert("Нет связи с сервером. Подожди секунду...");
+            return;
+        }
+
+        input.value = '';
     }
 
-    function addMsg(chatId, msg) {
-        chatsData[chatId].messages.push(msg);
-        localStorage.setItem('cyblink_chats', JSON.stringify(chatsData));
-        if(currentChatId === chatId) renderMessages();
+    function addSystemMsg(text) {
+        messagesData.push({ senderName: "Система", text: text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+        renderMessages();
     }
 
     function renderMessages() {
         const cw = document.getElementById('chatWindow');
         cw.innerHTML = '';
-        chatsData[currentChatId].messages.forEach(msg => {
+        messagesData.forEach(msg => {
             const div = document.createElement('div');
-            if (msg.type === 'system') {
-                div.className = 'system-msg'; div.innerText = msg.text;
+            if (msg.senderName === "Система") {
+                div.className = 'system-msg';
+                div.innerText = msg.text;
             } else {
-                div.className = `msg-wrapper ${msg.senderId === 'me' ? 'sent' : 'received'}`;
-                const textHTML = msg.text.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+                const isMe = msg.senderName === userProfile.name;
+                div.className = `msg-wrapper ${isMe ? 'sent' : 'received'}`;
+                const safeText = msg.text.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
                 div.innerHTML = `
                     <div class="msg-avatar">${msg.senderName.charAt(0).toUpperCase()}</div>
                     <div class="msg-bubble-container">
                         <div class="msg-sender-name">${msg.senderName}</div>
-                        <div class="msg-bubble">${textHTML}</div>
+                        <div class="msg-bubble">${safeText}</div>
                         <div class="msg-time">${msg.time || ''}</div>
                     </div>`;
             }
@@ -368,31 +269,18 @@
         cw.scrollTo(0, cw.scrollHeight);
     }
 
-    function switchChat(id) {
-        currentChatId = id;
-        document.getElementById('chatTitleText').innerText = chatsData[id].title;
-        document.getElementById('encBadge').style.display = (id === 'p2p') ? 'inline-block' : 'none';
-        document.getElementById('callBtn').style.display = (id === 'p2p') ? 'flex' : 'none';
-        renderSidebarChats();
-        renderMessages();
-        document.getElementById('sidebar').classList.remove('mobile-open');
+    function changeTheme(t) {
+        document.body.className = t === 'cyber' ? '' : `theme-${t}`;
+        userProfile.theme = t;
+        localStorage.setItem('cyblink_prof', JSON.stringify(userProfile));
     }
 
-    function renderSidebarChats() {
-        const cl = document.getElementById('chatsList');
-        cl.innerHTML = '';
-        Object.values(chatsData).forEach(chat => {
-            const d = document.createElement('div');
-            d.className = `chat-icon ${chat.id === currentChatId ? 'active' : ''}`;
-            d.onclick = () => switchChat(chat.id);
-            d.innerText = chat.icon;
-            if(chat.isP2P) d.innerHTML += `<div class="status-indicator ${p2pConnection ? 'online' : 'dnd'}"></div>`;
-            cl.appendChild(d);
-        });
+    function updateAvatar() {
+        if (userProfile.name) {
+            document.getElementById('sidebarAvatar').innerText = userProfile.name.charAt(0).toUpperCase();
+        }
     }
 
-    function changeTheme(t) { document.body.className = t === 'cyber' ? '' : `theme-${t}`; userProfile.theme = t; localStorage.setItem('cyblink_prof', JSON.stringify(userProfile)); }
-    function updateAvatar() { document.getElementById('sidebarAvatar').innerText = userProfile.name.charAt(0).toUpperCase(); }
     function toggleSidebar() { document.getElementById('sidebar').classList.toggle('mobile-open'); }
     function openModal(id) { document.getElementById(id).classList.add('active'); }
     function closeModal(id) { document.getElementById(id).classList.remove('active'); }
