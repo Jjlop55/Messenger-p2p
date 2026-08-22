@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>P2P Web Messenger</title>
-  <!-- Gun.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+  <title>Live Web Messenger</title>
+  <!-- MQTT.js CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -41,7 +41,6 @@
       }
     }
 
-    /* Шапка */
     .header {
       padding: 14px 20px;
       background-color: #242f3d;
@@ -56,8 +55,13 @@
       font-weight: 600;
     }
 
-    .header-info span {
+    .status {
       font-size: 12px;
+      color: #ffa500;
+      transition: color 0.3s;
+    }
+
+    .status.online {
       color: #4fae4e;
     }
 
@@ -69,14 +73,8 @@
       border-radius: 6px;
       cursor: pointer;
       font-size: 13px;
-      transition: 0.2s;
     }
 
-    .user-btn:hover {
-      background: #366596;
-    }
-
-    /* Сообщения */
     .messages-area {
       flex: 1;
       overflow-y: auto;
@@ -128,7 +126,6 @@
       white-space: pre-wrap;
     }
 
-    /* Поле ввода */
     .input-area {
       padding: 12px 16px;
       background-color: #242f3d;
@@ -147,10 +144,6 @@
       outline: none;
     }
 
-    .input-area input:focus {
-      border-color: #2b5278;
-    }
-
     .input-area button {
       background-color: #5288c1;
       border: none;
@@ -159,14 +152,8 @@
       border-radius: 8px;
       font-weight: 600;
       cursor: pointer;
-      transition: 0.2s;
     }
 
-    .input-area button:hover {
-      background-color: #6499d3;
-    }
-
-    /* Модальное окно ника */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -186,10 +173,6 @@
       display: flex;
       flex-direction: column;
       gap: 14px;
-    }
-
-    .modal h3 {
-      font-size: 18px;
     }
 
     .modal input {
@@ -214,21 +197,19 @@
 </head>
 <body>
 
-  <!-- Окно выбора ника -->
   <div class="modal-overlay" id="nicknameModal">
     <div class="modal">
       <h3>Введите ваш ник</h3>
-      <input type="text" id="nicknameInput" placeholder="Например: Player_99" maxlength="20" />
+      <input type="text" id="nicknameInput" placeholder="Например: Player" maxlength="20" />
       <button id="saveNickBtn">Войти в чат</button>
     </div>
   </div>
 
-  <!-- Чат -->
   <div class="chat-container">
     <div class="header">
       <div class="header-info">
-        <h2>Общий P2P Чат</h2>
-        <span>● Онлайн (Gun P2P Mesh)</span>
+        <h2>Онлайн Чат</h2>
+        <span class="status" id="statusText">● Подключение...</span>
       </div>
       <button class="user-btn" id="changeNickBtn">Ник: ...</button>
     </div>
@@ -242,22 +223,21 @@
   </div>
 
   <script>
-    // Подключение к публичным relay-узлам Gun.js
-    const gun = Gun({
-      peers: [
-        'https://gun-manhattan.herokuapp.com/gun',
-        'https://peer.waller.li/gun'
-      ]
+    // Публичный WebSocket MQTT брокер (без регистрации и ключей)
+    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const TOPIC_NAME = 'utopia_public_global_chat_channel_v1';
+
+    let currentNick = localStorage.getItem('chat_nickname') || '';
+    const clientId = 'user_' + Math.random().toString(16).substring(2, 10);
+
+    const client = mqtt.connect(BROKER_URL, {
+      clientId: clientId,
+      clean: true,
+      connectTimeout: 4000,
+      reconnectPeriod: 1000
     });
 
-    // Название общей комнаты
-    const chatRoom = gun.get('universal_public_github_chat_v1');
-
-    // Локальные переменные
-    let currentNick = localStorage.getItem('chat_nickname') || '';
-    const displayedMessages = new Map();
-
-    // DOM Элементы
+    const statusText = document.getElementById('statusText');
     const modal = document.getElementById('nicknameModal');
     const nickInput = document.getElementById('nicknameInput');
     const saveNickBtn = document.getElementById('saveNickBtn');
@@ -266,7 +246,30 @@
     const msgInput = document.getElementById('msgInput');
     const messagesList = document.getElementById('messagesList');
 
-    // Инициализация профиля
+    // Подключение к брокеру
+    client.on('connect', () => {
+      statusText.textContent = '● В сети (WebSocket)';
+      statusText.classList.add('online');
+      client.subscribe(TOPIC_NAME);
+    });
+
+    client.on('offline', () => {
+      statusText.textContent = '● Переподключение...';
+      statusText.classList.remove('online');
+    });
+
+    // Обработка входящих сообщений
+    client.on('message', (topic, message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        if (data.sender && data.text && data.timestamp) {
+          renderMessage(data);
+        }
+      } catch (err) {
+        console.error('Ошибка парсинга:', err);
+      }
+    });
+
     function initUser() {
       if (!currentNick) {
         modal.style.display = 'flex';
@@ -298,32 +301,23 @@
       const text = msgInput.value.trim();
       if (!text || !currentNick) return;
 
-      chatRoom.set({
+      const payload = {
         sender: currentNick,
         text: text,
         timestamp: Date.now()
-      });
+      };
 
+      // Публикуем сообщение в общий канал
+      client.publish(TOPIC_NAME, JSON.stringify(payload));
       msgInput.value = '';
     });
 
-    // Безопасное экранирование текста (защита от XSS)
     function escapeText(str) {
       const p = document.createElement('p');
       p.textContent = str;
       return p.innerHTML;
     }
 
-    // Слушатель входящих данных
-    chatRoom.map().once((data, id) => {
-      if (!data || !data.text || !data.sender || !data.timestamp) return;
-      if (displayedMessages.has(id)) return;
-
-      displayedMessages.set(id, data);
-      renderMessage(data);
-    });
-
-    // Отрисовка сообщения
     function renderMessage(data) {
       const isOwn = data.sender === currentNick;
       const timeStr = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
