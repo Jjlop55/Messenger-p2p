@@ -1,342 +1,296 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Web Messenger</title>
-  <!-- MQTT.js CDN -->
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Зашифрованный чат</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    body {
-      background-color: #0e1621;
-      color: #ffffff;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .chat-container {
-      width: 100%;
-      max-width: 760px;
-      height: 100vh;
-      background-color: #17212b;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    }
-
-    @media (min-width: 768px) {
-      .chat-container {
-        height: 90vh;
-        border-radius: 12px;
-        overflow: hidden;
-      }
-    }
-
-    .header {
-      padding: 14px 20px;
-      background-color: #242f3d;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid #111922;
-    }
-
-    .header-info h2 {
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .status {
-      font-size: 12px;
-      color: #ffa500;
-      transition: color 0.3s;
-    }
-
-    .status.online {
-      color: #4fae4e;
-    }
-
-    .user-btn {
-      background: #2b5278;
-      color: #fff;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .messages-area {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .message {
-      max-width: 75%;
-      padding: 8px 12px;
-      border-radius: 10px;
-      background-color: #182533;
-      align-self: flex-start;
-      word-wrap: break-word;
-    }
-
-    .message.own {
-      background-color: #2b5278;
-      align-self: flex-end;
-    }
-
-    .message-header {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 4px;
-    }
-
-    .message-sender {
-      font-size: 13px;
-      font-weight: 700;
-      color: #64b5f6;
-    }
-
-    .message.own .message-sender {
-      color: #bbdefb;
-    }
-
-    .message-time {
-      font-size: 11px;
-      color: #7f91a4;
-    }
-
-    .message-text {
-      font-size: 14px;
-      line-height: 1.4;
-      white-space: pre-wrap;
-    }
-
-    .input-area {
-      padding: 12px 16px;
-      background-color: #242f3d;
-      display: flex;
-      gap: 10px;
-    }
-
-    .input-area input {
-      flex: 1;
-      background-color: #17212b;
-      border: 1px solid #0e1621;
-      border-radius: 8px;
-      padding: 10px 14px;
-      color: #fff;
-      font-size: 14px;
-      outline: none;
-    }
-
-    .input-area button {
-      background-color: #5288c1;
-      border: none;
-      color: white;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.7);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 100;
-    }
-
-    .modal {
-      background: #242f3d;
-      padding: 24px;
-      border-radius: 12px;
-      width: 90%;
-      max-width: 320px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .modal input {
-      background: #17212b;
-      border: 1px solid #0e1621;
-      border-radius: 6px;
-      padding: 10px;
-      color: #fff;
-      outline: none;
-    }
-
-    .modal button {
-      background: #5288c1;
-      color: #fff;
-      border: none;
-      padding: 10px;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; }
+    header { background: #1e293b; padding: 12px 16px; border-bottom: 1px solid #334155; display: flex; flex-direction: column; gap: 8px; }
+    .inputs-bar { display: flex; gap: 8px; }
+    input, button { padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; outline: none; }
+    input:focus { border-color: #38bdf8; }
+    .flex-1 { flex: 1; }
+    #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; background: #1e293b; border: 1px solid #334155; word-break: break-word; align-self: flex-start; }
+    .msg.mine { align-self: flex-end; background: #0369a1; border-color: #0284c7; }
+    .msg-header { font-size: 11px; color: #94a3b8; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
+    .msg.mine .msg-header { color: #bae6fd; }
+    .msg-text { font-size: 14px; line-height: 1.4; }
+    footer { padding: 12px 16px; background: #1e293b; border-top: 1px solid #334155; display: flex; gap: 8px; }
+    button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; }
+    button:hover { background: #0369a1; }
   </style>
 </head>
 <body>
 
-  <div class="modal-overlay" id="nicknameModal">
-    <div class="modal">
-      <h3>Введите ваш ник</h3>
-      <input type="text" id="nicknameInput" placeholder="Например: Player" maxlength="20" />
-      <button id="saveNickBtn">Войти в чат</button>
+  <header>
+    <div class="inputs-bar">
+      <input type="text" id="username" class="flex-1" placeholder="Ваш ник" value="User">
+      <input type="password" id="secretKey" class="flex-1" placeholder="Ключ шифрования (пароль)">
     </div>
-  </div>
+  </header>
 
-  <div class="chat-container">
-    <div class="header">
-      <div class="header-info">
-        <h2>Онлайн Чат</h2>
-        <span class="status" id="statusText">● Подключение...</span>
-      </div>
-      <button class="user-btn" id="changeNickBtn">Ник: ...</button>
-    </div>
+  <div id="chat"></div>
 
-    <div class="messages-area" id="messagesList"></div>
-
-    <form class="input-area" id="messageForm">
-      <input type="text" id="msgInput" placeholder="Напишите сообщение..." autocomplete="off" />
-      <button type="submit">Отправить</button>
-    </form>
-  </div>
+  <footer>
+    <input type="text" id="messageInput" class="flex-1" placeholder="Введите сообщение...">
+    <button id="sendBtn">Отправить</button>
+  </footer>
 
   <script>
-    // Публичный WebSocket MQTT брокер (без регистрации и ключей)
-    const BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_NAME = 'utopia_public_global_chat_channel_v1';
+    const SUPABASE_URL = "https://exrrbaeopoykofhttzvp.supabase.co";
+    const SUPABASE_KEY = "Sb_publishable_iRcg3DReG70WfuJceOsHMw_fqUjnTuB";
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let currentNick = localStorage.getItem('chat_nickname') || '';
-    const clientId = 'user_' + Math.random().toString(16).substring(2, 10);
+    const chat = document.getElementById("chat");
+    const msgInput = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const secretKeyInput = document.getElementById("secretKey");
+    const usernameInput = document.getElementById("username");
 
-    const client = mqtt.connect(BROKER_URL, {
-      clientId: clientId,
-      clean: true,
-      connectTimeout: 4000,
-      reconnectPeriod: 1000
-    });
+    // Вспомогательные функции кодирования байтов
+    const buf2hex = buf => [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, "0")).join("");
+    const hex2buf = hex => new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
 
-    const statusText = document.getElementById('statusText');
-    const modal = document.getElementById('nicknameModal');
-    const nickInput = document.getElementById('nicknameInput');
-    const saveNickBtn = document.getElementById('saveNickBtn');
-    const changeNickBtn = document.getElementById('changeNickBtn');
-    const messageForm = document.getElementById('messageForm');
-    const msgInput = document.getElementById('msgInput');
-    const messagesList = document.getElementById('messagesList');
-
-    // Подключение к брокеру
-    client.on('connect', () => {
-      statusText.textContent = '● В сети (WebSocket)';
-      statusText.classList.add('online');
-      client.subscribe(TOPIC_NAME);
-    });
-
-    client.on('offline', () => {
-      statusText.textContent = '● Переподключение...';
-      statusText.classList.remove('online');
-    });
-
-    // Обработка входящих сообщений
-    client.on('message', (topic, message) => {
-      try {
-        const data = JSON.parse(message.toString());
-        if (data.sender && data.text && data.timestamp) {
-          renderMessage(data);
-        }
-      } catch (err) {
-        console.error('Ошибка парсинга:', err);
-      }
-    });
-
-    function initUser() {
-      if (!currentNick) {
-        modal.style.display = 'flex';
-        nickInput.focus();
-      } else {
-        modal.style.display = 'none';
-        changeNickBtn.textContent = 'Ник: ' + currentNick;
-      }
+    // Генерация AES-ключа из введённого пароля
+    async function deriveKey(password, salt) {
+      const enc = new TextEncoder();
+      const baseKey = await crypto.subtle.importKey(
+        "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+        baseKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
     }
 
-    saveNickBtn.addEventListener('click', () => {
-      const val = nickInput.value.trim();
-      if (val) {
-        currentNick = val;
-        localStorage.setItem('chat_nickname', currentNick);
-        initUser();
-      }
-    });
+    // Шифрование на клиенте
+    async function encryptText(text, password) {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveKey(password, salt);
+      const encoded = new TextEncoder().encode(text);
+      const ciphertext = await crypto.Готовый файл `index.html`. В него уже вшиты твои ключи и адрес проекта `https://exrrbaeopoykofhttzvp.supabase.co`.
 
-    changeNickBtn.addEventListener('click', () => {
-      nickInput.value = currentNick;
-      modal.style.display = 'flex';
-      nickInput.focus();
-    });
+Здесь реализовано полное сквозное шифрование (E2EE) по стандарту **AES-GCM (256 бит)** через нативный браузерный `crypto.subtle`. Сообщения шифруются на телефоне/компьютере до отправки в базу — в Supabase попадает только зашифрованная строка. Любой человек без твоего секретного пароля комнаты увидит лишь шум.
 
-    // Отправка сообщений
-    messageForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const text = msgInput.value.trim();
-      if (!text || !currentNick) return;
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Utopia Secure Messenger</title>
+  <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #181b24;
+      --border: #282d3d;
+      --accent: #22c55e;
+      --accent-hover: #16a34a;
+      --text: #f3f4f6;
+      --subtext: #9ca3af;
+      --bubble-mine: #1e3a2f;
+      --bubble-other: #232836;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
+    
+    header { background: var(--card); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .header-top { display: flex; justify-content: space-between; align-items: center; }
+    .title { font-weight: 700; font-size: 1.1rem; color: var(--accent); }
+    .status { font-size: 0.8rem; color: var(--subtext); display: flex; align-items: center; gap: 6px; }
+    .status-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
 
-      const payload = {
-        sender: currentNick,
-        text: text,
-        timestamp: Date.now()
+    .auth-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    input, button { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 8px; font-size: 0.9rem; outline: none; }
+    input:focus { border-color: var(--accent); }
+
+    #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    
+    .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; word-break: break-word; animation: fadeIn 0.2s ease; }
+    .msg.mine { align-self: flex-end; background: var(--bubble-mine); border-bottom-right-radius: 2px; }
+    .msg.other { align-self: flex-start; background: var(--bubble-other); border-bottom-left-radius: 2px; }
+    .msg-header { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--subtext); margin-bottom: 4px; }
+    .msg-sender { font-weight: 600; color: #6ee7b7; }
+    .msg-text { font-size: 0.95rem; line-height: 1.4; }
+    .msg-error { color: #f87171; font-style: italic; font-size: 0.85rem; }
+
+    footer { background: var(--card); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 8px; }
+    #msg-input { flex: 1; }
+    #send-btn { background: var(--accent); color: #000; border: none; font-weight: 600; cursor: pointer; padding: 0 18px; }
+    #send-btn:active { background: var(--accent-hover); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-top">
+      <div class="title">Utopia E2EE Chat</div>
+      <div class="status"><div class="status-dot"></div> Защищено AES-GCM</div>
+    </div>
+    <div class="auth-row">
+      <input type="text" id="nickname" placeholder="Твой никнейм" value="User">
+      <input type="password" id="secret-key" placeholder="Секретный ключ (пароль комнаты)">
+    </div>
+  </header>
+
+  <main id="chat-container"></main>
+
+  <footer>
+    <input type="text" id="msg-input" placeholder="Напишите зашифрованное сообщение..." autocomplete="off">
+    <button id="send-btn">Отправить</button>
+  </footer>
+
+  <script>
+    const SUPABASE_URL = '[https://exrrbaeopoykofhttzvp.supabase.co](https://exrrbaeopoykofhttzvp.supabase.co)';
+    const SUPABASE_KEY = 'Sb_publishable_iRcg3DReG70WfuJceOsHMw_fqUjnTuB';
+    const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const chatContainer = document.getElementById('chat-container');
+    const msgInput = document.getElementById('msg-input');
+    const sendBtn = document.getElementById('send-btn');
+    const nickInput = document.getElementById('nickname');
+    const keyInput = document.getElementById('secret-key');
+
+    // Хелперы Base64
+    const toB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const fromB64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+
+    // Генерация криптографического ключа из введенного пароля комнаты
+    async function deriveKey(password, salt) {
+      const enc = new TextEncoder();
+      const baseKey = await crypto.subtle.importKey(
+        "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+        baseKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+      );
+    }
+
+    // Шифрование на клиенте
+    async function encryptText(text, password) {
+      const enc = new TextEncoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveKey(password, salt);
+      const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(text));
+      return {
+        ciphertext: toB64(cipher),
+        iv: toB64(iv),
+        salt: toB64(salt)
       };
+    }
 
-      // Публикуем сообщение в общий канал
-      client.publish(TOPIC_NAME, JSON.stringify(payload));
+    // Расшифровка на клиенте
+    async function decryptText(ciphertextB64, ivB64, saltB64, password) {
+      if (!password) return { text: "🔒 Введите секретный ключ комнаты вверху", error: true };
+      try {
+        const salt = fromB64(saltB64);
+        const iv = fromB64(ivB64);
+        const cipher = fromB64(ciphertextB64);
+        const key = await deriveKey(password, salt);
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
+        return { text: new TextDecoder().decode(decrypted), error: false };
+      } catch (e) {
+        return { text: "🔒 Не удалось расшифровать (неверный ключ комнаты)", error: true };
+      }
+    }
+
+    // Отрисовка сообщения на экране
+    async function addMessageToUI(msg, currentPassword) {
+      const isMine = msg.sender === nickInput.value.trim();
+      const decrypted = await decryptText(msg.ciphertext, msg.iv, msg.salt, currentPassword);
+      
+      const el = document.createElement('div');
+      el.className = `msg ${isMine ? 'mine' : 'other'}`;
+      el.dataset.cipher = msg.ciphertext;
+      el.dataset.iv = msg.iv;
+      el.dataset.salt = msg.salt;
+
+      const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      el.innerHTML = `
+        <div class="msg-header">
+          <span class="msg-sender">${msg.sender}</span>
+          <span>${time}</span>
+        </div>
+        <div class="msg-text ${decrypted.error ? 'msg-error' : ''}">${decrypted.text}</div>
+      `;
+      chatContainer.appendChild(el);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // Загрузка истории
+    async function loadHistory() {
+      chatContainer.innerHTML = '';
+      const { data, error } = await client
+        .from('messages')
+        .select('*')
+        .order('id', { ascending: true })
+        .limit(100);
+
+      if (!error && data) {
+        const pwd = keyInput.value.trim();
+        for (const msg of data) {
+          await addMessageToUI(msg, pwd);
+        }
+      }
+    }
+
+    // Отправка нового сообщения
+    async function sendMessage() {
+      const text = msgInput.value.trim();
+      const password = keyInput.value.trim();
+      const sender = nickInput.value.trim() || 'Аноним';
+
+      if (!text) return;
+      if (!password) {
+        alert("Задайте секретный ключ (пароль комнаты) в шапке сайта!");
+        return;
+      }
+
       msgInput.value = '';
+      const { ciphertext, iv, salt } = await encryptText(text, password);
+
+      const { error } = await client.from('messages').insert([{
+        sender,
+        ciphertext,
+        iv,
+        salt
+      }]);
+
+      if (error) {
+        alert("Ошибка отправки: " + error.message);
+      }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+    
+    // Перерасшифровать сообщения на лету при смене ключа
+    keyInput.addEventListener('input', () => {
+      loadHistory();
     });
 
-    function escapeText(str) {
-      const p = document.createElement('p');
-      p.textContent = str;
-      return p.innerHTML;
-    }
+    // Режим реального времени (WebSockets)
+    client
+      .channel('realtime:messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        addMessageToUI(payload.new, keyInput.value.trim());
+      })
+      .subscribe();
 
-    function renderMessage(data) {
-      const isOwn = data.sender === currentNick;
-      const timeStr = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-      const msgEl = document.createElement('div');
-      msgEl.className = `message ${isOwn ? 'own' : ''}`;
-      msgEl.innerHTML = `
-        <div class="message-header">
-          <span class="message-sender">${escapeText(data.sender)}</span>
-          <span class="message-time">${timeStr}</span>
-        </div>
-        <div class="message-text">${escapeText(data.text)}</div>
-      `;
-
-      messagesList.appendChild(msgEl);
-      messagesList.scrollTop = messagesList.scrollHeight;
-    }
-
-    initUser();
+    loadHistory();
   </script>
 </body>
 </html>
