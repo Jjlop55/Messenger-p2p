@@ -3,6 +3,7 @@ import time
 import uuid
 import json
 import sqlite3
+import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
@@ -12,7 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -23,7 +30,7 @@ conn = sqlite3.connect("messenger.db", check_same_thread=False)
 cursor = conn.cursor()
 
 # ═══════════════════════════════════════════════════════════
-#  ТАБЛИЦЫ БАЗЫ ДАННЫХ
+#  ТАБЛИЦЫ
 # ═══════════════════════════════════════════════════════════
 
 cursor.execute("""
@@ -199,7 +206,7 @@ CREATE TABLE IF NOT EXISTS support_perm_requests (
 
 conn.commit()
 
-# Безопасное добавление колонок
+# Автоматическое обновление структуры
 _safe_alters = [
     ("users", "last_pwd_change", "TIMESTAMP"),
     ("users", "is_superadmin", "INTEGER DEFAULT 0"),
@@ -230,6 +237,15 @@ def is_super(nick: str) -> bool:
 def now_str() -> str:
     return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
+def hash_pwd(plain: str) -> str:
+    return hashlib.sha256(plain.encode('utf-8')).hexdigest()
+
+def verify_pwd(plain: str, stored_hash_or_plain: str) -> bool:
+    # Поддержка старых открытых паролей и новых SHA-256 хэшей
+    if stored_hash_or_plain == plain:
+        return True
+    return stored_hash_or_plain == hash_pwd(plain)
+
 def periodic_cleanup():
     ns = now_str()
     cutoff = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
@@ -257,7 +273,7 @@ def periodic_cleanup():
     conn.commit()
 
 # ═══════════════════════════════════════════════════════════
-#  МОДЕЛИ ДАННЫХ
+#  МОДЕЛИ
 # ═══════════════════════════════════════════════════════════
 
 class AuthData(BaseModel):
@@ -425,7 +441,16 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # ═══════════════════════════════════════════════════════════
-#  АВТОРИЗАЦИЯ И СЕССИИ
+#  CRON И ПИНГ
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/ping")
+@app.get("/invites/ping")
+def ping_service():
+    return {"status": "ok"}
+
+# ═══════════════════════════════════════════════════════════
+#  АВТОРИЗАЦИЯ И ПОЛЬЗОВАТЕЛИ
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/auth")
@@ -434,6 +459,7 @@ async def auth_user(data: AuthData, request: Request):
     ns = now_str()
     ip = data.ip_address or (request.client.host if request.client else "127.0.0.1")
 
+    # Проверка бана
     cursor.execute(
         "SELECT reason, banned_by, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)",
         (data.nickname,)
@@ -460,10 +486,14 @@ async def auth_user(data: AuthData, request: Request):
     session_token = uuid.uuid4().hex
 
     if row:
-        if row[0] != data.password:
+        stored_pwd = row[0]
+        if not verify_pwd(data.password, stored_pwd):
             return {"status": "error", "msg": "Неверный пароль для этого аккаунта!"}
 
-        cursor.execute("UPDATE users SET last_login=? WHERE nickname=?", (ns, data.nickname))
+        # Миграция старых паролей в SHA-256 хэш
+        hashed = hash_pwd(data.password)
+        cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, data.nickname))
+
         cursor.execute(
             "INSERT INTO user_sessions(nickname,session_token,user_agent,ip_address,logged_in_at,last_active,is_active) "
             "VALUES(?,?,?,?,?,?,1)",
@@ -506,10 +536,11 @@ async def auth_user(data: AuthData, request: Request):
             "can_handle_support": True
         } if is_sup else {}
 
+        hashed = hash_pwd(data.password)
         cursor.execute(
             "INSERT INTO users(nickname,password,last_login,is_superadmin,is_admin,admin_perms,admin_notified) "
             "VALUES(?,?,?,?,?,?,1)",
-            (data.nickname, data.password, ns, is_sup, is_sup, json.dumps(perms))
+            (data.nickname, hashed, ns, is_sup, is_sup, json.dumps(perms))
         )
         cursor.execute(
             "INSERT INTO user_sessions(nickname,session_token,user_agent,ip_address,logged_in_at,last_active,is_active) "
@@ -529,21 +560,45 @@ async def auth_user(data: AuthData, request: Request):
 def change_password(data: PwdChangeData):
     cursor.execute("SELECT password, last_pwd_change FROM users WHERE nickname=?", (data.nickname,))
     row = cursor.fetchone()
-    if not row or row[0] != data.old_password:
+    if not row or not verify_pwd(data.old_password, row[0]):
         return {"status": "error", "msg": "Текущий пароль указан неверно!"}
     if row[1]:
         diff = datetime.utcnow() - datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
         if diff < timedelta(hours=3):
             mins = int((timedelta(hours=3) - diff).total_seconds() / 60)
             return {"status": "error", "msg": f"Пароль можно менять раз в 3 часа! Подождите {mins} мин."}
+
     ns = now_str()
+    hashed = hash_pwd(data.new_password)
     cursor.execute("UPDATE users SET password=?, last_pwd_change=? WHERE nickname=?",
-                   (data.new_password, ns, data.nickname))
+                   (hashed, ns, data.nickname))
     conn.commit()
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
+# Полный каталог пользователей для ВСЕХ пользователей
+@app.get("/users/all")
+def get_all_users_directory(query: str = ""):
+    periodic_cleanup()
+    cursor.execute("""
+        SELECT nickname, created_at, last_login, is_superadmin, is_admin
+        FROM users WHERE LOWER(nickname) LIKE ? ORDER BY last_login DESC LIMIT 100
+    """, (f"%{query.lower()}%",))
+    
+    users = []
+    for r in cursor.fetchall():
+        nick = r[0]
+        users.append({
+            "nickname": nick,
+            "created_at": r[1],
+            "last_login": r[2],
+            "is_superadmin": bool(r[3]) or is_super(nick),
+            "is_admin": bool(r[4]) or bool(r[3]) or is_super(nick),
+            "is_online": manager.is_online(nick)
+        })
+    return users
+
 # ═══════════════════════════════════════════════════════════
-#  УПРАВЛЕНИЕ СЕССИЯМИ ПОЛЬЗОВАТЕЛЯ (УСТРОЙСТВА)
+#  УПРАВЛЕНИЕ СЕССИЯМИ ПОЛЬЗОВАТЕЛЕЙ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/sessions/my/{nickname}")
@@ -551,7 +606,7 @@ def get_my_sessions(nickname: str, token: str):
     cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1",
                    (nickname, token))
     if not cursor.fetchone():
-        raise HTTPException(status_code=403, detail="Недействительный токен сессии")
+        raise HTTPException(status_code=403, detail="Недействительный токен")
 
     cursor.execute("""
         SELECT id, user_agent, ip_address, logged_in_at, last_active, is_active,
@@ -559,14 +614,11 @@ def get_my_sessions(nickname: str, token: str):
         FROM user_sessions WHERE nickname=? AND is_active=1
         ORDER BY last_active DESC LIMIT 20
     """, (token, nickname))
-    sessions = []
-    for r in cursor.fetchall():
-        sessions.append({
-            "id": r[0], "user_agent": r[1], "ip_address": r[2],
-            "logged_in_at": r[3], "last_active": r[4],
-            "is_active": bool(r[5]), "is_current": bool(r[6])
-        })
-    return sessions
+    return [{
+        "id": r[0], "user_agent": r[1], "ip_address": r[2],
+        "logged_in_at": r[3], "last_active": r[4],
+        "is_active": bool(r[5]), "is_current": bool(r[6])
+    } for r in cursor.fetchall()]
 
 @app.post("/sessions/heartbeat")
 def session_heartbeat(data: HeartbeatData):
@@ -611,8 +663,7 @@ async def terminate_other_sessions(data: TerminateAllSessionsData):
         (data.nickname, data.session_token)
     )
     conn.commit()
-
-    await manager.kick_user(data.nickname, "Все другие сессии были завершены с вашего основного устройства.")
+    await manager.kick_user(data.nickname, "Все другие сессии были завершены с основного устройства.")
     return {"status": "ok", "msg": "Все другие сессии завершены."}
 
 # ═══════════════════════════════════════════════════════════
@@ -697,7 +748,7 @@ async def upload_file(request: Request, filename: str = "file.bin"):
     periodic_cleanup()
     body = await request.body()
     if len(body) > 10485760:
-        raise HTTPException(status_code=413, detail="Файл превышает лимит 10 МБ!")
+        raise HTTPException(status_code=413, detail="Файл превышает 10 МБ!")
     _, ext = os.path.splitext(filename)
     unique_name = f"{uuid.uuid4().hex}{ext or '.bin'}"
     with open(os.path.join(UPLOAD_DIR, unique_name), "wb") as f:
@@ -745,7 +796,7 @@ def get_notifications(nickname: str):
     return [{"id": r[0], "text": r[1]} for r in rows]
 
 # ═══════════════════════════════════════════════════════════
-#  МОНИТОРИНГ И ХРАНИЛИЩЕ
+#  МОНИТОРИНГ
 # ═══════════════════════════════════════════════════════════
 
 def _calc_storage():
@@ -799,7 +850,7 @@ def check_mute(nickname: str):
     return {"is_muted": True, "expires_at": exp, "reason": reason, "remaining_minutes": rem}
 
 # ═══════════════════════════════════════════════════════════
-#  ПОДДЕРЖКА (SUPPORT)
+#  ПОДДЕРЖКА
 # ═══════════════════════════════════════════════════════════
 
 def _is_support_staff(nick: str) -> bool:
@@ -829,7 +880,7 @@ async def create_support_ticket(data: SupportTicketData):
         nick = row[0]
         if _is_support_staff(nick):
             cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
-                           (nick, f"📩 Новое обращение в поддержку #{ticket_id} от @{data.from_user}: «{data.subject[:35]}»"))
+                           (nick, f"📩 Новое обращение #{ticket_id} от @{data.from_user}: «{data.subject[:35]}»"))
     conn.commit()
 
     await manager.notify_support_staff({
@@ -990,11 +1041,11 @@ async def decide_support_perm(data: SupportPermDecision):
     return {"status": "ok", "msg": msg}
 
 # ═══════════════════════════════════════════════════════════
-#  АДМИНИСТРАТИВНЫЕ ДЕЙСТВИЯ
+#  АДМИНИСТРАТИВНЫЕ МЕТОДЫ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/admin/users")
-def get_admin_users(admin: str, query: str = ""):
+def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
     cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
@@ -1003,8 +1054,8 @@ def get_admin_users(admin: str, query: str = ""):
     ns = now_str()
     cursor.execute("""
         SELECT nickname,created_at,last_login,is_superadmin,is_admin,admin_perms
-        FROM users WHERE nickname LIKE ? ORDER BY last_login DESC LIMIT 60
-    """, (f"%{query}%",))
+        FROM users WHERE LOWER(nickname) LIKE ? ORDER BY last_login DESC LIMIT 100
+    """, (f"%{query.lower()}%",))
 
     users_list = []
     for r in cursor.fetchall():
@@ -1016,12 +1067,24 @@ def get_admin_users(admin: str, query: str = ""):
         is_banned = cursor.fetchone() is not None
         cursor.execute("SELECT 1 FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>?", (nick, ns))
         is_muted = cursor.fetchone() is not None
+        online = manager.is_online(nick)
+        is_adm = bool(r[4]) or bool(r[3]) or is_super(nick)
+
+        if filter_type == "online" and not online:
+            continue
+        if filter_type == "offline" and online:
+            continue
+        if filter_type == "banned" and not is_banned:
+            continue
+        if filter_type == "admins" and not is_adm:
+            continue
+
         users_list.append({
             "nickname": nick, "created_at": r[1], "last_login": r[2],
             "is_superadmin": bool(r[3]) or is_super(nick),
-            "is_admin": bool(r[4]) or bool(r[3]) or is_super(nick),
+            "is_admin": is_adm,
             "perms": json.loads(r[5] or '{}'),
-            "is_online": manager.is_online(nick),
+            "is_online": online,
             "is_banned": is_banned, "is_muted": is_muted
         })
 
@@ -1095,7 +1158,7 @@ def ban_user(data: BanData):
         raise HTTPException(status_code=403, detail="Отказано")
     perms = json.loads(adm[2] or '{}')
     if not adm[0] and not is_super(data.admin_nick) and not perms.get("can_ban_users"):
-        return {"status": "error", "msg": "У вас нет прав на блокировку пользователей!"}
+        return {"status": "error", "msg": "У вас нет прав на блокировку!"}
     expires_at = None
     if data.ban_type == "temporary" and data.duration_hours > 0:
         expires_at = (datetime.utcnow() + timedelta(hours=data.duration_hours)).strftime('%Y-%m-%d %H:%M:%S')
@@ -1236,7 +1299,7 @@ def decide_delete_request(data: ReqDecision):
         return {"status": "ok", "msg": "Заявка отклонена."}
 
 # ═══════════════════════════════════════════════════════════
-#  WEBSOCKET ENDPOINT
+#  WEBSOCKET
 # ═══════════════════════════════════════════════════════════
 
 @app.websocket("/ws/{chat_id}/{nickname}")
@@ -1273,7 +1336,6 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                                                "msg": f"Вы заглушены до {mute[0]}. Причина: {mute[1] or 'не указана'}"})
                     continue
 
-                # Проверка переполнения диска и автоочистка старых сообщений
                 _, _, total_mb, level, _ = _calc_storage()
                 if level == "full":
                     cursor.execute("SELECT id, file_url FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 1", (chat_id,))
