@@ -96,16 +96,37 @@
     .msg.mine { align-self: flex-end; background: linear-gradient(135deg, #0070f3, #9d00ff); box-shadow: 0 0 16px rgba(157, 0, 255, 0.3); border-bottom-right-radius: 4px; }
     .msg.other { align-self: flex-start; background: rgba(22, 33, 54, 0.85); border: 1px solid rgba(0, 240, 255, 0.12); border-bottom-left-radius: 4px; }
     .msg-author { font-size: 11px; color: var(--neon-cyan); font-weight: 600; }
-    .msg.mine .msg-author { color: #bae6fd; }
     .msg-time { font-size: 10px; color: var(--text-dim); align-self: flex-end; }
     .msg.mine .msg-time { color: rgba(255, 255, 255, 0.75); }
 
-    .chat-input-wrapper { background: var(--bg-panel); backdrop-filter: blur(18px); padding: 10px 16px; border-top: var(--glass-border); display: flex; align-items: center; gap: 10px; }
+    /* Панель ввода сообщений и Telegram-голосовой */
+    .chat-input-wrapper { background: var(--bg-panel); backdrop-filter: blur(18px); padding: 10px 16px; border-top: var(--glass-border); display: flex; align-items: center; gap: 10px; position: relative; }
     .text-input {
       flex: 1; padding: 12px 18px; border-radius: 24px; border: var(--glass-border); background: rgba(10, 14, 23, 0.85);
       color: #fff; outline: none; font-size: 14px;
     }
     .text-input:focus { border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
+
+    #voice-btn {
+      width: 44px; height: 44px; border-radius: 50%; background: none; border: none; font-size: 22px; color: var(--text-dim);
+      cursor: pointer; display: flex; align-items: center; justify-content: center; touch-action: none; transition: all 0.2s;
+    }
+    #voice-btn.recording {
+      background: var(--danger); color: #fff; transform: scale(1.15); box-shadow: 0 0 15px var(--danger-glow);
+    }
+
+    /* Индикатор записи голосового (как в Telegram) */
+    #voice-recording-overlay {
+      display: none; position: absolute; inset: 0; background: var(--bg-panel); backdrop-filter: blur(18px);
+      align-items: center; justify-content: space-between; padding: 0 18px; z-index: 25;
+    }
+    .rec-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: recBlink 1s infinite; }
+    @keyframes recBlink { 50% { opacity: 0.2; } }
+
+    #locked-voice-bar {
+      display: none; position: absolute; inset: 0; background: var(--bg-panel); backdrop-filter: blur(18px);
+      padding: 8px 18px; align-items: center; justify-content: space-between; z-index: 30;
+    }
 
     /* Модалки */
     .modal-overlay {
@@ -126,7 +147,7 @@
     .discord-tabs, .admin-nav, .filter-nav { display: flex; gap: 6px; border-bottom: var(--glass-border); padding-bottom: 8px; flex-wrap: wrap; }
     .discord-tab-btn, .admin-tab-btn, .filter-tab-btn {
       flex: 1; padding: 8px 10px; border-radius: 12px; border: none; background: rgba(255, 255, 255, 0.04);
-      color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; text-align: center;
+      color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.2s;
     }
     .discord-tab-btn.active, .admin-tab-btn.active, .filter-tab-btn.active {
       background: var(--neon-cyan); color: #000; font-weight: 700; box-shadow: var(--neon-glow);
@@ -224,7 +245,6 @@
     </div>
   </div>
 
-  <!-- Кнопки управления звонком: отдельный блок для входящего звонка и активного -->
   <div class="call-controls-bar" id="call-incoming-bar" style="display:none;">
     <button class="call-ctrl-btn" id="btn-accept-call" style="background: var(--success); color:#000; font-weight:700;">📞 Принять вызов</button>
     <button class="call-ctrl-btn danger" id="btn-decline-call">🔴 Отклонить</button>
@@ -234,7 +254,7 @@
     <button class="call-ctrl-btn active" id="btn-toggle-mic">🎙️ Микрофон</button>
     <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
     <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
-    <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Сбросить</button>
+    <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Завершить</button>
   </div>
 </div>
 
@@ -270,7 +290,7 @@
         <span id="my-nick" style="font-weight: 700; color: var(--neon-cyan);">@user</span>
       </div>
       <div style="display: flex; gap: 3px;">
-        <button class="icon-btn" id="open-friends-btn" title="Друзья Discord">🤝<span class="badge-count" id="friends-badge" style="display:none;">0</span></button>
+        <button class="icon-btn" id="open-friends-btn" title="Друзья">🤝<span class="badge-count" id="friends-badge" style="display:none;">0</span></button>
         <button class="icon-btn" id="open-monitoring-btn" title="Мониторинг сервера">📊</button>
         <button class="icon-btn" id="open-support-btn" title="Поддержка">🎧</button>
         <button class="icon-btn" id="open-sessions-btn" title="Устройства и сессии">📱</button>
@@ -305,11 +325,47 @@
 
     <div class="messages-box" id="messages-box"></div>
 
+    <!-- Ввод сообщений и Telegram-голосовой интерфейс -->
     <div class="chat-input-wrapper">
       <input type="text" class="text-input" id="msg-input" placeholder="Сообщение..." autocomplete="off">
       <button class="icon-btn" id="send-btn" style="display: none; color: var(--neon-cyan);">➤</button>
+      <button id="voice-btn" title="Голосовое сообщение">🎙️</button>
+
+      <!-- Индикатор записи Telegram (смахивание влево/вверх) -->
+      <div id="voice-recording-overlay">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="rec-pulse-dot"></div>
+          <span id="voice-rec-timer" style="font-size:13px; font-weight:700;">00:00</span>
+        </div>
+        <div id="voice-rec-hint" style="font-size:11px; color:var(--text-dim);">◄ Смахните влево для отмены | ▲ Вверх для фиксации</div>
+      </div>
+
+      <!-- Панель зафиксированного голосового сообщения -->
+      <div id="locked-voice-bar">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="rec-pulse-dot"></div>
+          <span id="locked-voice-timer" style="font-size:13px; font-weight:700;">00:00</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="icon-btn" id="pause-voice-btn">⏸</button>
+          <button class="icon-btn" id="cancel-voice-btn" style="color:var(--danger);">🗑️</button>
+          <button class="icon-btn" id="send-locked-voice-btn" style="color:var(--neon-cyan);">➤</button>
+        </div>
+      </div>
     </div>
   </main>
+</div>
+
+<!-- Модалка создания нового чата (Вместо prompt) -->
+<div class="modal-overlay" id="new-chat-modal">
+  <div class="modal-card" style="max-width: 380px;">
+    <h3 class="modal-title">💬 Новый чат</h3>
+    <input type="text" id="new-chat-name-input" placeholder="Название комнаты..." class="modal-input">
+    <div style="display:flex; gap:8px; margin-top:4px;">
+      <button class="pill-btn" id="create-chat-submit-btn" style="background:var(--neon-cyan); color:#000;">Создать</button>
+      <button class="pill-btn" onclick="closeModal('new-chat-modal')">Отмена</button>
+    </div>
+  </div>
 </div>
 
 <!-- Модалка Мониторинга Сервера -->
@@ -346,15 +402,15 @@
   </div>
 </div>
 
-<!-- Модалка друзей Discord -->
+<!-- Модалка друзей Discord (Исправлены активные вкладки) -->
 <div class="modal-overlay" id="friends-modal">
   <div class="modal-card">
     <h3 class="modal-title">🤝 Друзья</h3>
     <div class="discord-tabs">
-      <button class="discord-tab-btn active" onclick="showFriendsTab('online')">В сети</button>
-      <button class="discord-tab-btn" onclick="showFriendsTab('all')">Все</button>
-      <button class="discord-tab-btn" onclick="showFriendsTab('pending')">Заявки</button>
-      <button class="discord-tab-btn" onclick="showFriendsTab('add')">+ Добавить</button>
+      <button class="discord-tab-btn active" data-tab="online" onclick="showFriendsTab('online')">В сети</button>
+      <button class="discord-tab-btn" data-tab="all" onclick="showFriendsTab('all')">Все</button>
+      <button class="discord-tab-btn" data-tab="pending" onclick="showFriendsTab('pending')">Заявки</button>
+      <button class="discord-tab-btn" data-tab="add" onclick="showFriendsTab('add')">+ Добавить</button>
     </div>
 
     <div id="friends-list-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto;"></div>
@@ -421,13 +477,13 @@
   </div>
 </div>
 
-<!-- Модалка поддержки -->
+<!-- Модалка поддержки (Исправлены активные вкладки и 4-часовое удаление) -->
 <div class="modal-overlay" id="support-modal">
   <div class="modal-card">
     <h3 class="modal-title">🎧 Служба поддержки</h3>
-    <div class="discord-tabs">
-      <button class="discord-tab-btn active" id="supp-tab-new-btn">Создать вопрос</button>
-      <button class="discord-tab-btn" id="supp-tab-my-btn">Мои тикеты</button>
+    <div class="discord-tabs" id="support-tabs-wrap">
+      <button class="discord-tab-btn active" data-tab="new" id="supp-tab-new-btn" onclick="showSupportTab('new')">Написать обращение</button>
+      <button class="discord-tab-btn" data-tab="my" id="supp-tab-my-btn" onclick="showSupportTab('my')">Мои тикеты</button>
     </div>
     <div id="supp-tab-new" style="display:flex; flex-direction:column; gap:8px;">
       <input type="text" id="supp-subject-input" placeholder="Тема вопроса" class="modal-input">
@@ -439,7 +495,7 @@
   </div>
 </div>
 
-<!-- Полная Админ-панель -->
+<!-- Полная Админ-панель (Добавлено удаление тикетов) -->
 <div class="modal-overlay" id="admin-modal">
   <div class="modal-card" style="max-width:540px;">
     <h3 class="modal-title">⚡ Панель управления</h3>
@@ -451,7 +507,6 @@
       <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
     </div>
 
-    <!-- Вкладка Юзеры с фильтрами -->
     <div id="admin-tab-users" style="display:flex; flex-direction:column; gap:8px;">
       <div class="filter-nav">
         <button class="filter-tab-btn active" onclick="setAdminFilter('all')">Все</button>
@@ -470,15 +525,6 @@
     <div id="admin-tab-requests" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
 
     <button class="pill-btn" onclick="closeModal('admin-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка просмотра сессий юзера для Админа -->
-<div class="modal-overlay" id="admin-user-sessions-modal">
-  <div class="modal-card">
-    <h3 class="modal-title" id="admin-sessions-target-nick">Сессии пользователя</h3>
-    <div id="admin-user-sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
-    <button class="pill-btn" onclick="closeModal('admin-user-sessions-modal')">Закрыть</button>
   </div>
 </div>
 
@@ -521,7 +567,7 @@
 <!-- Модалка настроек -->
 <div class="modal-overlay" id="settings-modal">
   <div class="modal-card">
-    <h3 class="modal-title">⚙️ Настройки</h3>
+    <h3 class="modal-title">⚙️️ Настройки</h3>
     <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
       <span style="font-size:13px; font-weight:600;">Смена пароля (раз в 3 часа):</span>
       <input type="password" id="old-pwd" placeholder="Текущий пароль" class="modal-input">
@@ -542,6 +588,25 @@ let isSuperAdmin = false, isAdmin = false, myAdminPerms = {};
 let activeChatId = "general", activeWs = null;
 let currentAdminFilter = "all";
 let targetGrantUser = null, targetBanUser = null;
+
+// Голосовой ввод Telegram
+let mediaRecorder = null;
+let audioChunks = [];
+let isVoiceRecording = false;
+let isVoiceLocked = false;
+let isVoiceCancelled = false;
+let isVoicePaused = false;
+let voiceStartX = 0, voiceStartY = 0;
+let voiceTimerInt = null;
+let voiceSec = 0;
+
+// WebRTC Звонки
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
+let isCamOn = false, isScreenOn = false, isMicOn = true;
+let callTimeoutTimer = null;
+let pendingIncomingOffer = null;
+let iceCandidatesQueue = [];
 
 const EMOJI_AVATARS = ["🐱","🦊","🐺","🦁","🤖","👑","💀","👾","🐉","⚡","🔥","💎","🚀","🎭","🎮","🦄","🛸","🐧","🐼","🧙","🎃","🥋","🎯","🛰️"];
 
@@ -620,6 +685,8 @@ function parseDevice(ua) {
 window.addEventListener('DOMContentLoaded', () => {
   if (window.innerWidth <= 768) document.getElementById('back-btn').style.display = 'block';
   initEmojiPicker();
+  setupTelegramVoiceRecorder();
+
   const saved = localStorage.getItem('utopia_saved_user');
   if (saved) {
     const u = JSON.parse(saved);
@@ -637,13 +704,13 @@ async function login(nickname, password) {
     });
     const d = await res.json();
     if (d.status === 'ok') {
-      currentUser = nickname;
+      currentUser = d.nickname || nickname;
       currentSessionToken = d.session_token;
       isSuperAdmin = d.is_superadmin;
       isAdmin = d.is_admin;
       myAdminPerms = d.admin_perms || {};
 
-      localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname, password }));
+      localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname: currentUser, password }));
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
       document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
@@ -663,7 +730,7 @@ async function login(nickname, password) {
     } else {
       err.innerText = d.msg;
     }
-  } catch (e) { err.innerText = 'Сервер запускается, подождите 25 сек...'; }
+  } catch (e) { err.innerText = 'Сервер выходит из сна... Подождите 25 сек'; }
 }
 
 document.getElementById('auth-btn').onclick = () => {
@@ -676,7 +743,7 @@ function logout() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  МОНИТОРИНГ СЕРВЕРА (ИСПРАВЛЕН UNDEFINED)
+//  МОНИТОРИНГ СЕРВЕРА
 // ═══════════════════════════════════════════════════════════
 document.getElementById('open-monitoring-btn').onclick = async () => {
   openModal('mon-modal');
@@ -766,7 +833,7 @@ document.getElementById('kill-all-sessions-btn').onclick = () => {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  ПРОФИЛЬ: БЛОКИРОВКА ДЛЯ Jjlop55 + 45 СЛОВ + АВАТАР
+//  ПРОФИЛЬ: БЛОКИРОВКА Jjlop55 И СОХРАНЕНИЕ
 // ═══════════════════════════════════════════════════════════
 document.getElementById('open-my-profile-btn').onclick = () => {
   const nickInput = document.getElementById('prof-nick-input');
@@ -819,7 +886,7 @@ document.getElementById('save-profile-btn').onclick = async () => {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  СИСТЕМА ДРУЗЕЙ DISCORD
+//  СИСТЕМА ДРУЗЕЙ (АКТИВНЫЕ ВКЛАДКИ)
 // ═══════════════════════════════════════════════════════════
 document.getElementById('open-friends-btn').onclick = () => {
   openModal('friends-modal');
@@ -827,7 +894,9 @@ document.getElementById('open-friends-btn').onclick = () => {
 };
 
 function showFriendsTab(tab) {
-  document.querySelectorAll('.discord-tab-btn').forEach(b => b.classList.toggle('active', b.innerText.toLowerCase().includes(tab) || (tab === 'add' && b.innerText.includes('+'))));
+  document.querySelectorAll('#friends-modal .discord-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
   const c = document.getElementById('friends-list-container');
   const addTab = document.getElementById('friends-add-tab');
 
@@ -1013,9 +1082,21 @@ function renderMessage(msg) {
   const el = document.createElement('div');
   el.id = `msg-${msg.id}`;
   el.className = `msg ${isMine ? 'mine' : 'other'}`;
+
+  let mediaHtml = '';
+  if (msg.file_url) {
+    const url = BACKEND_URL + msg.file_url;
+    if (msg.file_type === 'audio') {
+      mediaHtml = `<audio src="${url}" controls style="width:220px; height:36px; margin-top:4px;"></audio>`;
+    } else if (msg.file_type === 'image') {
+      mediaHtml = `<img src="${url}" style="max-width:100%; max-height:240px; border-radius:10px; margin-top:4px;" onclick="window.open('${url}')">`;
+    }
+  }
+
   el.innerHTML = `
     <div class="msg-author">${msg.sender}</div>
     <div>${msg.text || ''}</div>
+    ${mediaHtml}
     <div class="msg-time">${msg.time || ''}</div>
   `;
   box.appendChild(el);
@@ -1045,21 +1126,160 @@ document.getElementById('back-btn').onclick = () => {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  WebRTC ЗВОНКИ (ИСПРАВЛЕН АВТОПРИЁМ, ДЕМКА ЭКРАНА И ТАЙМАУТ 30 СЕК)
+//  ГОЛОСОВОЙ ВВОД TELEGRAM (СМАХИВАНИЕ ВЛЕВО / ВВЕРХ)
 // ═══════════════════════════════════════════════════════════
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
-let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
-let isCamOn = false, isScreenOn = false, isMicOn = true;
-let callTimeoutTimer = null;
-let pendingIncomingOffer = null;
-let iceCandidatesQueue = [];
+function setupTelegramVoiceRecorder() {
+  const voiceBtn = document.getElementById('voice-btn');
+  const overlay = document.getElementById('voice-recording-overlay');
+  const lockedBar = document.getElementById('locked-voice-bar');
 
-// Инициализация WebRTC соединения с активным видео-трансивером
+  voiceBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    voiceStartX = e.clientX;
+    voiceStartY = e.clientY;
+    isVoiceCancelled = false;
+    isVoiceLocked = false;
+    isVoicePaused = false;
+    startVoiceRecording();
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!isVoiceRecording || isVoiceLocked || isVoiceCancelled) return;
+    const diffX = voiceStartX - e.clientX;
+    const diffY = voiceStartY - e.clientY;
+
+    // Смахнул влево для отмены (> 65px)
+    if (diffX > 65) {
+      cancelVoiceRecording(true);
+      return;
+    }
+    // Смахнул вверх для фиксации (> 50px)
+    if (diffY > 50) {
+      lockVoiceRecording();
+    }
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!isVoiceRecording || isVoiceLocked || isVoiceCancelled) return;
+    stopAndSendVoiceRecording();
+  });
+
+  document.getElementById('pause-voice-btn').onclick = () => {
+    if (!mediaRecorder) return;
+    if (!isVoicePaused) {
+      mediaRecorder.pause();
+      isVoicePaused = true;
+      document.getElementById('pause-voice-btn').innerText = '▶️';
+    } else {
+      mediaRecorder.resume();
+      isVoicePaused = false;
+      document.getElementById('pause-voice-btn').innerText = '⏸';
+    }
+  };
+
+  document.getElementById('cancel-voice-btn').onclick = () => cancelVoiceRecording(false);
+  document.getElementById('send-locked-voice-btn').onclick = () => stopAndSendVoiceRecording();
+}
+
+async function startVoiceRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    voiceSec = 0;
+    isVoiceRecording = true;
+
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.start();
+
+    document.getElementById('voice-btn').classList.add('recording');
+    document.getElementById('voice-recording-overlay').style.display = 'flex';
+    document.getElementById('voice-rec-timer').innerText = '00:00';
+
+    clearInterval(voiceTimerInt);
+    voiceTimerInt = setInterval(() => {
+      if (!isVoicePaused) {
+        voiceSec++;
+        const m = String(Math.floor(voiceSec / 60)).padStart(2, '0');
+        const s = String(voiceSec % 60).padStart(2, '0');
+        document.getElementById('voice-rec-timer').innerText = `${m}:${s}`;
+        document.getElementById('locked-voice-timer').innerText = `${m}:${s}`;
+      }
+    }, 1000);
+  } catch (e) {
+    showToast('Доступ к микрофону заблокирован!', 'warning');
+    resetVoiceUI();
+  }
+}
+
+function lockVoiceRecording() {
+  isVoiceLocked = true;
+  document.getElementById('voice-recording-overlay').style.display = 'none';
+  document.getElementById('locked-voice-bar').style.display = 'flex';
+  document.getElementById('voice-btn').classList.remove('recording');
+}
+
+function cancelVoiceRecording(showNotify = false) {
+  isVoiceCancelled = true;
+  if (voiceTimerInt) clearInterval(voiceTimerInt);
+  if (mediaRecorder) {
+    mediaRecorder.onstop = null;
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  resetVoiceUI();
+  if (showNotify) showToast('Запись отменена');
+}
+
+async function stopAndSendVoiceRecording() {
+  if (voiceTimerInt) clearInterval(voiceTimerInt);
+  if (!mediaRecorder) return;
+
+  mediaRecorder.onstop = async () => {
+    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    if (blob.size < 500) { resetVoiceUI(); return; }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/upload?filename=voice_${Date.now()}.webm`, {
+        method: 'POST',
+        body: blob
+      });
+      const d = await res.json();
+      if (d.status === 'ok' && activeWs) {
+        activeWs.send(JSON.stringify({
+          action: 'send',
+          sender: currentUser,
+          text: '',
+          file_url: d.url,
+          file_type: 'audio',
+          time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+        }));
+      }
+    } catch(err) {
+      showToast('Ошибка отправки голосового!');
+    }
+    resetVoiceUI();
+  };
+
+  mediaRecorder.stop();
+  mediaRecorder.stream.getTracks().forEach(t => t.stop());
+}
+
+function resetVoiceUI() {
+  isVoiceRecording = false;
+  isVoiceLocked = false;
+  isVoiceCancelled = false;
+  isVoicePaused = false;
+  document.getElementById('voice-btn').classList.remove('recording');
+  document.getElementById('voice-recording-overlay').style.display = 'none';
+  document.getElementById('locked-voice-bar').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  WebRTC ЗВОНКИ
+// ═══════════════════════════════════════════════════════════
 function createPeerConnectionInstance() {
   peerConnection = new RTCPeerConnection(rtcConfig);
-
-  // Важнейший фикс демки: создаем трансиверы аудио и видео заранее,
-  // чтобы в первичном SDP оффере присутствовала секция m=video!
   peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
   peerConnection.addTransceiver('video', { direction: 'sendrecv' });
 
@@ -1090,7 +1310,6 @@ function createPeerConnectionInstance() {
   };
 }
 
-// Запуск исходящего вызова
 async function startCall(target) {
   if (target === currentUser) return showToast('Нельзя звонить самому себе!');
   currentCallPartner = target;
@@ -1109,13 +1328,8 @@ async function startCall(target) {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     createPeerConnectionInstance();
 
-    // Заменяем трек в аудио-трансивере
-    const audioSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio' || s.kind === 'audio');
-    if (audioSender) {
-      audioSender.replaceTrack(localStream.getAudioTracks()[0]);
-    } else {
-      localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-    }
+    const audioSender = peerConnection.getSenders().find(s => s.kind === 'audio');
+    if (audioSender) audioSender.replaceTrack(localStream.getAudioTracks()[0]);
 
     const offer = await peerConnection.createOffer();
     offer.sdp = offer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
@@ -1123,7 +1337,6 @@ async function startCall(target) {
 
     activeWs.send(JSON.stringify({ action: 'call_offer', caller: currentUser, target: target, sdp: offer }));
 
-    // Таймаут 30 секунд: если собеседник не ответил
     clearTimeout(callTimeoutTimer);
     callTimeoutTimer = setTimeout(() => {
       if (currentCallPartner) {
@@ -1139,7 +1352,6 @@ async function startCall(target) {
   }
 }
 
-// Входящий звонок: модалка с кнопками Принять и Сбросить (НЕ АВТОПРИЕМ!)
 function handleIncomingCall(data) {
   currentCallPartner = data.caller;
   pendingIncomingOffer = data.sdp;
@@ -1155,7 +1367,6 @@ function handleIncomingCall(data) {
     if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
   });
 
-  // Автосброс через 30 секунд, если абонент не отреагировал
   clearTimeout(callTimeoutTimer);
   callTimeoutTimer = setTimeout(() => {
     if (currentCallPartner) {
@@ -1166,7 +1377,6 @@ function handleIncomingCall(data) {
   }, 30000);
 }
 
-// Принятие звонка по кнопке
 document.getElementById('btn-accept-call').onclick = async () => {
   clearTimeout(callTimeoutTimer);
   document.getElementById('call-incoming-bar').style.display = 'none';
@@ -1177,16 +1387,11 @@ document.getElementById('btn-accept-call').onclick = async () => {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     createPeerConnectionInstance();
 
-    const audioSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio' || s.kind === 'audio');
-    if (audioSender) {
-      audioSender.replaceTrack(localStream.getAudioTracks()[0]);
-    } else {
-      localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-    }
+    const audioSender = peerConnection.getSenders().find(s => s.kind === 'audio');
+    if (audioSender) audioSender.replaceTrack(localStream.getAudioTracks()[0]);
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingIncomingOffer));
 
-    // Добавляем ранее прибывшие кандидаты
     while (iceCandidatesQueue.length > 0) {
       const cand = iceCandidatesQueue.shift();
       await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
@@ -1201,11 +1406,10 @@ document.getElementById('btn-accept-call').onclick = async () => {
 
   } catch (err) {
     endCall();
-    showToast('Ошибка микрофона при ответе!');
+    showToast('Ошибка микрофона!');
   }
 };
 
-// Отклонение входящего звонка
 document.getElementById('btn-decline-call').onclick = () => {
   clearTimeout(callTimeoutTimer);
   if (activeWs && currentCallPartner) {
@@ -1227,7 +1431,6 @@ function handleCallAnswer(data) {
   }
 }
 
-// Камера (с безопасным поиском)
 document.getElementById('btn-toggle-cam').onclick = async () => {
   if (!peerConnection) return;
   isCamOn = !isCamOn;
@@ -1241,9 +1444,7 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
       document.getElementById('local-video').style.display = 'block';
 
       const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
-      if (videoSender) {
-        await videoSender.replaceTrack(vTrack);
-      }
+      if (videoSender) await videoSender.replaceTrack(vTrack);
       btn.classList.add('active');
     } catch(e) {
       isCamOn = false;
@@ -1261,7 +1462,6 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
   }
 };
 
-// Демонстрация экрана: гарантированно передаётся собеседнику через videoSender.replaceTrack
 document.getElementById('btn-toggle-screen').onclick = async () => {
   if (!peerConnection) return;
   isScreenOn = !isScreenOn;
@@ -1276,9 +1476,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
       document.getElementById('local-video').style.display = 'block';
 
       const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
-      if (videoSender) {
-        await videoSender.replaceTrack(sTrack);
-      }
+      if (videoSender) await videoSender.replaceTrack(sTrack);
       btn.classList.add('active');
 
       sTrack.onended = async () => {
@@ -1406,7 +1604,6 @@ async function loadAdminUsers(query = '') {
       <div style="font-size:11px; color:var(--text-dim);">Визит: ${u.last_login ? u.last_login.slice(0,16) : '—'}</div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
         <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>
-        <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="viewUserSessions('${u.nickname}')">📱 Сессии</button>
         ${!isSuperTarget ? `
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>
@@ -1419,43 +1616,6 @@ async function loadAdminUsers(query = '') {
 }
 
 document.getElementById('admin-search-input').oninput = e => loadAdminUsers(e.target.value.trim());
-
-async function viewUserSessions(nick) {
-  document.getElementById('admin-sessions-target-nick').innerText = `Сессии юзера @${nick}`;
-  const c = document.getElementById('admin-user-sessions-list');
-  c.innerHTML = 'Загрузка...';
-  openModal('admin-user-sessions-modal');
-
-  const res = await fetch(`${BACKEND_URL}/admin/user-sessions?admin=${currentUser}&target=${nick}`);
-  const sessions = await res.json();
-  c.innerHTML = '';
-  if (!sessions.length) { c.innerHTML = '<div style="color:var(--text-dim);">Нет активных сессий</div>'; return; }
-
-  sessions.forEach(s => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-          <b>${parseDevice(s.user_agent)}</b>
-          <div style="font-size:11px; color:var(--text-dim);">IP: ${s.ip_address} · Вход: ${s.logged_in_at}</div>
-        </div>
-        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="adminKillSpecificSession(${s.id}, '${nick}')">Сбросить</button>
-      </div>`;
-    c.appendChild(row);
-  });
-}
-
-async function adminKillSpecificSession(sid, nick) {
-  const res = await fetch(`${BACKEND_URL}/admin/kill-session`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, target_session_id: sid })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  viewUserSessions(nick);
-}
 
 function openGrantModal(nick, perms) {
   targetGrantUser = nick;
@@ -1605,6 +1765,7 @@ function unbanUser(nick) {
   }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminBans(); });
 }
 
+// Загрузка тикетов для саппорта с кнопкой удаления
 async function loadAdminSupport() {
   const c = document.getElementById('admin-tab-support');
   c.innerHTML = 'Загрузка...';
@@ -1624,14 +1785,27 @@ async function loadAdminSupport() {
     const row = document.createElement('div');
     row.className = 'user-row';
     row.innerHTML = `
-      <b>#${t.id} от @${t.from_user}: ${t.subject}</b>
-      <div style="font-size:12px;">${t.message}</div>
+      <div style="display:flex; justify-content:space-between;">
+        <b>#${t.id} от @${t.from_user}: ${t.subject}</b>
+        <button class="pill-btn" style="background:rgba(255,51,102,0.2); color:var(--danger); padding:2px 8px; font-size:10px;" onclick="adminDeleteTicket(${t.id})">🗑️ Удалить тикет</button>
+      </div>
+      <div style="font-size:12px; color:var(--text);">${t.message}</div>
       <div style="display:flex; gap:6px; margin-top:6px;">
         <input type="text" id="ans-${t.id}" placeholder="Ответ..." class="modal-input" style="padding:4px 8px; font-size:12px;">
         <button class="pill-btn" style="background:var(--neon-cyan); color:#000; padding:4px 10px; font-size:11px;" onclick="sendSupportReply(${t.id})">Ответить</button>
         <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="closeSupportTicket(${t.id})">Закрыть</button>
       </div>`;
     c.appendChild(row);
+  });
+}
+
+function adminDeleteTicket(tid) {
+  confirmAction('Удаление тикета', `Удалить тикет #${tid} со всей перепиской?`, () => {
+    fetch(`${BACKEND_URL}/support/delete`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ admin_nick: currentUser, ticket_id: tid })
+    }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminSupport(); });
   });
 }
 
@@ -1721,22 +1895,26 @@ function decideDelReq(id, action) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  ПОДДЕРЖКА
+//  СЛУЖБА ПОДДЕРЖКИ
 // ═══════════════════════════════════════════════════════════
 document.getElementById('open-support-btn').onclick = () => {
   openModal('support-modal');
-  document.getElementById('supp-tab-new').style.display = 'flex';
-  document.getElementById('supp-tab-my').style.display = 'none';
+  showSupportTab('new');
 };
-document.getElementById('supp-tab-new-btn').onclick = () => {
-  document.getElementById('supp-tab-new').style.display = 'flex';
-  document.getElementById('supp-tab-my').style.display = 'none';
-};
-document.getElementById('supp-tab-my-btn').onclick = () => {
-  document.getElementById('supp-tab-new').style.display = 'none';
-  document.getElementById('supp-tab-my').style.display = 'flex';
-  loadMyTickets();
-};
+
+function showSupportTab(tab) {
+  document.querySelectorAll('#support-tabs-wrap .discord-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  if (tab === 'new') {
+    document.getElementById('supp-tab-new').style.display = 'flex';
+    document.getElementById('supp-tab-my').style.display = 'none';
+  } else {
+    document.getElementById('supp-tab-new').style.display = 'none';
+    document.getElementById('supp-tab-my').style.display = 'flex';
+    loadMyTickets();
+  }
+}
 
 document.getElementById('supp-send-btn').onclick = () => {
   const s = document.getElementById('supp-subject-input').value.trim();
@@ -1750,7 +1928,7 @@ document.getElementById('supp-send-btn').onclick = () => {
     showToast(d.msg);
     document.getElementById('supp-subject-input').value = '';
     document.getElementById('supp-msg-input').value = '';
-    document.getElementById('supp-tab-my-btn').click();
+    showSupportTab('my');
   });
 };
 
@@ -1760,18 +1938,57 @@ async function loadMyTickets() {
   const res = await fetch(`${BACKEND_URL}/support/tickets/my/${currentUser}`);
   const tickets = await res.json();
   c.innerHTML = '';
-  if (!tickets.length) { c.innerHTML = '<div style="color:var(--text-dim);">У вас нет тикетов</div>'; return; }
+  if (!tickets.length) { c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">У вас нет тикетов</div>'; return; }
   tickets.forEach(t => {
     const row = document.createElement('div');
     row.className = 'user-row';
-    const rep = t.replies.map(r => `<div style="font-size:11px; background:rgba(0,240,255,0.08); padding:4px 8px; border-radius:6px; margin-top:2px;"><b>@${r.from_user}:</b> ${r.message}</div>`).join('');
+    const rep = t.replies.map(r => `<div style="font-size:11px; background:rgba(0,240,255,0.08); padding:4px 8px; border-radius:6px; margin-top:2px;"><b>@${r.from_user} (Саппорт):</b> ${r.message}</div>`).join('');
+    
+    let timerNotice = '';
+    if (t.status === 'answered') {
+      timerNotice = '<div style="font-size:10px; color:var(--warn); margin-top:4px;">⏱️ Ответ будет автоматически удалён через 4 часа после вашего просмотра.</div>';
+    }
+
     row.innerHTML = `
-      <b>${t.subject} (${t.status})</b>
+      <div style="display:flex; justify-content:space-between;">
+        <b>${t.subject}</b>
+        <span style="font-size:11px; color:var(--neon-cyan);">${t.status === 'open' ? '🟢 Открыто' : (t.status === 'answered' ? '💬 Есть ответ' : '⚪ Закрыто')}</span>
+      </div>
       <div style="font-size:12px;">${t.message}</div>
-      ${rep}`;
+      ${rep}
+      ${timerNotice}`;
     c.appendChild(row);
   });
 }
+
+// ═══════════════════════════════════════════════════════════
+//  СОЗДАНИЕ ЧАТА В МОДАЛКЕ САЙТА
+// ═══════════════════════════════════════════════════════════
+document.getElementById('new-chat-btn').onclick = () => {
+  document.getElementById('new-chat-name-input').value = '';
+  openModal('new-chat-modal');
+};
+
+document.getElementById('create-chat-submit-btn').onclick = async () => {
+  const name = document.getElementById('new-chat-name-input').value.trim();
+  if (!name) return showToast('Введите название комнаты!');
+  closeModal('new-chat-modal');
+
+  const id = 'chat_' + Date.now();
+  const res = await fetch(`${BACKEND_URL}/chats`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ id, name, created_by: currentUser })
+  });
+  if (res.ok) {
+    await loadChats();
+    switchChat(id, name);
+    showToast(`Комната «${name}» создана!`);
+    // Открываем окно друзей для приглашения
+    openModal('friends-modal');
+    showFriendsTab('all');
+  }
+};
 
 document.getElementById('change-pwd-btn').onclick = () => {
   const o = document.getElementById('old-pwd').value;
@@ -1801,17 +2018,6 @@ document.getElementById('delete-chat-btn').onclick = () => {
         switchChat('general', '🌐 Общий чат');
       });
   });
-};
-
-document.getElementById('new-chat-btn').onclick = () => {
-  const name = prompt('Название новой комнаты:');
-  if (!name) return;
-  const id = 'chat_' + Date.now();
-  fetch(`${BACKEND_URL}/chats`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ id, name, created_by: currentUser })
-  }).then(() => { loadChats(); switchChat(id, name); });
 };
 </script>
 </body>
