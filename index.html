@@ -95,9 +95,9 @@
     .modal-title { font-size: 1.25rem; color: var(--accent); font-weight: 700; }
     .modal-input { padding: 10px 12px; border-radius: 10px; border: var(--glass-border); background: #0c1017; color: #fff; outline: none; width: 100%; font-size: 14px; }
 
-    .admin-nav, .support-nav { display: flex; gap: 5px; border-bottom: var(--glass-border); padding-bottom: 8px; flex-wrap: wrap; }
-    .admin-tab-btn, .support-tab-btn { flex: 1; padding: 8px 6px; font-size: 11px; font-weight: 600; border: none; border-radius: 12px; background: rgba(255,255,255,0.04); color: var(--text-dim); cursor: pointer; text-align: center; }
-    .admin-tab-btn.active, .support-tab-btn.active { background: var(--accent); color: #000; }
+    .admin-nav, .support-nav, .filter-nav { display: flex; gap: 5px; border-bottom: var(--glass-border); padding-bottom: 8px; flex-wrap: wrap; }
+    .admin-tab-btn, .support-tab-btn, .filter-tab-btn { flex: 1; padding: 8px 6px; font-size: 11px; font-weight: 600; border: none; border-radius: 12px; background: rgba(255,255,255,0.04); color: var(--text-dim); cursor: pointer; text-align: center; }
+    .admin-tab-btn.active, .support-tab-btn.active, .filter-tab-btn.active { background: var(--accent); color: #000; }
 
     .user-row { background: rgba(255,255,255,0.03); border: var(--glass-border); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
     .user-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
@@ -144,7 +144,7 @@
 <div id="auth-screen">
   <div class="auth-card">
     <h2>Utopia Messenger</h2>
-    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">E2EE Шифрование · Управление сессиями</p>
+    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">E2EE Шифрование · Защита паролей SHA-256</p>
     <input type="text" id="login-nick" placeholder="Ваш никнейм" autocomplete="off">
     <input type="password" id="login-pwd" placeholder="Пароль">
     <button id="auth-btn">Войти в сеть</button>
@@ -160,6 +160,7 @@
         <span id="my-nick">@user</span>
       </div>
       <div class="action-icons">
+        <button class="icon-btn" id="open-users-dir" title="Все пользователи сети">👥</button>
         <button class="icon-btn" id="open-monitoring" title="Мониторинг сервера">📊</button>
         <button class="icon-btn" id="open-support" title="Поддержка">
           🎧<span class="badge-count" id="support-badge" style="display:none;">0</span>
@@ -167,7 +168,7 @@
         <button class="icon-btn" id="open-invites" title="Приглашения">
           📩<span class="badge-count" id="invites-badge" style="display:none;">0</span>
         </button>
-        <button class="icon-btn" id="open-settings" title="Настройки">⚙️️</button>
+        <button class="icon-btn" id="open-settings" title="Настройки">⚙</button>
       </div>
     </div>
     <div class="chat-controls">
@@ -239,7 +240,7 @@
           <span style="font-size:11px; color:var(--text-dim);" id="voice-remains">(Осталось: 05:00)</span>
         </div>
         <div style="display:flex; gap:8px;">
-          <button class="icon-btn" id="pause-voice-btn">⏸️️</button>
+          <button class="icon-btn" id="pause-voice-btn">⏸</button>
           <button class="icon-btn" id="cancel-voice-btn" style="color:var(--danger);">🗑️</button>
           <button class="icon-btn" id="send-locked-voice-btn" style="color:var(--accent);">➤</button>
         </div>
@@ -250,7 +251,17 @@
 
 <!-- ── МОДАЛЬНЫЕ ОКНА ── -->
 
-<!-- Поддержка (Для пользователя) -->
+<!-- Каталог всех пользователей сети (для всех) -->
+<div class="modal-overlay" id="users-dir-modal">
+  <div class="modal-card">
+    <h3 class="modal-title">👥 Пользователи сети</h3>
+    <input type="text" id="dir-search-input" placeholder="🔍 Поиск по никнейму..." class="modal-input">
+    <div id="users-dir-list" style="display:flex; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+    <button class="pill-btn" onclick="closeModal('users-dir-modal')">Закрыть</button>
+  </div>
+</div>
+
+<!-- Поддержка -->
 <div class="modal-overlay" id="support-modal">
   <div class="modal-card">
     <h3 class="modal-title">🎧 Служба поддержки</h3>
@@ -268,7 +279,7 @@
   </div>
 </div>
 
-<!-- Сессии и Железо (Telegram-style) -->
+<!-- Сессии и Железо -->
 <div class="modal-overlay" id="sessions-modal">
   <div class="modal-card">
     <h3 class="modal-title">📱 Активные сеансы (Устройства)</h3>
@@ -325,9 +336,9 @@
   </div>
 </div>
 
-<!-- Админ Панель -->
+<!-- Админ Панель с фильтрами -->
 <div class="modal-overlay" id="admin-modal">
-  <div class="modal-card" style="max-width:500px;">
+  <div class="modal-card" style="max-width:520px;">
     <h3 class="modal-title">⚡ Панель управления</h3>
     <div class="admin-nav">
       <button class="admin-tab-btn active" id="tab-users-btn">👥 Юзеры</button>
@@ -336,10 +347,20 @@
       <button class="admin-tab-btn" id="tab-support-btn">🎧 Саппорт</button>
       <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
     </div>
+
+    <!-- Вкладка Юзеры с фильтрами -->
     <div id="admin-tab-users" style="display:flex; flex-direction:column; gap:10px;">
-      <input type="text" id="admin-search-input" placeholder="🔍 Поиск юзеров..." class="modal-input">
-      <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto;"></div>
+      <div class="filter-nav">
+        <button class="filter-tab-btn active" onclick="setAdminUserFilter('all')">Все</button>
+        <button class="filter-tab-btn" onclick="setAdminUserFilter('online')">Онлайн</button>
+        <button class="filter-tab-btn" onclick="setAdminUserFilter('offline')">Офлайн</button>
+        <button class="filter-tab-btn" onclick="setAdminUserFilter('admins')">Админы</button>
+        <button class="filter-tab-btn" onclick="setAdminUserFilter('banned')">Баны</button>
+      </div>
+      <input type="text" id="admin-search-input" placeholder="🔍 Поиск юзеров по нику..." class="modal-input">
+      <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
     </div>
+
     <div id="admin-tab-groups" style="display:none; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;"></div>
     <div id="admin-tab-bans" style="display:none; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;"></div>
     <div id="admin-tab-support" style="display:none; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;"></div>
@@ -348,7 +369,7 @@
   </div>
 </div>
 
-<!-- Настройка прав администратора -->
+<!-- Модалка Настройки Прав -->
 <div class="modal-overlay" id="grant-modal">
   <div class="modal-card">
     <h3 class="modal-title" id="grant-user-title">Права администратора</h3>
@@ -411,7 +432,7 @@
 
 <div id="emoji-picker">
   <span class="e-emoji" data-e="👍">👍</span>
-  <span class="e-emoji" data-e="❤️️">❤️</span>
+  <span class="e-emoji" data-e="❤️">❤️</span>
   <span class="e-emoji" data-e="😂">😂</span>
   <span class="e-emoji" data-e="🔥">🔥</span>
   <span class="e-emoji" data-e="😮">😮</span>
@@ -426,6 +447,7 @@ let isSuperAdmin = false, isAdmin = false, myAdminPerms = {};
 let activeChatId = "general", activeWs = null, activeChatList = [];
 let selectedMsg = null, replyingTo = null, editingMsgId = null;
 let targetGrantUser = null, targetBanUser = null, targetMuteUser = null;
+let currentAdminFilter = "all";
 let isSelectionMode = false, selectedMsgIds = new Set();
 let mediaRecorder = null, audioChunks = [], isRecording = false, isLocked = false, isPaused = false;
 let startY = 0, recTimerInt = null, recSeconds = 0;
@@ -549,7 +571,7 @@ async function loginUser(nickname, password, isAuto = false) {
       document.getElementById('my-nick').innerHTML = `@${currentUser}${crown}`;
 
       if (data.revoked_by) {
-        showToast(`⚠️ @${data.revoked_by} забрал у вас права администратора.`, 'warning');
+        showToast(`⚠ @${data.revoked_by} забрал у вас права администратора.`, 'warning');
       } else if (data.admin_notice) {
         showToast(`🎉 @${data.granted_by || 'Главный'} предоставил вам права администратора!`, 'success');
       }
@@ -601,6 +623,66 @@ function logout() {
   localStorage.removeItem('utopia_saved_user');
   localStorage.removeItem('utopia_session_token');
   location.reload();
+}
+
+// ── КАТАЛОГ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ (ДЛЯ ВСЕХ) ──
+
+document.getElementById('open-users-dir').onclick = () => {
+  openModal('users-dir-modal');
+  loadUsersDirectory();
+};
+
+async function loadUsersDirectory(query = '') {
+  const c = document.getElementById('users-dir-list');
+  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка пользователей...</div>';
+  try {
+    const res = await fetch(`${BACKEND_URL}/users/all?query=${encodeURIComponent(query)}`);
+    const users = await res.json();
+    c.innerHTML = '';
+    if (!users.length) {
+      c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Пользователей не найдено</div>';
+      return;
+    }
+    users.forEach(u => {
+      const crownBadge = u.is_superadmin ? ' 👑' : (u.is_admin ? ' ⚡' : '');
+      const statusText = u.is_online ? '🟢 Онлайн' : `⚪ Был в сети: ${u.last_login ? u.last_login.slice(0, 16) : 'недавно'}`;
+      const row = document.createElement('div');
+      row.className = 'user-row';
+      row.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:700;">@${u.nickname}${crownBadge}</span>
+          <span class="user-status ${u.is_online ? 'online' : 'offline'}">${statusText}</span>
+        </div>
+        <div style="font-size:11px; color:var(--text-dim);">Зарегистрирован: ${u.created_at ? u.created_at.slice(0, 10) : '—'}</div>
+        <div style="display:flex; gap:6px; margin-top:2px;">
+          <button class="pill-btn" style="padding:4px 10px; font-size:11px; flex:none;" onclick="inviteUserQuick('${u.nickname}')">+ В чат</button>
+        </div>
+      `;
+      c.appendChild(row);
+    });
+  } catch (e) {
+    c.innerHTML = '<div style="text-align:center;color:var(--danger);">Ошибка загрузки списка</div>';
+  }
+}
+
+document.getElementById('dir-search-input').oninput = e => loadUsersDirectory(e.target.value.trim());
+
+async function inviteUserQuick(nick) {
+  if (activeChatId === 'general') {
+    showToast('В общем чате уже состоят все пользователи!', 'info');
+    return;
+  }
+  const res = await fetch(`${BACKEND_URL}/invite`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      chat_id: activeChatId,
+      chat_name: document.getElementById('chat-title').innerText,
+      from_user: currentUser,
+      to_user: nick
+    })
+  });
+  const d = await res.json();
+  showToast(d.msg, d.status === 'ok' ? 'success' : 'error');
 }
 
 // ── УСТРОЙСТВА И СЕССИИ (TELEGRAM-STYLE) ──
@@ -665,7 +747,7 @@ document.getElementById('terminate-all-btn').onclick = () => {
   });
 };
 
-// ── ПОДДЕРЖКА (SUPPORT SYSTEM) ──
+// ── ПОДДЕРЖКА ──
 
 document.getElementById('open-support').onclick = () => {
   openModal('support-modal');
@@ -747,7 +829,7 @@ async function checkStorageStatus() {
     } else if (d.level === 'warning') {
       banner.style.display = 'flex';
       banner.className = 'warn-warning';
-      banner.innerText = `⚠️ Память сервера заполнена на 60%+. Скоро начнётся автоочистка старых файлов.`;
+      banner.innerText = `⚠ Память сервера заполнена на 60%+. Скоро начнётся автоочистка старых файлов.`;
     } else if (d.level === 'critical') {
       banner.style.display = 'flex';
       banner.className = 'warn-critical';
@@ -964,7 +1046,7 @@ fileInput.onchange = async () => {
   finally { attachBtn.innerText = '📎'; fileInput.value = ''; }
 };
 
-// ── ГОЛОСОВЫЕ СООБЩЕНИЯ ──
+// ── ГОЛОСОВЫЕ ──
 
 async function startRecordingSession() {
   try {
@@ -1147,7 +1229,7 @@ document.getElementById('delete-selected-btn').onclick = () => {
   });
 };
 
-// ── АДМИН-ПАНЕЛЬ ──
+// ── АДМИН-ПАНЕЛЬ С ФИЛЬТРАМИ ──
 
 document.getElementById('open-settings').onclick = () => openModal('settings-modal');
 document.getElementById('admin-panel-btn').onclick = () => {
@@ -1174,10 +1256,18 @@ document.getElementById('tab-bans-btn').onclick = () => showAdminTab('bans');
 document.getElementById('tab-support-btn').onclick = () => showAdminTab('support');
 document.getElementById('tab-requests-btn').onclick = () => showAdminTab('requests');
 
+function setAdminUserFilter(ftype) {
+  currentAdminFilter = ftype;
+  document.querySelectorAll('.filter-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.innerText.toLowerCase() === ftype || (ftype === 'all' && btn.innerText === 'Все'));
+  });
+  loadAdminUsers(document.getElementById('admin-search-input').value.trim());
+}
+
 async function loadAdminUsers(query = '') {
   const list = document.getElementById('admin-users-list');
   list.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
-  const res = await fetch(`${BACKEND_URL}/admin/users?admin=${currentUser}&query=${encodeURIComponent(query)}`);
+  const res = await fetch(`${BACKEND_URL}/admin/users?admin=${currentUser}&query=${encodeURIComponent(query)}&filter_type=${currentAdminFilter}`);
   const data = await res.json();
   list.innerHTML = '';
 
@@ -1191,7 +1281,9 @@ async function loadAdminUsers(query = '') {
         <span style="font-weight:700;">@${u.nickname}${crownBadge}</span>
         <span class="user-status ${u.is_online ? 'online' : 'offline'}">${u.is_online ? 'Онлайн' : 'Офлайн'}</span>
       </div>
-      <div style="font-size:11px; color:var(--text-dim);">Визит: ${u.last_login || '—'}</div>
+      <div style="font-size:11px; color:var(--text-dim);">
+        Визит: ${u.last_login ? u.last_login.slice(0, 16) : '—'} · Рег: ${u.created_at ? u.created_at.slice(0, 10) : '—'}
+      </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
         <button class="pill-btn" style="padding:4px 8px; font-size:11px; flex:none;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">Права</button>
         ${!isSuperTarget ? `
@@ -1323,7 +1415,6 @@ async function loadAdminRequests() {
   c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
   c.innerHTML = '';
 
-  // Запросы на саппорт (только суперадмину)
   if (isSuperAdmin) {
     const sres = await fetch(`${BACKEND_URL}/support/perm-requests?admin=${currentUser}`);
     const sreqs = await sres.json();
@@ -1344,7 +1435,6 @@ async function loadAdminRequests() {
     }
   }
 
-  // Заявки на удаление аккаунтов (7 дней)
   const res = await fetch(`${BACKEND_URL}/admin/delete-requests?admin=${currentUser}`);
   const reqs = await res.json();
   if (reqs.length) {
@@ -1417,7 +1507,6 @@ function handleDeleteUser(nick) {
   });
 }
 
-// Баны и Мьюты
 function openBanModal(nick) {
   targetBanUser = nick;
   document.getElementById('ban-modal-target').innerText = `@${nick}`;
@@ -1529,7 +1618,8 @@ document.getElementById('save-perms-btn').onclick = async () => {
   loadAdminUsers();
 };
 
-// Прочие вызовы
+// ── ОБЩИЕ ВЫЗОВЫ ──
+
 document.getElementById('open-monitoring').onclick = async () => {
   try {
     const res = await fetch(`${BACKEND_URL}/server/monitoring`);
