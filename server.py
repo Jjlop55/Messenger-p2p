@@ -30,7 +30,7 @@ conn = sqlite3.connect("messenger.db", check_same_thread=False)
 cursor = conn.cursor()
 
 # ═══════════════════════════════════════════════════════════
-#  ТАБЛИЦЫ
+#  ТАБЛИЦЫ БАЗЫ ДАННЫХ
 # ═══════════════════════════════════════════════════════════
 
 cursor.execute("""
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS support_perm_requests (
 
 conn.commit()
 
-# Автоматическое обновление структуры
+# Безопасное добавление колонок
 _safe_alters = [
     ("users", "last_pwd_change", "TIMESTAMP"),
     ("users", "is_superadmin", "INTEGER DEFAULT 0"),
@@ -241,7 +241,6 @@ def hash_pwd(plain: str) -> str:
     return hashlib.sha256(plain.encode('utf-8')).hexdigest()
 
 def verify_pwd(plain: str, stored_hash_or_plain: str) -> bool:
-    # Поддержка старых открытых паролей и новых SHA-256 хэшей
     if stored_hash_or_plain == plain:
         return True
     return stored_hash_or_plain == hash_pwd(plain)
@@ -441,7 +440,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # ═══════════════════════════════════════════════════════════
-#  CRON И ПИНГ
+#  CRON И ПИНГ ЭНДПОИНТЫ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/ping")
@@ -450,7 +449,7 @@ def ping_service():
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════
-#  АВТОРИЗАЦИЯ И ПОЛЬЗОВАТЕЛИ
+#  АВТОРИЗАЦИЯ И ХЭШИРОВАНИЕ ПАРОЛЕЙ
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/auth")
@@ -490,7 +489,7 @@ async def auth_user(data: AuthData, request: Request):
         if not verify_pwd(data.password, stored_pwd):
             return {"status": "error", "msg": "Неверный пароль для этого аккаунта!"}
 
-        # Миграция старых паролей в SHA-256 хэш
+        # Миграция открытого пароля в SHA-256
         hashed = hash_pwd(data.password)
         cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, data.nickname))
 
@@ -575,7 +574,7 @@ def change_password(data: PwdChangeData):
     conn.commit()
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
-# Полный каталог пользователей для ВСЕХ пользователей
+# Каталог всех пользователей БД (доступен всем клиентам)
 @app.get("/users/all")
 def get_all_users_directory(query: str = ""):
     periodic_cleanup()
@@ -598,7 +597,7 @@ def get_all_users_directory(query: str = ""):
     return users
 
 # ═══════════════════════════════════════════════════════════
-#  УПРАВЛЕНИЕ СЕССИЯМИ ПОЛЬЗОВАТЕЛЕЙ
+#  УПРАВЛЕНИЕ СЕССИЯМИ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/sessions/my/{nickname}")
@@ -1041,7 +1040,7 @@ async def decide_support_perm(data: SupportPermDecision):
     return {"status": "ok", "msg": msg}
 
 # ═══════════════════════════════════════════════════════════
-#  АДМИНИСТРАТИВНЫЕ МЕТОДЫ
+#  АДМИНИСТРАТИВНЫЕ МЕТОДЫ С ФИЛЬТРАМИ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/admin/users")
