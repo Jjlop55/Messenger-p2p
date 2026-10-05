@@ -18,7 +18,7 @@
       display: flex;
     }
 
-    /* Экран входа / регистрации */
+    /* Экран авторизации */
     #auth-screen {
       position: fixed;
       inset: 0;
@@ -71,7 +71,7 @@
       height: 100vh;
     }
 
-    /* Боковая панель (чаты) */
+    /* Список чатов */
     aside {
       width: 280px;
       background: #111726;
@@ -131,7 +131,7 @@
       color: #fff;
     }
 
-    /* Область сообщений */
+    /* Окно переписки */
     main {
       flex: 1;
       display: flex;
@@ -218,7 +218,7 @@
 </head>
 <body>
 
-  <!-- Авторизация / Регистрация -->
+  <!-- Окно входа / регистрации -->
   <div id="auth-screen">
     <div class="auth-card">
       <h2>Utopia Messenger</h2>
@@ -230,7 +230,7 @@
     </div>
   </div>
 
-  <!-- Главный экран -->
+  <!-- Главное окно приложения -->
   <div id="app">
     <aside>
       <div class="user-profile">
@@ -257,8 +257,7 @@
   </div>
 
   <script>
-    // СЮДА ВСТАВЬ ССЫЛКУ ИЗ GOOGLE COLAB (без слэша на конце!)
-    const BACKEND_URL = "https://example.free.pinggy.link";
+    const BACKEND_URL = "https://utopia-messenger-api.onrender.com";
 
     let currentUser = null;
     let activeChatId = "general";
@@ -290,7 +289,7 @@
           document.getElementById('app').style.display = 'flex';
           document.getElementById('profile-nick').innerText = '@' + currentUser;
 
-          // Регистрация в общем чате
+          // Автоматическая регистрация общего чата
           await fetch(`${BACKEND_URL}/chats`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -303,11 +302,11 @@
           errBox.innerText = data.msg;
         }
       } catch (e) {
-        errBox.innerText = 'Ошибка соединения с сервером! Проверь запущен ли блокнот в Colab.';
+        errBox.innerText = 'Сервер просыпается... Подождите около 30 секунд и нажмите ещё раз.';
       }
     });
 
-    // Загрузка комнат
+    // Получение списка чатов
     async function loadChats() {
       try {
         const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
@@ -327,7 +326,7 @@
       }
     }
 
-    // Переключение чата и подключение сокета
+    // Переключение чата
     async function switchChat(chatId, chatName) {
       activeChatId = chatId;
       document.getElementById('current-chat-title').innerText = chatName;
@@ -378,7 +377,7 @@
       box.scrollTop = box.scrollHeight;
     }
 
-    // Отправка сообщений
+    // Отправка сообщения
     function sendMsg() {
       const input = document.getElementById('msg-input');
       const text = input.value.trim();
