@@ -206,7 +206,6 @@ CREATE TABLE IF NOT EXISTS support_perm_requests (
 
 conn.commit()
 
-# Безопасное добавление колонок
 _safe_alters = [
     ("users", "last_pwd_change", "TIMESTAMP"),
     ("users", "is_superadmin", "INTEGER DEFAULT 0"),
@@ -240,10 +239,10 @@ def now_str() -> str:
 def hash_pwd(plain: str) -> str:
     return hashlib.sha256(plain.encode('utf-8')).hexdigest()
 
-def verify_pwd(plain: str, stored_hash_or_plain: str) -> bool:
-    if stored_hash_or_plain == plain:
+def verify_pwd(plain: str, stored: str) -> bool:
+    if stored == plain:
         return True
-    return stored_hash_or_plain == hash_pwd(plain)
+    return stored == hash_pwd(plain)
 
 def periodic_cleanup():
     ns = now_str()
@@ -378,7 +377,7 @@ class SupportPermDecision(BaseModel):
     action: str
 
 # ═══════════════════════════════════════════════════════════
-#  CONNECTION MANAGER
+#  CONNECTION MANAGER (С ПОДДЕРЖКОЙ СИГНАЛОВ ЗВОНКОВ)
 # ═══════════════════════════════════════════════════════════
 
 class ConnectionManager:
@@ -440,7 +439,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # ═══════════════════════════════════════════════════════════
-#  CRON И ПИНГ ЭНДПОИНТЫ
+#  CRON И ПИНГ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/ping")
@@ -449,7 +448,7 @@ def ping_service():
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════
-#  АВТОРИЗАЦИЯ И ХЭШИРОВАНИЕ ПАРОЛЕЙ
+#  АВТОРИЗАЦИЯ И ПОЛЬЗОВАТЕЛИ
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/auth")
@@ -458,7 +457,6 @@ async def auth_user(data: AuthData, request: Request):
     ns = now_str()
     ip = data.ip_address or (request.client.host if request.client else "127.0.0.1")
 
-    # Проверка бана
     cursor.execute(
         "SELECT reason, banned_by, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)",
         (data.nickname,)
@@ -489,7 +487,6 @@ async def auth_user(data: AuthData, request: Request):
         if not verify_pwd(data.password, stored_pwd):
             return {"status": "error", "msg": "Неверный пароль для этого аккаунта!"}
 
-        # Миграция открытого пароля в SHA-256
         hashed = hash_pwd(data.password)
         cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, data.nickname))
 
@@ -574,7 +571,6 @@ def change_password(data: PwdChangeData):
     conn.commit()
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
-# Каталог всех пользователей БД (доступен всем клиентам)
 @app.get("/users/all")
 def get_all_users_directory(query: str = ""):
     periodic_cleanup()
@@ -597,7 +593,7 @@ def get_all_users_directory(query: str = ""):
     return users
 
 # ═══════════════════════════════════════════════════════════
-#  УПРАВЛЕНИЕ СЕССИЯМИ
+#  СЕССИИ, ЧАТЫ, МЕДИА И САППОРТ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/sessions/my/{nickname}")
@@ -664,10 +660,6 @@ async def terminate_other_sessions(data: TerminateAllSessionsData):
     conn.commit()
     await manager.kick_user(data.nickname, "Все другие сессии были завершены с основного устройства.")
     return {"status": "ok", "msg": "Все другие сессии завершены."}
-
-# ═══════════════════════════════════════════════════════════
-#  ЧАТЫ И ПРИГЛАШЕНИЯ
-# ═══════════════════════════════════════════════════════════
 
 @app.get("/chats/{nickname}")
 def get_user_chats(nickname: str):
@@ -738,10 +730,6 @@ def respond_invite(data: InviteAction):
     conn.commit()
     return {"status": "ok"}
 
-# ═══════════════════════════════════════════════════════════
-#  ФАЙЛЫ И СООБЩЕНИЯ
-# ═══════════════════════════════════════════════════════════
-
 @app.post("/upload")
 async def upload_file(request: Request, filename: str = "file.bin"):
     periodic_cleanup()
@@ -794,10 +782,6 @@ def get_notifications(nickname: str):
     conn.commit()
     return [{"id": r[0], "text": r[1]} for r in rows]
 
-# ═══════════════════════════════════════════════════════════
-#  МОНИТОРИНГ
-# ═══════════════════════════════════════════════════════════
-
 def _calc_storage():
     ub = sum(os.path.getsize(os.path.join(root, f))
              for root, _, files in os.walk(UPLOAD_DIR) for f in files)
@@ -847,10 +831,6 @@ def check_mute(nickname: str):
     exp, reason = row
     rem = max(0, int((datetime.strptime(exp, '%Y-%m-%d %H:%M:%S') - datetime.utcnow()).total_seconds() / 60))
     return {"is_muted": True, "expires_at": exp, "reason": reason, "remaining_minutes": rem}
-
-# ═══════════════════════════════════════════════════════════
-#  ПОДДЕРЖКА
-# ═══════════════════════════════════════════════════════════
 
 def _is_support_staff(nick: str) -> bool:
     if is_super(nick):
@@ -1040,7 +1020,7 @@ async def decide_support_perm(data: SupportPermDecision):
     return {"status": "ok", "msg": msg}
 
 # ═══════════════════════════════════════════════════════════
-#  АДМИНИСТРАТИВНЫЕ МЕТОДЫ С ФИЛЬТРАМИ
+#  АДМИНИСТРАТИВНЫЕ МЕТОДЫ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/admin/users")
@@ -1298,7 +1278,7 @@ def decide_delete_request(data: ReqDecision):
         return {"status": "ok", "msg": "Заявка отклонена."}
 
 # ═══════════════════════════════════════════════════════════
-#  WEBSOCKET
+#  WEBSOCKET ENDPOINT (С ПЕРЕДАЧЕЙ СИГНАЛОВ ЗВОНКОВ WebRTC)
 # ═══════════════════════════════════════════════════════════
 
 @app.websocket("/ws/{chat_id}/{nickname}")
@@ -1319,6 +1299,15 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     )
                     conn.commit()
                 await websocket.send_json({"action": "pong"})
+
+            # Сигналы WebRTC звонков
+            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy"):
+                target = data.get("target")
+                if target:
+                    if manager.is_online(target):
+                        await manager.send_to_user(target, data)
+                    else:
+                        await websocket.send_json({"action": "call_offline", "target": target})
 
             elif action == "send":
                 sender = data.get("sender")
