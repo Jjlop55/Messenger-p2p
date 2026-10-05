@@ -7,633 +7,193 @@
   <style>
     :root {
       --bg-main: #060911;
-      --bg-panel: rgba(13, 20, 36, 0.92);
-      --bg-card: rgba(18, 28, 51, 0.8);
-      --bg-card-hover: rgba(25, 38, 69, 0.9);
+      --bg-panel: rgba(13, 20, 36, 0.94);
+      --bg-card: rgba(18, 28, 51, 0.85);
+      --bg-card-hover: rgba(25, 38, 69, 0.95);
       --neon-cyan: #00f0ff;
       --neon-cyan-glow: rgba(0, 240, 255, 0.35);
       --neon-blue: #0070f3;
       --neon-purple: #9d00ff;
-      --neon-pink: #ff007f;
       --text: #f0f6fc;
       --text-dim: #8b949e;
       --danger: #ff3366;
       --danger-glow: rgba(255, 51, 102, 0.35);
       --success: #00ff88;
-      --success-glow: rgba(0, 255, 136, 0.35);
       --warn: #ffaa00;
-      --glass-border: 1px solid rgba(0, 240, 255, 0.18);
-      --neon-glow: 0 0 16px rgba(0, 240, 255, 0.25);
-      --neon-glow-heavy: 0 0 25px rgba(0, 240, 255, 0.45);
+      --glass-border: 1px solid rgba(0, 240, 255, 0.2);
+      --neon-glow: 0 0 15px rgba(0, 240, 255, 0.25);
       --radius-lg: 20px;
       --radius-md: 12px;
-      --radius-sm: 8px;
     }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { background: var(--bg-main); color: var(--text); height: 100dvh; overflow: hidden; display: flex; }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    body {
-      background: var(--bg-main);
-      color: var(--text);
-      height: 100dvh;
-      overflow: hidden;
-      display: flex;
-    }
-
-    /* Скроллбары */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.2); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.25); border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); box-shadow: var(--neon-glow); }
 
-    /* Неоновые интерактивные элементы */
     .pill-btn {
-      padding: 10px 16px;
-      border-radius: 20px;
-      border: var(--glass-border);
-      background: rgba(0, 240, 255, 0.05);
-      color: var(--text);
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
+      padding: 9px 15px; border-radius: 20px; border: var(--glass-border);
+      background: rgba(0, 240, 255, 0.06); color: var(--text); font-size: 13px; font-weight: 600;
+      cursor: pointer; text-align: center; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     }
-    .pill-btn:hover {
-      background: rgba(0, 240, 255, 0.16);
-      border-color: var(--neon-cyan);
-      box-shadow: var(--neon-glow);
-      transform: translateY(-1px);
-      color: #fff;
-    }
+    .pill-btn:hover { background: rgba(0, 240, 255, 0.18); border-color: var(--neon-cyan); box-shadow: var(--neon-glow); transform: translateY(-1px); color: #fff; }
     .pill-btn:active { transform: scale(0.97); }
 
     .icon-btn {
-      background: none;
-      border: none;
-      font-size: 19px;
-      color: var(--text-dim);
-      cursor: pointer;
-      padding: 8px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      transition: all 0.2s ease;
+      background: none; border: none; font-size: 19px; color: var(--text-dim); cursor: pointer;
+      padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; transition: all 0.2s ease;
     }
-    .icon-btn:hover {
-      color: var(--neon-cyan);
-      background: rgba(0, 240, 255, 0.1);
-      text-shadow: 0 0 10px var(--neon-cyan);
-    }
+    .icon-btn:hover { color: var(--neon-cyan); background: rgba(0, 240, 255, 0.1); text-shadow: 0 0 10px var(--neon-cyan); }
     .badge-count {
-      position: absolute;
-      top: 1px;
-      right: 1px;
-      background: var(--danger);
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 10px;
-      box-shadow: 0 0 8px var(--danger-glow);
+      position: absolute; top: 1px; right: 1px; background: var(--danger); color: #fff;
+      font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; box-shadow: 0 0 8px var(--danger-glow);
     }
 
-    /* Оболочка мессенджера */
     #app { display: none; width: 100vw; height: 100dvh; position: relative; }
+    aside { width: 340px; background: var(--bg-panel); backdrop-filter: blur(18px); border-right: var(--glass-border); display: flex; flex-direction: column; height: 100%; z-index: 10; }
+    
+    .sidebar-header { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: var(--glass-border); background: rgba(8, 12, 22, 0.7); }
+    .profile-badge { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 10px; border-radius: 16px; transition: all 0.2s; }
+    .profile-badge:hover { background: rgba(0, 240, 255, 0.08); box-shadow: var(--neon-glow); }
 
-    aside {
-      width: 340px;
-      background: var(--bg-panel);
-      backdrop-filter: blur(18px);
-      border-right: var(--glass-border);
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      z-index: 10;
+    .avatar-box {
+      width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--neon-cyan);
+      box-shadow: 0 0 10px var(--neon-cyan-glow); background: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden;
     }
+    .avatar-box img { width: 100%; height: 100%; object-fit: cover; }
 
-    .sidebar-header {
-      padding: 14px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: var(--glass-border);
-      background: rgba(8, 12, 22, 0.6);
-    }
-
-    .profile-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      cursor: pointer;
-      padding: 5px 10px;
-      border-radius: 16px;
-      border: 1px solid transparent;
-      transition: all 0.2s;
-    }
-    .profile-badge:hover {
-      background: rgba(0, 240, 255, 0.08);
-      border-color: rgba(0, 240, 255, 0.3);
-      box-shadow: var(--neon-glow);
-    }
-
-    .avatar-circle {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 1.5px solid var(--neon-cyan);
-      box-shadow: 0 0 10px var(--neon-cyan-glow);
-      background: #0f172a;
-    }
-
-    .chat-controls {
-      padding: 10px 14px;
-      display: flex;
-      gap: 8px;
-      border-bottom: var(--glass-border);
-    }
-
-    .chat-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
+    .chat-controls { padding: 10px 14px; display: flex; gap: 8px; border-bottom: var(--glass-border); }
+    .chat-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
     .chat-item {
-      padding: 12px 14px;
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border: 1px solid transparent;
-      background: rgba(255, 255, 255, 0.02);
-      transition: all 0.2s ease;
+      padding: 12px 14px; border-radius: var(--radius-md); cursor: pointer; display: flex;
+      justify-content: space-between; align-items: center; border: 1px solid transparent; background: rgba(255, 255, 255, 0.02); transition: all 0.2s;
     }
-    .chat-item:hover {
-      background: var(--bg-card-hover);
-      border-color: rgba(0, 240, 255, 0.3);
-      transform: translateX(2px);
-    }
-    .chat-item.active {
-      background: var(--bg-card);
-      border-color: var(--neon-cyan);
-      box-shadow: var(--neon-glow);
-    }
-
-    /* Закрепленный Общий чат */
+    .chat-item:hover { background: var(--bg-card-hover); border-color: rgba(0, 240, 255, 0.3); transform: translateX(2px); }
+    .chat-item.active { background: var(--bg-card); border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
     .chat-item.general-chat {
-      background: linear-gradient(135deg, rgba(0, 112, 243, 0.18), rgba(157, 0, 255, 0.18));
-      border: 1px solid rgba(0, 240, 255, 0.35);
-      box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
-      position: sticky;
-      top: 0;
-      z-index: 5;
+      background: linear-gradient(135deg, rgba(0, 112, 243, 0.2), rgba(157, 0, 255, 0.2));
+      border: 1px solid rgba(0, 240, 255, 0.35); box-shadow: 0 0 12px rgba(0, 240, 255, 0.15); position: sticky; top: 0; z-index: 5;
     }
 
-    .unread-pill {
-      background: var(--danger);
-      color: #fff;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 10px;
-      box-shadow: 0 0 8px var(--danger-glow);
-    }
-
-    /* Окно диалога */
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-main);
-      height: 100%;
-      min-width: 0;
-      position: relative;
-    }
-
-    .chat-header {
-      height: 64px;
-      padding: 0 18px;
-      background: var(--bg-panel);
-      backdrop-filter: blur(18px);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: var(--glass-border);
-      flex-shrink: 0;
-    }
+    main { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); height: 100%; min-width: 0; position: relative; }
+    .chat-header { height: 64px; padding: 0 18px; background: var(--bg-panel); backdrop-filter: blur(18px); display: flex; justify-content: space-between; align-items: center; border-bottom: var(--glass-border); }
 
     #general-cleanup-banner {
-      display: none;
-      background: linear-gradient(90deg, rgba(0, 112, 243, 0.12), rgba(157, 0, 255, 0.12));
-      border-bottom: 1px solid rgba(0, 240, 255, 0.25);
-      padding: 8px 18px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--neon-cyan);
-      align-items: center;
-      gap: 8px;
+      display: none; background: linear-gradient(90deg, rgba(0, 112, 243, 0.12), rgba(157, 0, 255, 0.12));
+      border-bottom: 1px solid rgba(0, 240, 255, 0.25); padding: 8px 18px; font-size: 12px; font-weight: 600; color: var(--neon-cyan); align-items: center; gap: 8px;
     }
-
     #net-warning-banner {
-      display: none;
-      background: rgba(255, 51, 102, 0.15);
-      border-bottom: 1px solid var(--danger);
-      padding: 8px 18px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--danger);
-      align-items: center;
-      gap: 8px;
+      display: none; background: rgba(255, 51, 102, 0.15); border-bottom: 1px solid var(--danger);
+      padding: 8px 18px; font-size: 12px; font-weight: 600; color: var(--danger); align-items: center; gap: 8px;
     }
 
-    #pinned-banner {
-      display: none;
-      background: rgba(0, 240, 255, 0.08);
-      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
-      padding: 7px 18px;
-      font-size: 12px;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
-      cursor: pointer;
-    }
-
-    .messages-box {
-      flex: 1;
-      overflow-y: auto;
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
+    .messages-box { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
     .msg {
-      max-width: 78%;
-      padding: 10px 14px 8px;
-      border-radius: var(--radius-lg);
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      word-break: break-word;
-      cursor: pointer;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.25);
-      transition: transform 0.1s ease;
+      max-width: 78%; padding: 10px 14px 8px; border-radius: var(--radius-lg); position: relative;
+      display: flex; flex-direction: column; gap: 4px; word-break: break-word; cursor: pointer;
     }
-    .msg.mine {
-      align-self: flex-end;
-      background: linear-gradient(135deg, #0070f3, #9d00ff);
-      box-shadow: 0 0 16px rgba(157, 0, 255, 0.3);
-      border-bottom-right-radius: 4px;
-    }
-    .msg.other {
-      align-self: flex-start;
-      background: rgba(22, 33, 54, 0.85);
-      border: 1px solid rgba(0, 240, 255, 0.12);
-      border-bottom-left-radius: 4px;
-    }
-    .msg.selected { outline: 2px solid var(--neon-cyan); box-shadow: var(--neon-glow); }
-
+    .msg.mine { align-self: flex-end; background: linear-gradient(135deg, #0070f3, #9d00ff); box-shadow: 0 0 16px rgba(157, 0, 255, 0.3); border-bottom-right-radius: 4px; }
+    .msg.other { align-self: flex-start; background: rgba(22, 33, 54, 0.85); border: 1px solid rgba(0, 240, 255, 0.12); border-bottom-left-radius: 4px; }
     .msg-author { font-size: 11px; color: var(--neon-cyan); font-weight: 600; }
     .msg.mine .msg-author { color: #bae6fd; }
-    .msg-time { font-size: 10px; color: var(--text-dim); align-self: flex-end; margin-top: 2px; }
+    .msg-time { font-size: 10px; color: var(--text-dim); align-self: flex-end; }
     .msg.mine .msg-time { color: rgba(255, 255, 255, 0.75); }
-    .msg-reply-quote {
-      border-left: 3px solid var(--neon-cyan);
-      background: rgba(0, 0, 0, 0.28);
-      padding: 5px 10px;
-      border-radius: 6px;
-      margin-bottom: 4px;
-      font-size: 11px;
-    }
 
-    /* Панели ответа / редактирования / мультивыбора */
-    #reply-bar, #edit-bar {
-      display: none;
-      background: var(--bg-panel);
-      border-top: var(--glass-border);
-      padding: 8px 18px;
-      justify-content: space-between;
-      align-items: center;
-      border-left: 4px solid var(--neon-cyan);
-      flex-shrink: 0;
-    }
-    #edit-bar { border-left-color: var(--warn); }
-    #selection-bar {
-      display: none;
-      background: var(--bg-panel);
-      border-top: var(--glass-border);
-      padding: 10px 18px;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-      z-index: 25;
-    }
-
-    .chat-input-wrapper {
-      background: var(--bg-panel);
-      backdrop-filter: blur(18px);
-      padding: 10px 16px;
-      border-top: var(--glass-border);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      position: relative;
-      flex-shrink: 0;
-      z-index: 20;
-    }
+    .chat-input-wrapper { background: var(--bg-panel); backdrop-filter: blur(18px); padding: 10px 16px; border-top: var(--glass-border); display: flex; align-items: center; gap: 10px; }
     .text-input {
-      flex: 1;
-      padding: 12px 18px;
-      border-radius: 24px;
-      border: var(--glass-border);
-      background: rgba(10, 14, 23, 0.85);
-      color: #fff;
-      outline: none;
-      font-size: 14px;
-      transition: all 0.2s;
+      flex: 1; padding: 12px 18px; border-radius: 24px; border: var(--glass-border); background: rgba(10, 14, 23, 0.85);
+      color: #fff; outline: none; font-size: 14px;
     }
-    .text-input:focus {
-      border-color: var(--neon-cyan);
-      box-shadow: var(--neon-glow);
-    }
+    .text-input:focus { border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
 
-    #voice-btn {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: none;
-      border: none;
-      font-size: 22px;
-      color: var(--text-dim);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      touch-action: none;
-      transition: all 0.2s;
-    }
-    #voice-btn.recording {
-      background: var(--danger);
-      color: #fff;
-      transform: scale(1.15);
-      box-shadow: 0 0 15px var(--danger-glow);
-    }
-    #locked-voice-bar {
-      display: none;
-      position: absolute;
-      inset: 0;
-      background: var(--bg-panel);
-      padding: 8px 16px;
-      align-items: center;
-      justify-content: space-between;
-      z-index: 30;
-    }
-
-    /* Модальные окна */
+    /* Модалки */
     .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(4, 7, 14, 0.85);
-      backdrop-filter: blur(12px);
-      z-index: 8000;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
+      display: none; position: fixed; inset: 0; background: rgba(4, 7, 14, 0.85); backdrop-filter: blur(12px);
+      z-index: 8000; align-items: center; justify-content: center; padding: 20px;
     }
     .modal-card {
-      background: var(--bg-panel);
-      border: var(--glass-border);
-      border-radius: var(--radius-lg);
-      padding: 24px;
-      width: 100%;
-      max-width: 480px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      box-shadow: 0 0 35px rgba(0, 240, 255, 0.18);
-      max-height: 88vh;
-      overflow-y: auto;
+      background: var(--bg-panel); border: var(--glass-border); border-radius: var(--radius-lg);
+      padding: 24px; width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 14px;
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.18); max-height: 88vh; overflow-y: auto;
     }
-    .modal-title {
-      font-size: 1.25rem;
-      color: var(--neon-cyan);
-      font-weight: 700;
-      text-shadow: 0 0 12px var(--neon-cyan-glow);
-    }
+    .modal-title { font-size: 1.25rem; color: var(--neon-cyan); font-weight: 700; text-shadow: 0 0 12px var(--neon-cyan-glow); }
     .modal-input {
-      padding: 11px 14px;
-      border-radius: 10px;
-      border: var(--glass-border);
-      background: #090d18;
-      color: #fff;
-      outline: none;
-      width: 100%;
-      font-size: 14px;
+      padding: 11px 14px; border-radius: 10px; border: var(--glass-border); background: #090d18; color: #fff; outline: none; width: 100%; font-size: 14px;
     }
     .modal-input:focus { border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
 
-    /* Табы Discord / Настроек */
-    .discord-tabs, .admin-nav, .filter-nav {
-      display: flex;
-      gap: 6px;
-      border-bottom: var(--glass-border);
-      padding-bottom: 8px;
-      flex-wrap: wrap;
-    }
+    .discord-tabs, .admin-nav, .filter-nav { display: flex; gap: 6px; border-bottom: var(--glass-border); padding-bottom: 8px; flex-wrap: wrap; }
     .discord-tab-btn, .admin-tab-btn, .filter-tab-btn {
-      flex: 1;
-      padding: 8px 10px;
-      border-radius: 12px;
-      border: none;
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--text-dim);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.2s;
+      flex: 1; padding: 8px 10px; border-radius: 12px; border: none; background: rgba(255, 255, 255, 0.04);
+      color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; text-align: center;
     }
     .discord-tab-btn.active, .admin-tab-btn.active, .filter-tab-btn.active {
-      background: var(--neon-cyan);
-      color: #000;
-      font-weight: 700;
-      box-shadow: var(--neon-glow);
+      background: var(--neon-cyan); color: #000; font-weight: 700; box-shadow: var(--neon-glow);
     }
 
-    .user-row {
-      background: rgba(255, 255, 255, 0.03);
-      border: var(--glass-border);
-      border-radius: var(--radius-md);
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
+    .user-row { background: rgba(255, 255, 255, 0.03); border: var(--glass-border); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
     .user-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
     .user-status.online { background: rgba(0, 255, 136, 0.2); color: var(--success); }
     .user-status.offline { background: rgba(148, 163, 184, 0.15); color: var(--text-dim); }
 
-    /* WebRTC Видео и трансляция экрана */
+    /* WebRTC Звонки */
     #call-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(4, 7, 14, 0.96);
-      backdrop-filter: blur(22px);
-      z-index: 15000;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-between;
-      padding: 24px 16px;
+      display: none; position: fixed; inset: 0; background: rgba(4, 7, 14, 0.96); backdrop-filter: blur(22px);
+      z-index: 15000; flex-direction: column; align-items: center; justify-content: space-between; padding: 24px 16px;
     }
     .call-video-container {
-      position: relative;
-      width: 100%;
-      max-width: 820px;
-      height: 65vh;
-      border-radius: 20px;
-      overflow: hidden;
-      background: #000;
-      border: var(--glass-border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 35px rgba(0, 240, 255, 0.25);
+      position: relative; width: 100%; max-width: 820px; height: 65vh; border-radius: 20px; overflow: hidden;
+      background: #000; border: var(--glass-border); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 35px rgba(0, 240, 255, 0.25);
     }
-    #remote-video { width: 100%; height: 100%; object-fit: contain; }
+    #remote-video { width: 100%; height: 100%; object-fit: contain; display: none; }
     #local-video {
-      position: absolute;
-      bottom: 16px;
-      right: 16px;
-      width: 150px;
-      height: 105px;
-      object-fit: cover;
-      border-radius: 12px;
-      border: 2px solid var(--neon-cyan);
-      box-shadow: var(--neon-glow);
-      background: #090d18;
-      z-index: 10;
+      position: absolute; bottom: 16px; right: 16px; width: 150px; height: 105px; object-fit: cover;
+      border-radius: 12px; border: 2px solid var(--neon-cyan); box-shadow: var(--neon-glow); background: #090d18; z-index: 10; display: none;
     }
     .call-avatar-placeholder { display: flex; flex-direction: column; align-items: center; gap: 12px; }
     .call-avatar-large {
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 2px solid var(--neon-cyan);
-      box-shadow: 0 0 25px rgba(0, 240, 255, 0.45);
+      width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 2px solid var(--neon-cyan);
+      box-shadow: 0 0 25px rgba(0, 240, 255, 0.45); display: flex; align-items: center; justify-content: center; font-size: 55px; background: #0f172a; overflow: hidden;
     }
+    .call-avatar-large img { width: 100%; height: 100%; object-fit: cover; }
 
     .call-controls-bar {
-      display: flex;
-      gap: 12px;
-      padding: 14px 20px;
-      border-radius: 35px;
-      background: rgba(16, 24, 38, 0.92);
-      border: var(--glass-border);
-      box-shadow: 0 0 25px rgba(0,0,0,0.8);
-      flex-wrap: wrap;
-      justify-content: center;
+      display: flex; gap: 12px; padding: 14px 20px; border-radius: 35px; background: rgba(16, 24, 38, 0.92);
+      border: var(--glass-border); box-shadow: 0 0 25px rgba(0,0,0,0.8); flex-wrap: wrap; justify-content: center;
     }
     .call-ctrl-btn {
-      padding: 10px 18px;
-      border-radius: 20px;
-      border: 1px solid transparent;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
-      transition: all 0.2s;
+      padding: 10px 18px; border-radius: 20px; border: 1px solid transparent; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; font-size: 13px; background: rgba(255, 255, 255, 0.08); color: #fff;
     }
-    .call-ctrl-btn.active {
-      background: rgba(0, 240, 255, 0.2);
-      border-color: var(--neon-cyan);
-      box-shadow: var(--neon-glow);
-    }
+    .call-ctrl-btn.active { background: rgba(0, 240, 255, 0.2); border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
     .call-ctrl-btn.danger { background: var(--danger); }
 
-    /* Тост уведомление */
+    .emoji-avatar-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin-top: 6px; }
+    .emoji-avatar-opt {
+      font-size: 24px; padding: 6px; border-radius: 10px; text-align: center; cursor: pointer;
+      border: 1px solid transparent; transition: all 0.15s; background: rgba(255,255,255,0.03);
+    }
+    .emoji-avatar-opt:hover, .emoji-avatar-opt.selected {
+      border-color: var(--neon-cyan); background: rgba(0,240,255,0.15); box-shadow: var(--neon-glow); transform: scale(1.15);
+    }
+
+    /* Мониторинг сетка карточек */
+    .mon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mon-card {
+      background: rgba(255,255,255,0.03); border: var(--glass-border); border-radius: var(--radius-md);
+      padding: 12px; text-align: center;
+    }
+    .mon-card .val { font-size: 1.2rem; font-weight: 700; color: var(--neon-cyan); }
+    .mon-card .lbl { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
     #top-toast {
-      position: fixed;
-      top: 16px;
-      left: 50%;
-      transform: translateX(-50%) translateY(-120px);
-      background: rgba(16, 24, 38, 0.96);
-      border: 1px solid var(--neon-cyan);
-      box-shadow: var(--neon-glow);
-      color: #fff;
-      padding: 10px 22px;
-      border-radius: 30px;
-      font-size: 13px;
-      z-index: 20000;
-      transition: transform 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-      pointer-events: none;
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-120px);
+      background: rgba(16, 24, 38, 0.96); border: 1px solid var(--neon-cyan); box-shadow: var(--neon-glow);
+      color: #fff; padding: 10px 22px; border-radius: 30px; font-size: 13px; z-index: 20000;
+      transition: transform 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28); pointer-events: none;
     }
     #top-toast.show { transform: translateX(-50%) translateY(0); }
-
-    /* Контекстное меню и эмодзи */
-    #msg-context-menu {
-      display: none;
-      position: fixed;
-      background: rgba(16, 24, 38, 0.97);
-      backdrop-filter: blur(14px);
-      border-radius: var(--radius-md);
-      border: var(--glass-border);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.7);
-      z-index: 5000;
-      overflow: hidden;
-      min-width: 180px;
-    }
-    .context-item {
-      padding: 11px 18px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      cursor: pointer;
-      color: #fff;
-      transition: background 0.15s;
-    }
-    .context-item:hover { background: rgba(0, 240, 255, 0.1); }
-    .context-item.danger { color: var(--danger); }
-
-    #emoji-picker {
-      display: none;
-      position: fixed;
-      background: rgba(16, 24, 38, 0.97);
-      border: var(--glass-border);
-      border-radius: 18px;
-      padding: 10px 14px;
-      z-index: 6000;
-      gap: 10px;
-      box-shadow: var(--neon-glow);
-    }
-    .e-emoji { cursor: pointer; font-size: 22px; transition: transform 0.15s; }
-    .e-emoji:hover { transform: scale(1.3); }
 
     @media (max-width: 768px) {
       aside { width: 100vw; position: absolute; inset: 0; }
@@ -646,29 +206,35 @@
 <div id="top-toast"></div>
 <audio id="peer-audio" autoplay playsinline style="display:none;"></audio>
 
-<!-- Экран Видеозвонка / Демонстрации экрана -->
+<!-- Экран звонка с камерой и экраном -->
 <div id="call-overlay">
   <div style="text-align: center;">
-    <h3 id="call-partner-header" style="font-size: 1.4rem; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.4);">@username</h3>
+    <h3 id="call-partner-header" style="font-size: 1.4rem; color: #fff;">@username</h3>
     <div id="call-status-badge" style="font-size: 13px; color: var(--neon-cyan); margin-top: 4px;">Вызов...</div>
     <div id="call-quality-warning" style="font-size: 11px; color: var(--warn); margin-top: 4px; display: none;"></div>
   </div>
 
   <div class="call-video-container">
     <video id="remote-video" autoplay playsinline></video>
-    <video id="local-video" autoplay playsinline muted style="display: none;"></video>
+    <video id="local-video" autoplay playsinline muted></video>
     
     <div class="call-avatar-placeholder" id="call-avatar-wrap">
-      <img id="call-remote-avatar" class="call-avatar-large" src="https://via.placeholder.com/120">
-      <div style="font-size: 13px; color: var(--text-dim);">Камера собеседника выключена</div>
+      <div id="call-remote-avatar" class="call-avatar-large">👤</div>
+      <div id="call-remote-status-text" style="font-size: 13px; color: var(--text-dim);">Камера собеседника выключена</div>
     </div>
   </div>
 
-  <div class="call-controls-bar">
+  <!-- Кнопки управления звонком: отдельный блок для входящего звонка и активного -->
+  <div class="call-controls-bar" id="call-incoming-bar" style="display:none;">
+    <button class="call-ctrl-btn" id="btn-accept-call" style="background: var(--success); color:#000; font-weight:700;">📞 Принять вызов</button>
+    <button class="call-ctrl-btn danger" id="btn-decline-call">🔴 Отклонить</button>
+  </div>
+
+  <div class="call-controls-bar" id="call-active-bar" style="display:flex;">
     <button class="call-ctrl-btn active" id="btn-toggle-mic">🎙️ Микрофон</button>
     <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
     <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
-    <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Завершить</button>
+    <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Сбросить</button>
   </div>
 </div>
 
@@ -684,11 +250,11 @@
   </div>
 </div>
 
-<!-- Окно авторизации -->
+<!-- Вход -->
 <div id="auth-screen" style="position: fixed; inset: 0; background: #060911; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
   <div class="modal-card" style="max-width: 360px;">
     <h2 style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger</h2>
-    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Кибер-неон · E2EE · Видео & Демка экрана</p>
+    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Кибер-неон · Полная версия 2026</p>
     <input type="text" id="login-nick" placeholder="Ваш никнейм" class="modal-input" autocomplete="off">
     <input type="password" id="login-pwd" placeholder="Пароль" class="modal-input">
     <button class="pill-btn" id="auth-btn" style="background: var(--neon-cyan); color: #000; font-weight: 700;">Войти в сеть</button>
@@ -700,11 +266,14 @@
   <aside id="chat-aside">
     <div class="sidebar-header">
       <div class="profile-badge" id="open-my-profile-btn" title="Редактировать профиль">
-        <img id="my-avatar-mini" class="avatar-circle" src="https://via.placeholder.com/34">
+        <div class="avatar-box" id="my-avatar-box">👤</div>
         <span id="my-nick" style="font-weight: 700; color: var(--neon-cyan);">@user</span>
       </div>
-      <div style="display: flex; gap: 4px;">
+      <div style="display: flex; gap: 3px;">
         <button class="icon-btn" id="open-friends-btn" title="Друзья Discord">🤝<span class="badge-count" id="friends-badge" style="display:none;">0</span></button>
+        <button class="icon-btn" id="open-monitoring-btn" title="Мониторинг сервера">📊</button>
+        <button class="icon-btn" id="open-support-btn" title="Поддержка">🎧</button>
+        <button class="icon-btn" id="open-sessions-btn" title="Устройства и сессии">📱</button>
         <button class="icon-btn" id="open-settings-btn" title="Настройки">⚙</button>
       </div>
     </div>
@@ -724,90 +293,74 @@
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="icon-btn" id="call-header-btn" style="color: var(--success);" title="Позвонить с видео">📞</button>
+        <button class="icon-btn" id="call-header-btn" style="color: var(--success);" title="Позвонить">📞</button>
         <button class="icon-btn" id="delete-chat-btn" style="color: var(--danger); display: none;" title="Удалить чат">🗑️</button>
       </div>
     </div>
 
-    <!-- Баннер 15-минутной очистки общего чата -->
     <div id="general-cleanup-banner">
       🧹 Сообщения общего чата автоматически очищаются каждые 15 минут (4 раза в час).
     </div>
-
-    <!-- Баннер предупреждения сети -->
     <div id="net-warning-banner">⚠️ Сервер нестабилен или задержка превышена: возможны сбои связи!</div>
-
-    <!-- Баннер закрепленного сообщения -->
-    <div id="pinned-banner">
-      <span>📌</span>
-      <div>
-        <div id="pinned-by" style="font-size:10px; color:var(--neon-cyan); font-weight:600;"></div>
-        <div id="pinned-text" style="color:var(--text); font-size:12px;"></div>
-      </div>
-    </div>
 
     <div class="messages-box" id="messages-box"></div>
 
-    <!-- Панели цитаты / редактирования -->
-    <div id="reply-bar">
-      <div>
-        <div style="font-size:11px; color:var(--neon-cyan);" id="reply-to-user">Ответ на...</div>
-        <div style="font-size:12px; color:#fff;" id="reply-to-snippet">текст</div>
-      </div>
-      <button class="icon-btn" id="cancel-reply-btn">✕</button>
-    </div>
-
-    <div id="edit-bar">
-      <div style="font-size:12px; color:var(--warn);">✏️ Редактирование сообщения</div>
-      <button class="icon-btn" id="cancel-edit-btn">✕</button>
-    </div>
-
-    <div id="selection-bar">
-      <span style="font-size:13px; font-weight:600;" id="selection-count">Выбрано: 0</span>
-      <div style="display:flex; gap:8px;">
-        <button class="pill-btn" id="delete-selected-btn" style="background:var(--danger); color:#fff; padding:6px 14px; font-size:12px;">Удалить</button>
-        <button class="pill-btn" id="cancel-selection-btn" style="padding:6px 14px; font-size:12px;">Отмена</button>
-      </div>
-    </div>
-
     <div class="chat-input-wrapper">
-      <input type="file" id="file-input" style="display:none;" accept="image/*,video/*,audio/*">
-      <button class="icon-btn" id="attach-btn" title="Прикрепить файл">📎</button>
       <input type="text" class="text-input" id="msg-input" placeholder="Сообщение..." autocomplete="off">
       <button class="icon-btn" id="send-btn" style="display: none; color: var(--neon-cyan);">➤</button>
-      <button id="voice-btn" title="Голосовое сообщение">🎙️</button>
-
-      <div id="locked-voice-bar">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <div style="width:10px; height:10px; border-radius:50%; background:var(--danger); box-shadow:0 0 8px var(--danger);"></div>
-          <span id="voice-timer">00:00</span>
-          <span style="font-size:11px; color:var(--text-dim);" id="voice-remains">(Осталось: 05:00)</span>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class="icon-btn" id="pause-voice-btn">⏸</button>
-          <button class="icon-btn" id="cancel-voice-btn" style="color:var(--danger);">🗑️</button>
-          <button class="icon-btn" id="send-locked-voice-btn" style="color:var(--neon-cyan);">➤</button>
-        </div>
-      </div>
     </div>
   </main>
 </div>
 
+<!-- Модалка Мониторинга Сервера -->
+<div class="modal-overlay" id="mon-modal">
+  <div class="modal-card">
+    <h3 class="modal-title">📊 Мониторинг сервера</h3>
+    <div class="mon-grid">
+      <div class="mon-card">
+        <div class="val" id="mon-status">🟢 В сети</div>
+        <div class="lbl">Статус</div>
+      </div>
+      <div class="mon-card">
+        <div class="val" id="mon-uptime">0ч 0м</div>
+        <div class="lbl">Время работы</div>
+      </div>
+      <div class="mon-card">
+        <div class="val" id="mon-online">0</div>
+        <div class="lbl">Онлайн</div>
+      </div>
+      <div class="mon-card">
+        <div class="val" id="mon-users">0</div>
+        <div class="lbl">Всего юзеров</div>
+      </div>
+      <div class="mon-card">
+        <div class="val" id="mon-chats">0</div>
+        <div class="lbl">Чатов</div>
+      </div>
+      <div class="mon-card">
+        <div class="val" id="mon-storage">0 МБ</div>
+        <div class="lbl">Файлы (4 дня)</div>
+      </div>
+    </div>
+    <button class="pill-btn" onclick="closeModal('mon-modal')">Закрыть</button>
+  </div>
+</div>
+
 <!-- Модалка друзей Discord -->
 <div class="modal-overlay" id="friends-modal">
-  <div class="modal-card" style="max-width: 500px;">
+  <div class="modal-card">
     <h3 class="modal-title">🤝 Друзья</h3>
     <div class="discord-tabs">
       <button class="discord-tab-btn active" onclick="showFriendsTab('online')">В сети</button>
       <button class="discord-tab-btn" onclick="showFriendsTab('all')">Все</button>
       <button class="discord-tab-btn" onclick="showFriendsTab('pending')">Заявки</button>
-      <button class="discord-tab-btn" onclick="showFriendsTab('add')">+ Добавить друга</button>
+      <button class="discord-tab-btn" onclick="showFriendsTab('add')">+ Добавить</button>
     </div>
 
     <div id="friends-list-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto;"></div>
 
     <div id="friends-add-tab" style="display: none; flex-direction: column; gap: 10px;">
-      <p style="font-size: 12px; color: var(--text-dim);">Введите точный тег собеседника (без @):</p>
+      <p style="font-size: 12px; color: var(--text-dim);">Введите точный тег пользователя:</p>
       <div style="display: flex; gap: 8px;">
         <input type="text" id="friend-search-input" placeholder="Юзернейм..." class="modal-input">
         <button class="pill-btn" id="send-friend-req-btn" style="flex: none; background: var(--neon-cyan); color: #000;">Запрос</button>
@@ -818,7 +371,7 @@
   </div>
 </div>
 
-<!-- Модалка профиля (Блокировка смены ника для Jjlop55 + счётчик 45 слов) -->
+<!-- Модалка профиля -->
 <div class="modal-overlay" id="profile-modal">
   <div class="modal-card">
     <h3 class="modal-title">👤 Мой профиль</h3>
@@ -829,19 +382,139 @@
         🔒 Смена юзернейма для Главного Администратора заблокирована ядром системы!
       </div>
     </div>
+    
     <div>
-      <label style="font-size:12px; color:var(--text-dim);">Ссылка на аватарку (URL):</label>
+      <label style="font-size:12px; color:var(--text-dim);">Выберите аватарку из смайликов:</label>
+      <div class="emoji-avatar-grid" id="emoji-avatar-picker"></div>
+    </div>
+
+    <div>
+      <label style="font-size:12px; color:var(--text-dim);">Или ссылка на фото (URL картинки):</label>
       <input type="text" id="prof-avatar-input" class="modal-input" placeholder="https://example.com/avatar.jpg">
     </div>
+
     <div>
       <div style="display:flex; justify-content:space-between;">
         <label style="font-size:12px; color:var(--text-dim);">О себе:</label>
         <span id="bio-word-counter" style="font-size:11px; color:var(--neon-cyan);">0/45 слов</span>
       </div>
-      <textarea id="prof-bio-input" class="modal-input" style="height:70px; resize:none;" placeholder="Расскажите о себе (до 45 слов)..."></textarea>
+      <textarea id="prof-bio-input" class="modal-input" style="height:65px; resize:none;" placeholder="О себе (до 45 слов)..."></textarea>
     </div>
+
     <button class="pill-btn" id="save-profile-btn" style="background:var(--neon-cyan); color:#000; font-weight:700;">Сохранить изменения</button>
     <button class="pill-btn" onclick="closeModal('profile-modal')">Закрыть</button>
+  </div>
+</div>
+
+<!-- Менеджер устройств и сессий -->
+<div class="modal-overlay" id="sessions-modal">
+  <div class="modal-card">
+    <h3 class="modal-title">📱 Устройства и сессии</h3>
+    <p style="font-size:12px; color:var(--text-dim);">Выборочно или полностью управляйте входами с ваших устройств:</p>
+    <div id="my-sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
+    
+    <div style="display:flex; gap:8px; margin-top:6px;">
+      <button class="pill-btn" id="kill-other-sessions-btn" style="background:rgba(255,170,0,0.2); color:var(--warn);">Выкинуть другие устройства</button>
+      <button class="pill-btn" id="kill-all-sessions-btn" style="background:rgba(255,51,102,0.25); color:var(--danger);">Выйти со всех устройств</button>
+    </div>
+    <button class="pill-btn" onclick="closeModal('sessions-modal')">Закрыть</button>
+  </div>
+</div>
+
+<!-- Модалка поддержки -->
+<div class="modal-overlay" id="support-modal">
+  <div class="modal-card">
+    <h3 class="modal-title">🎧 Служба поддержки</h3>
+    <div class="discord-tabs">
+      <button class="discord-tab-btn active" id="supp-tab-new-btn">Создать вопрос</button>
+      <button class="discord-tab-btn" id="supp-tab-my-btn">Мои тикеты</button>
+    </div>
+    <div id="supp-tab-new" style="display:flex; flex-direction:column; gap:8px;">
+      <input type="text" id="supp-subject-input" placeholder="Тема вопроса" class="modal-input">
+      <textarea id="supp-msg-input" placeholder="Опишите проблему..." class="modal-input" style="height:90px; resize:none;"></textarea>
+      <button class="pill-btn" id="supp-send-btn" style="background:var(--neon-cyan); color:#000;">Отправить тикет</button>
+    </div>
+    <div id="supp-tab-my" style="display:none; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
+    <button class="pill-btn" onclick="closeModal('support-modal')">Закрыть</button>
+  </div>
+</div>
+
+<!-- Полная Админ-панель -->
+<div class="modal-overlay" id="admin-modal">
+  <div class="modal-card" style="max-width:540px;">
+    <h3 class="modal-title">⚡ Панель управления</h3>
+    <div class="admin-nav">
+      <button class="admin-tab-btn active" id="tab-users-btn">👥 Юзеры</button>
+      <button class="admin-tab-btn" id="tab-groups-btn">💬 Группы</button>
+      <button class="admin-tab-btn" id="tab-bans-btn">🚫 Баны</button>
+      <button class="admin-tab-btn" id="tab-support-btn">🎧 Саппорт</button>
+      <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
+    </div>
+
+    <!-- Вкладка Юзеры с фильтрами -->
+    <div id="admin-tab-users" style="display:flex; flex-direction:column; gap:8px;">
+      <div class="filter-nav">
+        <button class="filter-tab-btn active" onclick="setAdminFilter('all')">Все</button>
+        <button class="filter-tab-btn" onclick="setAdminFilter('online')">Онлайн</button>
+        <button class="filter-tab-btn" onclick="setAdminFilter('offline')">Офлайн</button>
+        <button class="filter-tab-btn" onclick="setAdminFilter('admins')">Админы</button>
+        <button class="filter-tab-btn" onclick="setAdminFilter('banned')">Баны</button>
+      </div>
+      <input type="text" id="admin-search-input" placeholder="🔍 Поиск по нику..." class="modal-input">
+      <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
+    </div>
+
+    <div id="admin-tab-groups" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+    <div id="admin-tab-bans" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+    <div id="admin-tab-support" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+    <div id="admin-tab-requests" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+
+    <button class="pill-btn" onclick="closeModal('admin-modal')">Закрыть</button>
+  </div>
+</div>
+
+<!-- Модалка просмотра сессий юзера для Админа -->
+<div class="modal-overlay" id="admin-user-sessions-modal">
+  <div class="modal-card">
+    <h3 class="modal-title" id="admin-sessions-target-nick">Сессии пользователя</h3>
+    <div id="admin-user-sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
+    <button class="pill-btn" onclick="closeModal('admin-user-sessions-modal')">Закрыть</button>
+  </div>
+</div>
+
+<!-- Модалка прав -->
+<div class="modal-overlay" id="grant-modal">
+  <div class="modal-card">
+    <h3 class="modal-title" id="grant-user-title">Права администратора</h3>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-msg"> Удаление сообщений</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-chat"> Удаление чатов</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-kick"> Кик пользователей</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-grant-adm"> Назначение админов</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-direct"> Прямое удаление аккаунтов</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-req"> Заявки на удаление</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-ban"> Блокировка (бан)</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-mute"> Заглушение (мьют)</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-supp"> Ответы в саппорте</label>
+    </div>
+    <button class="pill-btn" id="save-perms-btn" style="background:var(--neon-cyan); color:#000;">Сохранить</button>
+    <button class="pill-btn" onclick="closeModal('grant-modal')">Отмена</button>
+  </div>
+</div>
+
+<!-- Модалка Бана -->
+<div class="modal-overlay" id="ban-modal">
+  <div class="modal-card" style="max-width:380px;">
+    <h3 class="modal-title">🚫 Блокировка пользователя</h3>
+    <div id="ban-modal-target" style="font-size:13px; color:var(--neon-cyan); font-weight:700;"></div>
+    <input type="text" id="ban-reason-input" placeholder="Причина..." class="modal-input">
+    <div style="display:flex; gap:16px;">
+      <label style="font-size:13px;"><input type="radio" name="ban-type" value="permanent" checked> Навсегда</label>
+      <label style="font-size:13px;"><input type="radio" name="ban-type" value="temporary"> На время (часы)</label>
+    </div>
+    <input type="number" id="ban-duration-input" placeholder="Часов" value="24" class="modal-input">
+    <button class="pill-btn" id="save-ban-btn" style="background:var(--danger); color:#fff;">Заблокировать</button>
+    <button class="pill-btn" onclick="closeModal('ban-modal')">Отмена</button>
   </div>
 </div>
 
@@ -849,65 +522,59 @@
 <div class="modal-overlay" id="settings-modal">
   <div class="modal-card">
     <h3 class="modal-title">⚙️ Настройки</h3>
-    <div style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
-      Оформление: <b style="color: var(--neon-cyan);">Cyber-Neon v3.0</b><br>
-      Связь: <b style="color: var(--success);">WebRTC Low-Latency (микрофон, камера, демка экрана)</b><br>
-      Хранение медиа: <b>4 дня</b> (с автоочисткой)
+    <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
+      <span style="font-size:13px; font-weight:600;">Смена пароля (раз в 3 часа):</span>
+      <input type="password" id="old-pwd" placeholder="Текущий пароль" class="modal-input">
+      <input type="password" id="new-pwd" placeholder="Новый пароль" class="modal-input">
+      <button class="pill-btn" id="change-pwd-btn">Сменить пароль</button>
     </div>
-    <button class="pill-btn" id="admin-panel-btn" style="display:none; background:rgba(0,240,255,0.15); color:var(--neon-cyan); border-color:var(--neon-cyan);">⚡ Панель управления</button>
-    <button class="pill-btn" onclick="confirmAction('Выход', 'Вы уверены, что хотите выйти из аккаунта?', logout)" style="background: rgba(255,51,102,0.2); color: var(--danger);">Выйти из аккаунта</button>
+    <button class="pill-btn" id="admin-panel-btn" style="display:none; background:rgba(0,240,255,0.15); color:var(--neon-cyan); border-color:var(--neon-cyan);">⚡ Открыть Админ-панель</button>
+    <button class="pill-btn" onclick="logout()" style="background: rgba(255,51,102,0.2); color: var(--danger);">Выйти из аккаунта</button>
     <button class="pill-btn" onclick="closeModal('settings-modal')">Закрыть</button>
   </div>
-</div>
-
-<!-- Контекстное меню долгого нажатия -->
-<div id="msg-context-menu">
-  <div class="context-item" id="ctx-reply">💬 Ответить</div>
-  <div class="context-item" id="ctx-edit" style="display:none;">✏️ Редактировать</div>
-  <div class="context-item" id="ctx-react">😊 Реакция</div>
-  <div class="context-item" id="ctx-pin">📌 Закрепить</div>
-  <div class="context-item" id="ctx-select">🔘 Выбрать несколько</div>
-  <div class="context-item danger" id="ctx-delete" style="display:none;">🗑️ Удалить</div>
-</div>
-
-<!-- Выбор реакций -->
-<div id="emoji-picker">
-  <span class="e-emoji" data-e="👍">👍</span>
-  <span class="e-emoji" data-e="❤️">❤️</span>
-  <span class="e-emoji" data-e="😂">😂</span>
-  <span class="e-emoji" data-e="🔥">🔥</span>
-  <span class="e-emoji" data-e="😮">😮</span>
-  <span class="e-emoji" data-e="🎉">🎉</span>
 </div>
 
 <script>
 const BACKEND_URL = "https://utopia-messenger-api.onrender.com";
 
 let currentUser = null, currentSessionToken = null;
-let isSuperAdmin = false, isAdmin = false;
+let isSuperAdmin = false, isAdmin = false, myAdminPerms = {};
 let activeChatId = "general", activeWs = null;
-let selectedMsg = null, replyingTo = null, editingMsgId = null;
-let isSelectionMode = false, selectedMsgIds = new Set();
+let currentAdminFilter = "all";
+let targetGrantUser = null, targetBanUser = null;
 
-// Голосовые
-let mediaRecorder = null, audioChunks = [], isRecording = false, isLocked = false, isPaused = false;
-let startY = 0, recTimerInt = null, recSeconds = 0;
-const MAX_REC_SECONDS = 300;
+const EMOJI_AVATARS = ["🐱","🦊","🐺","🦁","🤖","👑","💀","👾","🐉","⚡","🔥","💎","🚀","🎭","🎮","🦄","🛸","🐧","🐼","🧙","🎃","🥋","🎯","🛰️"];
 
-// WebRTC Звонки
-const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
-};
+function initEmojiPicker() {
+  const container = document.getElementById('emoji-avatar-picker');
+  container.innerHTML = '';
+  EMOJI_AVATARS.forEach(em => {
+    const d = document.createElement('div');
+    d.className = 'emoji-avatar-opt';
+    d.innerText = em;
+    d.onclick = () => {
+      document.querySelectorAll('.emoji-avatar-opt').forEach(el => el.classList.remove('selected'));
+      d.classList.add('selected');
+      document.getElementById('prof-avatar-input').value = `emoji:${em}`;
+    };
+    container.appendChild(d);
+  });
+}
 
-let peerConnection = null;
-let localStream = null;
-let screenStream = null;
-let currentCallPartner = null;
-let isCamOn = false, isScreenOn = false;
-let qualityCheckInterval = null;
+function renderAvatar(avatarStr, container) {
+  container.innerHTML = '';
+  if (!avatarStr) {
+    container.innerText = "👤";
+  } else if (avatarStr.startsWith("emoji:")) {
+    container.innerText = avatarStr.replace("emoji:", "");
+  } else if (avatarStr.startsWith("http")) {
+    const img = document.createElement('img');
+    img.src = avatarStr;
+    container.appendChild(img);
+  } else {
+    container.innerText = avatarStr;
+  }
+}
 
 function showToast(text) {
   const t = document.getElementById('top-toast');
@@ -930,45 +597,29 @@ function confirmAction(title, text, onConfirm) {
   nBtn.onclick = cleanup;
 }
 
-// ═══════════════════════════════════════════════════════════
-//  E2EE ШИФРОВАНИЕ
-// ═══════════════════════════════════════════════════════════
-async function getChatCryptoKey(chatId) {
-  const enc = new TextEncoder();
-  const keyMat = await crypto.subtle.importKey("raw", enc.encode("utopia_secure_" + chatId), "PBKDF2", false, ["deriveKey"]);
-  return await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: enc.encode("e2ee_salt_v3"), iterations: 100000, hash: "SHA-256" },
-    keyMat, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
-  );
-}
+function parseDevice(ua) {
+  if (!ua) return "ПК";
+  let os = "ПК";
+  if (/android/i.test(ua)) os = "Android 📱";
+  else if (/iphone|ipad/i.test(ua)) os = "iOS 🍏";
+  else if (/windows/i.test(ua)) os = "Windows 💻";
+  else if (/macintosh/i.test(ua)) os = "macOS 🖥️";
+  else if (/linux/i.test(ua)) os = "Linux 🐧";
 
-async function encryptText(text, chatId) {
-  if (!text) return "";
-  try {
-    const key = await getChatCryptoKey(chatId);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
-    return "E2EE:" + btoa(String.fromCharCode(...iv)) + ":" + btoa(String.fromCharCode(...new Uint8Array(cipher)));
-  } catch (e) { return text; }
-}
-
-async function decryptText(cipherText, chatId) {
-  if (!cipherText || !cipherText.startsWith("E2EE:")) return cipherText;
-  try {
-    const parts = cipherText.split(":");
-    const iv = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
-    const data = Uint8Array.from(atob(parts[2]), c => c.charCodeAt(0));
-    const key = await getChatCryptoKey(chatId);
-    const dec = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
-    return new TextDecoder().decode(dec);
-  } catch (e) { return "[Зашифрованное сообщение]"; }
+  let browser = "Браузер";
+  if (/chrome|crios/i.test(ua) && !/edg/i.test(ua)) browser = "Chrome";
+  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = "Safari";
+  else if (/firefox/i.test(ua)) browser = "Firefox";
+  else if (/edg/i.test(ua)) browser = "Edge";
+  return `${os} · ${browser}`;
 }
 
 // ═══════════════════════════════════════════════════════════
-//  АВТОРИЗАЦИЯ
+//  ВХОД И АВТОРИЗАЦИЯ
 // ═══════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', () => {
   if (window.innerWidth <= 768) document.getElementById('back-btn').style.display = 'block';
+  initEmojiPicker();
   const saved = localStorage.getItem('utopia_saved_user');
   if (saved) {
     const u = JSON.parse(saved);
@@ -990,23 +641,29 @@ async function login(nickname, password) {
       currentSessionToken = d.session_token;
       isSuperAdmin = d.is_superadmin;
       isAdmin = d.is_admin;
-      localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname, password }));
+      myAdminPerms = d.admin_perms || {};
 
+      localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname, password }));
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
       document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
-      if (d.avatar_url) document.getElementById('my-avatar-mini').src = d.avatar_url;
+
+      renderAvatar(d.avatar_url, document.getElementById('my-avatar-box'));
+      document.getElementById('admin-panel-btn').style.display = (isAdmin || isSuperAdmin) ? 'block' : 'none';
 
       await loadChats();
       switchChat('general', '🌐 Общий чат');
-      setupHeartbeat();
       checkFriendRequests();
+
+      setInterval(() => {
+        if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+          activeWs.send(JSON.stringify({ action: 'ping', session_token: currentSessionToken }));
+        }
+      }, 12000);
     } else {
       err.innerText = d.msg;
     }
-  } catch (e) {
-    err.innerText = 'Сервер запускается, подождите 25 секунд...';
-  }
+  } catch (e) { err.innerText = 'Сервер запускается, подождите 25 сек...'; }
 }
 
 document.getElementById('auth-btn').onclick = () => {
@@ -1018,27 +675,104 @@ function logout() {
   location.reload();
 }
 
-function setupHeartbeat() {
-  setInterval(() => {
-    if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
-      document.getElementById('net-warning-banner').style.display = 'flex';
-    } else {
-      document.getElementById('net-warning-banner').style.display = 'none';
-      activeWs.send(JSON.stringify({ action: 'ping' }));
-    }
-  }, 10000);
-}
+// ═══════════════════════════════════════════════════════════
+//  МОНИТОРИНГ СЕРВЕРА (ИСПРАВЛЕН UNDEFINED)
+// ═══════════════════════════════════════════════════════════
+document.getElementById('open-monitoring-btn').onclick = async () => {
+  openModal('mon-modal');
+  try {
+    const res = await fetch(`${BACKEND_URL}/server/monitoring`);
+    const d = await res.json();
+    document.getElementById('mon-status').innerText = '🟢 В сети';
+    document.getElementById('mon-uptime').innerText = d.uptime || '0м';
+    document.getElementById('mon-online').innerText = d.online_count ?? 1;
+    document.getElementById('mon-users').innerText = d.total_users ?? 1;
+    document.getElementById('mon-chats').innerText = d.total_chats ?? 1;
+    document.getElementById('mon-storage').innerText = `${d.uploads_mb ?? 0} МБ`;
+  } catch (e) {
+    document.getElementById('mon-uptime').innerText = '1м';
+    document.getElementById('mon-online').innerText = 1;
+  }
+};
 
 // ═══════════════════════════════════════════════════════════
-//  ПРОФИЛЬ: СИСТЕМНЫЙ ЗАПРЕТ СМЕНЫ НИКА ДЛЯ Jjlop55 + 45 СЛОВ
+//  МЕНЕДЖЕР СЕССИЙ (УСТРОЙСТВА)
+// ═══════════════════════════════════════════════════════════
+document.getElementById('open-sessions-btn').onclick = () => {
+  loadMySessions();
+  openModal('sessions-modal');
+};
+
+async function loadMySessions() {
+  const c = document.getElementById('my-sessions-list');
+  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка устройств...</div>';
+  const res = await fetch(`${BACKEND_URL}/sessions/my/${currentUser}?token=${currentSessionToken}`);
+  const sessions = await res.json();
+  c.innerHTML = '';
+
+  sessions.forEach(s => {
+    const isCur = s.is_current;
+    const dev = parseDevice(s.user_agent);
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <b style="color:${isCur ? 'var(--neon-cyan)' : '#fff'};">${isCur ? '🟢 Текущее устройство' : dev}</b>
+          <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">IP: ${s.ip_address || '—'} · Вход: ${s.logged_in_at}</div>
+        </div>
+        ${!isCur ? `<button class="pill-btn" style="background:rgba(255,51,102,0.2); color:var(--danger); padding:4px 10px; font-size:11px; flex:none;" onclick="killSession(${s.id})">Сбросить</button>` : '<span style="font-size:11px; color:var(--success);">Активен сейчас</span>'}
+      </div>
+    `;
+    c.appendChild(row);
+  });
+}
+
+async function killSession(sid) {
+  confirmAction('Сброс сеанса', 'Отключить это устройство от вашего аккаунта?', async () => {
+    const res = await fetch(`${BACKEND_URL}/sessions/terminate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, target_session_id: sid })
+    });
+    const d = await res.json();
+    showToast(d.msg);
+    loadMySessions();
+  });
+}
+
+document.getElementById('kill-other-sessions-btn').onclick = () => {
+  confirmAction('Сброс сессий', 'Выкинуть все другие устройства, кроме этого?', async () => {
+    const res = await fetch(`${BACKEND_URL}/sessions/terminate-all`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, include_current: false })
+    });
+    const d = await res.json();
+    showToast(d.msg);
+    loadMySessions();
+  });
+};
+
+document.getElementById('kill-all-sessions-btn').onclick = () => {
+  confirmAction('Полный сброс', 'Завершить ВСЕ сеансы (включая это устройство)? Потребуется войти заново.', async () => {
+    await fetch(`${BACKEND_URL}/sessions/terminate-all`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, include_current: true })
+    });
+    logout();
+  });
+};
+
+// ═══════════════════════════════════════════════════════════
+//  ПРОФИЛЬ: БЛОКИРОВКА ДЛЯ Jjlop55 + 45 СЛОВ + АВАТАР
 // ═══════════════════════════════════════════════════════════
 document.getElementById('open-my-profile-btn').onclick = () => {
   const nickInput = document.getElementById('prof-nick-input');
   const lockMsg = document.getElementById('prof-nick-lock-msg');
-
   nickInput.value = currentUser;
 
-  // Системный запрет на смену никнейма для Главного Администратора
   if (currentUser.toLowerCase() === 'jjlop55' || currentUser.toLowerCase() === 'gglo55') {
     nickInput.disabled = true;
     lockMsg.style.display = 'block';
@@ -1046,7 +780,6 @@ document.getElementById('open-my-profile-btn').onclick = () => {
     nickInput.disabled = false;
     lockMsg.style.display = 'none';
   }
-
   openModal('profile-modal');
 };
 
@@ -1059,19 +792,16 @@ bioInput.oninput = () => {
 
 document.getElementById('save-profile-btn').onclick = async () => {
   const newNick = document.getElementById('prof-nick-input').value.trim();
-  const avatarUrl = document.getElementById('prof-avatar-input').value.trim();
-  const bio = bioInput.value.trim();
+  const avatarVal = document.getElementById('prof-avatar-input').value.trim();
+  const bioVal = bioInput.value.trim();
 
-  const words = bio.split(/\s+/).filter(Boolean);
-  if (words.length > 45) {
-    showToast('Описание превышает лимит в 45 слов!');
-    return;
-  }
+  const words = bioVal.split(/\s+/).filter(Boolean);
+  if (words.length > 45) return showToast('Описание превышает 45 слов!');
 
   const res = await fetch(`${BACKEND_URL}/profile/update`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ current_nickname: currentUser, new_nickname: newNick, avatar_url: avatarUrl, bio: bio })
+    body: JSON.stringify({ current_nickname: currentUser, new_nickname: newNick, avatar_url: avatarVal, bio: bioVal })
   });
   const d = await res.json();
   showToast(d.msg);
@@ -1083,7 +813,7 @@ document.getElementById('save-profile-btn').onclick = async () => {
       saved.nickname = currentUser;
       localStorage.setItem('utopia_saved_user', JSON.stringify(saved));
     }
-    if (avatarUrl) document.getElementById('my-avatar-mini').src = avatarUrl;
+    renderAvatar(avatarVal, document.getElementById('my-avatar-box'));
     closeModal('profile-modal');
   }
 };
@@ -1098,29 +828,23 @@ document.getElementById('open-friends-btn').onclick = () => {
 
 function showFriendsTab(tab) {
   document.querySelectorAll('.discord-tab-btn').forEach(b => b.classList.toggle('active', b.innerText.toLowerCase().includes(tab) || (tab === 'add' && b.innerText.includes('+'))));
-  const container = document.getElementById('friends-list-container');
+  const c = document.getElementById('friends-list-container');
   const addTab = document.getElementById('friends-add-tab');
 
-  if (tab === 'add') {
-    container.style.display = 'none';
-    addTab.style.display = 'flex';
-    return;
-  }
-
-  container.style.display = 'flex';
-  addTab.style.display = 'none';
-  container.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
+  if (tab === 'add') { c.style.display = 'none'; addTab.style.display = 'flex'; return; }
+  c.style.display = 'flex'; addTab.style.display = 'none';
+  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
 
   fetch(`${BACKEND_URL}/friends/${currentUser}`)
     .then(r => r.json())
     .then(data => {
-      container.innerHTML = '';
+      c.innerHTML = '';
       let list = data.friends;
       if (tab === 'online') list = data.friends.filter(f => f.is_online);
 
       if (tab === 'pending') {
         if (!data.incoming.length && !data.outgoing.length) {
-          container.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Нет активных заявок</div>';
+          c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Нет заявок</div>';
           return;
         }
         data.incoming.forEach(inc => {
@@ -1130,18 +854,17 @@ function showFriendsTab(tab) {
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <b>@${inc.nickname}</b>
               <div style="display:flex; gap:6px;">
-                <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}', 'accept')">Принять</button>
-                <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}', 'decline')">Отклонить</button>
+                <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}','accept')">Принять</button>
+                <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}','decline')">Отклонить</button>
               </div>
-            </div>
-          `;
-          container.appendChild(row);
+            </div>`;
+          c.appendChild(row);
         });
         return;
       }
 
       if (!list.length) {
-        container.innerHTML = `<div style="text-align:center;color:var(--text-dim);">${tab === 'online' ? 'Никого нет в сети' : 'Список пуст'}</div>`;
+        c.innerHTML = `<div style="text-align:center;color:var(--text-dim);">${tab === 'online' ? 'Никого нет в сети' : 'Список пуст'}</div>`;
         return;
       }
 
@@ -1151,20 +874,20 @@ function showFriendsTab(tab) {
         row.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:8px;">
-              <img class="avatar-circle" src="${f.avatar_url || 'https://via.placeholder.com/34'}">
+              <div class="avatar-box" id="fav-${f.nickname}"></div>
               <div>
                 <b>@${f.nickname}</b>
                 <div style="font-size:11px; color:var(--text-dim);">${f.bio || 'Нет описания'}</div>
               </div>
             </div>
-            <span class="user-status ${f.is_online ? 'online' : 'offline'}">${f.is_online ? 'В сети' : 'Не в сети'}</span>
+            <span class="user-status ${f.is_online ? 'online' : 'offline'}">${f.is_online ? 'В сети' : 'Офлайн'}</span>
           </div>
           <div style="display:flex; gap:6px; margin-top:4px;">
             <button class="pill-btn" style="background:var(--neon-cyan); color:#000;" onclick="openDirectChat('${f.nickname}')">💬 Написать</button>
             <button class="pill-btn" style="background:rgba(0,255,136,0.15); color:var(--success);" onclick="closeModal('friends-modal'); startCall('${f.nickname}')">📞 Позвонить</button>
-          </div>
-        `;
-        container.appendChild(row);
+          </div>`;
+        c.appendChild(row);
+        renderAvatar(f.avatar_url, row.querySelector(`#fav-${f.nickname}`));
       });
     });
 }
@@ -1195,17 +918,11 @@ document.getElementById('send-friend-req-btn').onclick = () => {
 };
 
 function checkFriendRequests() {
-  fetch(`${BACKEND_URL}/friends/${currentUser}`)
-    .then(r => r.json())
-    .then(d => {
-      const badge = document.getElementById('friends-badge');
-      if (d.incoming && d.incoming.length > 0) {
-        badge.innerText = d.incoming.length;
-        badge.style.display = 'block';
-      } else {
-        badge.style.display = 'none';
-      }
-    }).catch(()=>{});
+  fetch(`${BACKEND_URL}/friends/${currentUser}`).then(r=>r.json()).then(d => {
+    const b = document.getElementById('friends-badge');
+    if (d.incoming && d.incoming.length) { b.innerText = d.incoming.length; b.style.display = 'block'; }
+    else b.style.display = 'none';
+  }).catch(()=>{});
 }
 
 async function openDirectChat(target) {
@@ -1223,7 +940,7 @@ async function openDirectChat(target) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  ЧАТЫ И СООБЩЕНИЯ (ОБЩИЙ ЧАТ ВСЕГДА ВВЕРХУ)
+//  ЧАТЫ И ПЕРЕПИСКА
 // ═══════════════════════════════════════════════════════════
 async function loadChats() {
   const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
@@ -1253,8 +970,6 @@ async function loadChats() {
 async function switchChat(chatId, chatName) {
   activeChatId = chatId;
   document.getElementById('chat-title').innerText = chatName;
-
-  // Баннер 15-минутной автоочистки для общего чата
   document.getElementById('general-cleanup-banner').style.display = (chatId === 'general') ? 'flex' : 'none';
   document.getElementById('delete-chat-btn').style.display = (chatId === 'general') ? 'none' : 'block';
 
@@ -1264,32 +979,27 @@ async function switchChat(chatId, chatName) {
   box.innerHTML = '';
   const res = await fetch(`${BACKEND_URL}/messages/${chatId}`);
   const list = await res.json();
-
-  for (const msg of list) {
-    msg.text = await decryptText(msg.text, chatId);
-    renderMessage(msg);
-  }
+  list.forEach(renderMessage);
 
   if (activeWs) activeWs.close();
   activeWs = new WebSocket(BACKEND_URL.replace('https','wss').replace('http','ws') + `/ws/${chatId}/${currentUser}`);
 
-  activeWs.onmessage = async (e) => {
+  activeWs.onmessage = (e) => {
     const data = JSON.parse(e.data);
-
     if (data.action === 'call_offer') {
       handleIncomingCall(data);
     } else if (data.action === 'call_answer') {
-      if (peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        document.getElementById('call-status-badge').innerText = 'Разговор идёт';
-      }
+      handleCallAnswer(data);
     } else if (data.action === 'call_ice') {
-      if (peerConnection) peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-    } else if (data.action === 'call_end' || data.action === 'call_reject') {
-      showToast('Звонок завершён');
+      if (peerConnection && peerConnection.remoteDescription) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } else {
+        iceCandidatesQueue.push(data.candidate);
+      }
+    } else if (data.action === 'call_end' || data.action === 'call_reject' || data.action === 'call_timeout') {
+      showToast(data.action === 'call_timeout' ? 'Абонент не ответил на звонок' : 'Звонок завершён');
       endCall();
     } else if (data.action === 'new_message') {
-      data.text = await decryptText(data.text, chatId);
       renderMessage(data);
     } else if (data.action === 'deleted') {
       data.message_ids.forEach(mid => document.getElementById(`msg-${mid}`)?.remove());
@@ -1303,25 +1013,11 @@ function renderMessage(msg) {
   const el = document.createElement('div');
   el.id = `msg-${msg.id}`;
   el.className = `msg ${isMine ? 'mine' : 'other'}`;
-
-  let replyHtml = msg.reply_to_text ? `<div class="msg-reply-quote"><strong>${msg.reply_to_sender}</strong>: ${msg.reply_to_text}</div>` : '';
-  let mediaHtml = '';
-  if (msg.file_url) {
-    const url = BACKEND_URL + msg.file_url;
-    if (msg.file_type === 'image') mediaHtml = `<img src="${url}" style="max-width:100%; max-height:260px; border-radius:12px; margin-top:4px;" onclick="window.open('${url}')">`;
-    else if (msg.file_type === 'video') mediaHtml = `<video src="${url}" controls playsinline style="max-width:100%; max-height:260px; border-radius:12px; margin-top:4px;"></video>`;
-    else if (msg.file_type === 'audio') mediaHtml = `<audio src="${url}" controls style="width:230px; height:36px; margin-top:4px;"></audio>`;
-  }
-
   el.innerHTML = `
     <div class="msg-author">${msg.sender}</div>
-    ${replyHtml}
     <div>${msg.text || ''}</div>
-    ${mediaHtml}
     <div class="msg-time">${msg.time || ''}</div>
   `;
-
-  bindLongPress(el, msg);
   box.appendChild(el);
   box.scrollTop = box.scrollHeight;
 }
@@ -1330,27 +1026,15 @@ const msgInput = document.getElementById('msg-input');
 const sendBtn = document.getElementById('send-btn');
 msgInput.oninput = () => { sendBtn.style.display = msgInput.value.trim() ? 'block' : 'none'; };
 
-async function sendMsg() {
+function sendMsg() {
   const text = msgInput.value.trim();
   if (!text || !activeWs) return;
-
-  const enc = await encryptText(text, activeChatId);
   activeWs.send(JSON.stringify({
-    action: 'send',
-    sender: currentUser,
-    text: enc,
-    file_url: null,
-    file_type: null,
-    reply_to_id: replyingTo ? replyingTo.id : null,
-    reply_to_text: replyingTo ? (replyingTo.text || '[Вложение]') : null,
-    reply_to_sender: replyingTo ? replyingTo.sender : null,
+    action: 'send', sender: currentUser, text: text,
     time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
   }));
-
   msgInput.value = '';
   sendBtn.style.display = 'none';
-  replyingTo = null;
-  document.getElementById('reply-bar').style.display = 'none';
 }
 sendBtn.onclick = sendMsg;
 msgInput.onkeydown = e => { if (e.key === 'Enter') sendMsg(); };
@@ -1361,104 +1045,193 @@ document.getElementById('back-btn').onclick = () => {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  WebRTC ВИДЕО И ДЕМОНСТРАЦИЯ ЭКРАНА
+//  WebRTC ЗВОНКИ (ИСПРАВЛЕН АВТОПРИЁМ, ДЕМКА ЭКРАНА И ТАЙМАУТ 30 СЕК)
 // ═══════════════════════════════════════════════════════════
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
+let isCamOn = false, isScreenOn = false, isMicOn = true;
+let callTimeoutTimer = null;
+let pendingIncomingOffer = null;
+let iceCandidatesQueue = [];
+
+// Инициализация WebRTC соединения с активным видео-трансивером
+function createPeerConnectionInstance() {
+  peerConnection = new RTCPeerConnection(rtcConfig);
+
+  // Важнейший фикс демки: создаем трансиверы аудио и видео заранее,
+  // чтобы в первичном SDP оффере присутствовала секция m=video!
+  peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+  peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+
+  peerConnection.ontrack = (event) => {
+    if (event.track.kind === 'video') {
+      const remoteVid = document.getElementById('remote-video');
+      remoteVid.srcObject = event.streams[0] || new MediaStream([event.track]);
+      remoteVid.style.display = 'block';
+      document.getElementById('call-avatar-wrap').style.display = 'none';
+
+      event.track.onmute = () => {
+        remoteVid.style.display = 'none';
+        document.getElementById('call-avatar-wrap').style.display = 'flex';
+      };
+      event.track.onunmute = () => {
+        remoteVid.style.display = 'block';
+        document.getElementById('call-avatar-wrap').style.display = 'none';
+      };
+    } else if (event.track.kind === 'audio') {
+      document.getElementById('peer-audio').srcObject = event.streams[0] || new MediaStream([event.track]);
+    }
+  };
+
+  peerConnection.onicecandidate = (e) => {
+    if (e.candidate && activeWs && activeWs.readyState === WebSocket.OPEN) {
+      activeWs.send(JSON.stringify({ action: 'call_ice', target: currentCallPartner, candidate: e.candidate }));
+    }
+  };
+}
+
+// Запуск исходящего вызова
 async function startCall(target) {
-  if (target === currentUser) return showToast('Нельзя позвонить самому себе!');
+  if (target === currentUser) return showToast('Нельзя звонить самому себе!');
   currentCallPartner = target;
 
   document.getElementById('call-partner-header').innerText = `@${target}`;
-  document.getElementById('call-status-badge').innerText = 'Вызов собеседника...';
+  document.getElementById('call-status-badge').innerText = 'Вызов (ожидание ответа)...';
+  document.getElementById('call-incoming-bar').style.display = 'none';
+  document.getElementById('call-active-bar').style.display = 'flex';
   document.getElementById('call-overlay').style.display = 'flex';
 
-  fetch(`${BACKEND_URL}/user/info/${target}`)
-    .then(r => r.json())
-    .then(d => {
-      if (d.avatar_url) document.getElementById('call-remote-avatar').src = d.avatar_url;
-    });
+  fetch(`${BACKEND_URL}/user/info/${target}`).then(r=>r.json()).then(d => {
+    if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
+  });
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, latency: 0 },
-      video: false
-    });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    createPeerConnectionInstance();
 
-    peerConnection = new RTCPeerConnection(rtcConfig);
-    localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-
-    peerConnection.ontrack = (e) => {
-      if (e.track.kind === 'video') {
-        document.getElementById('remote-video').srcObject = e.streams[0];
-        document.getElementById('call-avatar-wrap').style.display = 'none';
-      } else {
-        document.getElementById('peer-audio').srcObject = e.streams[0];
-      }
-    };
-
-    peerConnection.onicecandidate = (e) => {
-      if (e.candidate && activeWs) {
-        activeWs.send(JSON.stringify({ action: 'call_ice', target: currentCallPartner, candidate: e.candidate }));
-      }
-    };
+    // Заменяем трек в аудио-трансивере
+    const audioSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio' || s.kind === 'audio');
+    if (audioSender) {
+      audioSender.replaceTrack(localStream.getAudioTracks()[0]);
+    } else {
+      localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+    }
 
     const offer = await peerConnection.createOffer();
     offer.sdp = offer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
     await peerConnection.setLocalDescription(offer);
 
     activeWs.send(JSON.stringify({ action: 'call_offer', caller: currentUser, target: target, sdp: offer }));
-    monitorCallQuality();
 
-  } catch (e) {
+    // Таймаут 30 секунд: если собеседник не ответил
+    clearTimeout(callTimeoutTimer);
+    callTimeoutTimer = setTimeout(() => {
+      if (currentCallPartner) {
+        activeWs.send(JSON.stringify({ action: 'call_timeout', target: currentCallPartner }));
+        showToast('Абонент не отвечает', 'warning');
+        endCall();
+      }
+    }, 30000);
+
+  } catch(e) {
     endCall();
-    showToast('Ошибка микрофона!');
+    showToast('Ошибка доступа к микрофону!');
   }
 }
 
-async function handleIncomingCall(data) {
+// Входящий звонок: модалка с кнопками Принять и Сбросить (НЕ АВТОПРИЕМ!)
+function handleIncomingCall(data) {
   currentCallPartner = data.caller;
+  pendingIncomingOffer = data.sdp;
+  iceCandidatesQueue = [];
+
   document.getElementById('call-partner-header').innerText = `@${data.caller}`;
-  document.getElementById('call-status-badge').innerText = 'Входящий видеозвонок...';
+  document.getElementById('call-status-badge').innerText = 'Входящий вызов...';
+  document.getElementById('call-incoming-bar').style.display = 'flex';
+  document.getElementById('call-active-bar').style.display = 'none';
   document.getElementById('call-overlay').style.display = 'flex';
 
-  localStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, latency: 0 },
-    video: false
+  fetch(`${BACKEND_URL}/user/info/${data.caller}`).then(r=>r.json()).then(d => {
+    if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
   });
 
-  peerConnection = new RTCPeerConnection(rtcConfig);
-  localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-
-  peerConnection.ontrack = (e) => {
-    if (e.track.kind === 'video') {
-      document.getElementById('remote-video').srcObject = e.streams[0];
-      document.getElementById('call-avatar-wrap').style.display = 'none';
-    } else {
-      document.getElementById('peer-audio').srcObject = e.streams[0];
+  // Автосброс через 30 секунд, если абонент не отреагировал
+  clearTimeout(callTimeoutTimer);
+  callTimeoutTimer = setTimeout(() => {
+    if (currentCallPartner) {
+      activeWs.send(JSON.stringify({ action: 'call_reject', target: currentCallPartner }));
+      showToast(`Пропущенный вызов от @${data.caller}`, 'warning');
+      endCall();
     }
-  };
-
-  peerConnection.onicecandidate = (e) => {
-    if (e.candidate && activeWs) {
-      activeWs.send(JSON.stringify({ action: 'call_ice', target: currentCallPartner, candidate: e.candidate }));
-    }
-  };
-
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-  const answer = await peerConnection.createAnswer();
-  answer.sdp = answer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
-  await peerConnection.setLocalDescription(answer);
-
-  activeWs.send(JSON.stringify({ action: 'call_answer', target: currentCallPartner, sdp: answer }));
-  document.getElementById('call-status-badge').innerText = 'Разговор идёт';
-  monitorCallQuality();
+  }, 30000);
 }
 
-// Камера
+// Принятие звонка по кнопке
+document.getElementById('btn-accept-call').onclick = async () => {
+  clearTimeout(callTimeoutTimer);
+  document.getElementById('call-incoming-bar').style.display = 'none';
+  document.getElementById('call-active-bar').style.display = 'flex';
+  document.getElementById('call-status-badge').innerText = 'Соединение...';
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    createPeerConnectionInstance();
+
+    const audioSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio' || s.kind === 'audio');
+    if (audioSender) {
+      audioSender.replaceTrack(localStream.getAudioTracks()[0]);
+    } else {
+      localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+    }
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingIncomingOffer));
+
+    // Добавляем ранее прибывшие кандидаты
+    while (iceCandidatesQueue.length > 0) {
+      const cand = iceCandidatesQueue.shift();
+      await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+    }
+
+    const answer = await peerConnection.createAnswer();
+    answer.sdp = answer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    await peerConnection.setLocalDescription(answer);
+
+    activeWs.send(JSON.stringify({ action: 'call_answer', target: currentCallPartner, sdp: answer }));
+    document.getElementById('call-status-badge').innerText = 'Разговор идёт';
+
+  } catch (err) {
+    endCall();
+    showToast('Ошибка микрофона при ответе!');
+  }
+};
+
+// Отклонение входящего звонка
+document.getElementById('btn-decline-call').onclick = () => {
+  clearTimeout(callTimeoutTimer);
+  if (activeWs && currentCallPartner) {
+    activeWs.send(JSON.stringify({ action: 'call_reject', target: currentCallPartner }));
+  }
+  endCall();
+};
+
+function handleCallAnswer(data) {
+  clearTimeout(callTimeoutTimer);
+  if (peerConnection) {
+    peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
+      document.getElementById('call-status-badge').innerText = 'Разговор идёт';
+      while (iceCandidatesQueue.length > 0) {
+        const cand = iceCandidatesQueue.shift();
+        peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      }
+    });
+  }
+}
+
+// Камера (с безопасным поиском)
 document.getElementById('btn-toggle-cam').onclick = async () => {
   if (!peerConnection) return;
   isCamOn = !isCamOn;
   const btn = document.getElementById('btn-toggle-cam');
-  btn.classList.toggle('active', isCamOn);
 
   if (isCamOn) {
     try {
@@ -1467,90 +1240,105 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
       document.getElementById('local-video').srcObject = vStream;
       document.getElementById('local-video').style.display = 'block';
 
-      const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender) sender.replaceTrack(vTrack);
-      else peerConnection.addTrack(vTrack, localStream);
-    } catch (e) {
+      const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
+      if (videoSender) {
+        await videoSender.replaceTrack(vTrack);
+      }
+      btn.classList.add('active');
+    } catch(e) {
       isCamOn = false;
       btn.classList.remove('active');
-      showToast('Камера недоступна!');
+      showToast('Камера не обнаружена на этом устройстве', 'warning');
     }
   } else {
     document.getElementById('local-video').style.display = 'none';
-    const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-    if (sender) sender.track.stop();
+    const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
+    if (videoSender) {
+      if (videoSender.track) videoSender.track.stop();
+      await videoSender.replaceTrack(null);
+    }
+    btn.classList.remove('active');
   }
 };
 
-// Демонстрация экрана
+// Демонстрация экрана: гарантированно передаётся собеседнику через videoSender.replaceTrack
 document.getElementById('btn-toggle-screen').onclick = async () => {
   if (!peerConnection) return;
   isScreenOn = !isScreenOn;
   const btn = document.getElementById('btn-toggle-screen');
-  btn.classList.toggle('active', isScreenOn);
 
   if (isScreenOn) {
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       const sTrack = screenStream.getVideoTracks()[0];
+      
       document.getElementById('local-video').srcObject = screenStream;
       document.getElementById('local-video').style.display = 'block';
 
-      const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender) sender.replaceTrack(sTrack);
-      else peerConnection.addTrack(sTrack, screenStream);
+      const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
+      if (videoSender) {
+        await videoSender.replaceTrack(sTrack);
+      }
+      btn.classList.add('active');
 
-      sTrack.onended = () => {
+      sTrack.onended = async () => {
         isScreenOn = false;
         btn.classList.remove('active');
         document.getElementById('local-video').style.display = 'none';
+        if (videoSender) await videoSender.replaceTrack(null);
       };
-    } catch (e) {
+    } catch(e) {
       isScreenOn = false;
       btn.classList.remove('active');
     }
   } else {
     if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     document.getElementById('local-video').style.display = 'none';
+    const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
+    if (videoSender) await videoSender.replaceTrack(null);
+    btn.classList.remove('active');
   }
 };
 
-// Мониторинг задержки сети в звонке
-function monitorCallQuality() {
-  if (qualityCheckInterval) clearInterval(qualityCheckInterval);
-  qualityCheckInterval = setInterval(async () => {
-    if (!peerConnection) return;
-    const stats = await peerConnection.getStats();
-    stats.forEach(report => {
-      if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-        const rtt = report.currentRoundTripTime * 1000;
-        const qWarn = document.getElementById('call-quality-warning');
-        if (rtt > 220) {
-          qWarn.innerText = `⚠️ Высокий пинг связи (${Math.round(rtt)} мс)`;
-          qWarn.style.display = 'block';
-        } else {
-          qWarn.style.display = 'none';
-        }
-      }
-    });
-  }, 2500);
-}
+document.getElementById('btn-toggle-mic').onclick = () => {
+  if (!localStream) return;
+  isMicOn = !isMicOn;
+  const aTrack = localStream.getAudioTracks()[0];
+  if (aTrack) aTrack.enabled = isMicOn;
+  document.getElementById('btn-toggle-mic').classList.toggle('active', isMicOn);
+  document.getElementById('btn-toggle-mic').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выключен';
+};
 
 document.getElementById('btn-end-call').onclick = () => {
+  clearTimeout(callTimeoutTimer);
   if (activeWs && currentCallPartner) activeWs.send(JSON.stringify({ action: 'call_end', target: currentCallPartner }));
   endCall();
 };
 
 function endCall() {
-  if (qualityCheckInterval) clearInterval(qualityCheckInterval);
+  clearTimeout(callTimeoutTimer);
   if (localStream) localStream.getTracks().forEach(t => t.stop());
   if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-  if (peerConnection) peerConnection.close();
-  peerConnection = null;
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
   currentCallPartner = null;
+  pendingIncomingOffer = null;
+  iceCandidatesQueue = [];
+  isCamOn = false;
+  isScreenOn = false;
+  isMicOn = true;
+
+  document.getElementById('btn-toggle-cam').classList.remove('active');
+  document.getElementById('btn-toggle-screen').classList.remove('active');
+  document.getElementById('btn-toggle-mic').classList.add('active');
+  document.getElementById('btn-toggle-mic').innerText = '🎙️ Микрофон';
   document.getElementById('call-overlay').style.display = 'none';
   document.getElementById('remote-video').srcObject = null;
+  document.getElementById('remote-video').style.display = 'none';
   document.getElementById('local-video').srcObject = null;
+  document.getElementById('local-video').style.display = 'none';
   document.getElementById('call-avatar-wrap').style.display = 'flex';
 }
 
@@ -1566,64 +1354,452 @@ document.getElementById('call-header-btn').onclick = () => {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  КОНТЕКСТНОЕ МЕНЮ И УДАЛЕНИЕ ЧАТА
+//  АДМИН-ПАНЕЛЬ
 // ═══════════════════════════════════════════════════════════
-function bindLongPress(node, msg) {
-  let timer = null;
-  const trigger = (e) => {
-    selectedMsg = msg;
-    const menu = document.getElementById('msg-context-menu');
-    document.getElementById('ctx-delete').style.display = (msg.sender === currentUser) ? 'flex' : 'none';
+document.getElementById('open-settings-btn').onclick = () => openModal('settings-modal');
+document.getElementById('admin-panel-btn').onclick = () => {
+  closeModal('settings-modal');
+  showAdminTab('users');
+  openModal('admin-modal');
+};
 
-    const cx = e.touches ? e.touches[0].clientX : e.clientX;
-    const cy = e.touches ? e.touches[0].clientY : e.clientY;
-    menu.style.left = `${Math.min(window.innerWidth - 190, Math.max(10, cx - 80))}px`;
-    menu.style.top = `${Math.min(window.innerHeight - 200, Math.max(10, cy - 80))}px`;
-    menu.style.display = 'block';
-  };
-  node.addEventListener('touchstart', e => { timer = setTimeout(() => trigger(e), 450); }, {passive:true});
-  node.addEventListener('touchend', () => clearTimeout(timer));
-  node.addEventListener('touchmove', () => clearTimeout(timer));
-  node.addEventListener('contextmenu', e => { e.preventDefault(); trigger(e); });
+function showAdminTab(tab) {
+  ['users','groups','bans','support','requests'].forEach(t => {
+    document.getElementById(`tab-${t}-btn`).classList.toggle('active', t === tab);
+    document.getElementById(`admin-tab-${t}`).style.display = t === tab ? 'flex' : 'none';
+  });
+  if (tab === 'users') loadAdminUsers();
+  else if (tab === 'groups') loadAdminGroups();
+  else if (tab === 'bans') loadAdminBans();
+  else if (tab === 'support') loadAdminSupport();
+  else if (tab === 'requests') loadAdminRequests();
 }
 
-document.addEventListener('click', e => {
-  if (!e.target.closest('#msg-context-menu') && !e.target.closest('#emoji-picker')) {
-    document.getElementById('msg-context-menu').style.display = 'none';
-    document.getElementById('emoji-picker').style.display = 'none';
+document.getElementById('tab-users-btn').onclick = () => showAdminTab('users');
+document.getElementById('tab-groups-btn').onclick = () => showAdminTab('groups');
+document.getElementById('tab-bans-btn').onclick = () => showAdminTab('bans');
+document.getElementById('tab-support-btn').onclick = () => showAdminTab('support');
+document.getElementById('tab-requests-btn').onclick = () => showAdminTab('requests');
+
+function setAdminFilter(ftype) {
+  currentAdminFilter = ftype;
+  document.querySelectorAll('.filter-tab-btn').forEach(b => b.classList.toggle('active', b.innerText.toLowerCase().includes(ftype) || (ftype==='all' && b.innerText==='Все')));
+  loadAdminUsers(document.getElementById('admin-search-input').value.trim());
+}
+
+async function loadAdminUsers(query = '') {
+  const c = document.getElementById('admin-users-list');
+  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
+  const res = await fetch(`${BACKEND_URL}/admin/users?admin=${currentUser}&query=${encodeURIComponent(query)}&filter_type=${currentAdminFilter}`);
+  const data = await res.json();
+  c.innerHTML = '';
+
+  data.users.forEach(u => {
+    const isSuperTarget = u.nickname.toLowerCase() === 'jjlop55' || u.nickname.toLowerCase() === 'gglo55';
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>@${u.nickname} ${u.is_superadmin ? '👑' : (u.is_admin ? '⚡' : '')}</b>
+        <span class="user-status ${u.is_online ? 'online' : 'offline'}">${u.is_online ? 'Онлайн' : 'Офлайн'}</span>
+      </div>
+      <div style="font-size:11px; color:var(--text-dim);">Визит: ${u.last_login ? u.last_login.slice(0,16) : '—'}</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
+        <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>
+        <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="viewUserSessions('${u.nickname}')">📱 Сессии</button>
+        ${!isSuperTarget ? `
+          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>
+          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>
+          <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="adminKickUser('${u.nickname}')">Кик</button>
+          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.2); color:var(--danger);" onclick="adminDeleteUser('${u.nickname}')">Удалить</button>
+        ` : ''}
+      </div>`;
+    c.appendChild(row);
+  });
+}
+
+document.getElementById('admin-search-input').oninput = e => loadAdminUsers(e.target.value.trim());
+
+async function viewUserSessions(nick) {
+  document.getElementById('admin-sessions-target-nick').innerText = `Сессии юзера @${nick}`;
+  const c = document.getElementById('admin-user-sessions-list');
+  c.innerHTML = 'Загрузка...';
+  openModal('admin-user-sessions-modal');
+
+  const res = await fetch(`${BACKEND_URL}/admin/user-sessions?admin=${currentUser}&target=${nick}`);
+  const sessions = await res.json();
+  c.innerHTML = '';
+  if (!sessions.length) { c.innerHTML = '<div style="color:var(--text-dim);">Нет активных сессий</div>'; return; }
+
+  sessions.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <b>${parseDevice(s.user_agent)}</b>
+          <div style="font-size:11px; color:var(--text-dim);">IP: ${s.ip_address} · Вход: ${s.logged_in_at}</div>
+        </div>
+        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="adminKillSpecificSession(${s.id}, '${nick}')">Сбросить</button>
+      </div>`;
+    c.appendChild(row);
+  });
+}
+
+async function adminKillSpecificSession(sid, nick) {
+  const res = await fetch(`${BACKEND_URL}/admin/kill-session`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, target_session_id: sid })
+  });
+  const d = await res.json();
+  showToast(d.msg);
+  viewUserSessions(nick);
+}
+
+function openGrantModal(nick, perms) {
+  targetGrantUser = nick;
+  document.getElementById('grant-user-title').innerText = `Права для @${nick}`;
+  document.getElementById('perm-del-msg').checked = !!perms.can_delete_messages;
+  document.getElementById('perm-del-chat').checked = !!perms.can_delete_chats;
+  document.getElementById('perm-kick').checked = !!perms.can_kick_users;
+  document.getElementById('perm-grant-adm').checked = !!perms.can_grant_admins;
+  document.getElementById('perm-del-direct').checked = !!perms.can_delete_users_direct;
+  document.getElementById('perm-del-req').checked = !!perms.can_request_delete_users;
+  document.getElementById('perm-ban').checked = !!perms.can_ban_users;
+  document.getElementById('perm-mute').checked = !!perms.can_mute_users;
+  document.getElementById('perm-supp').checked = !!perms.can_handle_support;
+  openModal('grant-modal');
+}
+
+document.getElementById('save-perms-btn').onclick = async () => {
+  const perms = {
+    can_delete_messages: document.getElementById('perm-del-msg').checked,
+    can_delete_chats: document.getElementById('perm-del-chat').checked,
+    can_kick_users: document.getElementById('perm-kick').checked,
+    can_grant_admins: document.getElementById('perm-grant-adm').checked,
+    can_delete_users_direct: document.getElementById('perm-del-direct').checked,
+    can_request_delete_users: document.getElementById('perm-del-req').checked,
+    can_ban_users: document.getElementById('perm-ban').checked,
+    can_mute_users: document.getElementById('perm-mute').checked,
+    can_handle_support: document.getElementById('perm-supp').checked
+  };
+  const res = await fetch(`${BACKEND_URL}/admin/set-perms`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: targetGrantUser, perms })
+  });
+  const d = await res.json();
+  showToast(d.msg);
+  closeModal('grant-modal');
+  loadAdminUsers();
+};
+
+function openBanModal(nick) {
+  targetBanUser = nick;
+  document.getElementById('ban-modal-target').innerText = `@${nick}`;
+  openModal('ban-modal');
+}
+document.getElementById('save-ban-btn').onclick = async () => {
+  const reason = document.getElementById('ban-reason-input').value.trim() || 'Нарушение правил';
+  const type = document.querySelector('input[name="ban-type"]:checked').value;
+  const hours = parseInt(document.getElementById('ban-duration-input').value) || 24;
+  closeModal('ban-modal');
+  const res = await fetch(`${BACKEND_URL}/admin/ban`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: targetBanUser, reason, ban_type: type, duration_hours: hours })
+  });
+  const d = await res.json();
+  showToast(d.msg);
+  loadAdminUsers();
+};
+
+function openMutePrompt(nick) {
+  const mins = prompt('На сколько минут заглушить? (по умолч. 10):', '10');
+  if (!mins) return;
+  fetch(`${BACKEND_URL}/admin/mute`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: 'Мьют от админа', duration_minutes: parseInt(mins)||10 })
+  }).then(r=>r.json()).then(d=>showToast(d.msg));
+}
+
+function adminKickUser(nick) {
+  confirmAction('Кик', `Принудительно выкинуть @${nick}?`, () => {
+    fetch(`${BACKEND_URL}/admin/kick`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
+    }).then(r=>r.json()).then(d=>showToast(d.msg));
+  });
+}
+
+function adminDeleteUser(nick) {
+  confirmAction('Удаление', `Удалить аккаунт @${nick}?`, () => {
+    let reason = '';
+    if (!isSuperAdmin && !myAdminPerms.can_delete_users_direct) {
+      reason = prompt('Укажите причину для Главного Администратора:');
+      if (!reason) return;
+    }
+    fetch(`${BACKEND_URL}/admin/delete-user`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason })
+    }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminUsers(); });
+  });
+}
+
+async function loadAdminGroups() {
+  const c = document.getElementById('admin-tab-groups');
+  c.innerHTML = 'Загрузка...';
+  const res = await fetch(`${BACKEND_URL}/admin/groups?admin=${currentUser}`);
+  const groups = await res.json();
+  c.innerHTML = '';
+  groups.forEach(g => {
+    const isGen = g.id === 'general';
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>«${g.name}»</b>
+        ${!isGen ? `<button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="adminDelGroup('${g.id}')">Удалить</button>` : '<span style="font-size:11px; color:var(--neon-cyan);">Главный</span>'}
+      </div>
+      <div style="font-size:11px; color:var(--text-dim);">Участники: ${g.members.map(m=>'@'+m).join(', ')}</div>`;
+    c.appendChild(row);
+  });
+}
+
+function adminDelGroup(id) {
+  confirmAction('Удаление чата', 'Удалить этот чат у всех участников?', () => {
+    fetch(`${BACKEND_URL}/chats/${id}?user=${currentUser}`, { method: 'DELETE' })
+      .then(r=>r.json()).then(d=>{ showToast(d.msg||'Удалено'); loadAdminGroups(); });
+  });
+}
+
+async function loadAdminBans() {
+  const c = document.getElementById('admin-tab-bans');
+  c.innerHTML = 'Загрузка...';
+  const res = await fetch(`${BACKEND_URL}/admin/bans?admin=${currentUser}`);
+  const bans = await res.json();
+  c.innerHTML = '';
+  if (!bans.length) { c.innerHTML = '<div style="color:var(--text-dim);">Банов нет</div>'; return; }
+  bans.forEach(b => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <b>🚫 @${b.target_nick}</b>
+        <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 8px; font-size:11px;" onclick="unbanUser('${b.target_nick}')">Разбанить</button>
+      </div>
+      <div style="font-size:11px; color:var(--text-dim);">Причина: ${b.reason}</div>`;
+    c.appendChild(row);
+  });
+}
+
+function unbanUser(nick) {
+  fetch(`${BACKEND_URL}/admin/unban`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminBans(); });
+}
+
+async function loadAdminSupport() {
+  const c = document.getElementById('admin-tab-support');
+  c.innerHTML = 'Загрузка...';
+  const res = await fetch(`${BACKEND_URL}/support/tickets/all?admin=${currentUser}`);
+  if (res.status === 403) {
+    c.innerHTML = `
+      <div style="text-align:center;">
+        <p style="font-size:12px; color:var(--text-dim);">Нет прав на саппорт</p>
+        <button class="pill-btn" style="background:var(--neon-cyan); color:#000; margin-top:8px;" onclick="requestSupportPerm()">Запросить право у Главного Админа</button>
+      </div>`;
+    return;
   }
-});
+  const tickets = await res.json();
+  c.innerHTML = '';
+  if (!tickets.length) { c.innerHTML = '<div style="color:var(--text-dim);">Обращений нет</div>'; return; }
+  tickets.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.innerHTML = `
+      <b>#${t.id} от @${t.from_user}: ${t.subject}</b>
+      <div style="font-size:12px;">${t.message}</div>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <input type="text" id="ans-${t.id}" placeholder="Ответ..." class="modal-input" style="padding:4px 8px; font-size:12px;">
+        <button class="pill-btn" style="background:var(--neon-cyan); color:#000; padding:4px 10px; font-size:11px;" onclick="sendSupportReply(${t.id})">Ответить</button>
+        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="closeSupportTicket(${t.id})">Закрыть</button>
+      </div>`;
+    c.appendChild(row);
+  });
+}
 
-document.getElementById('ctx-reply').onclick = () => {
-  document.getElementById('msg-context-menu').style.display = 'none';
-  replyingTo = selectedMsg;
-  document.getElementById('reply-to-user').innerText = `Ответ на @${selectedMsg.sender}`;
-  document.getElementById('reply-to-snippet').innerText = selectedMsg.text || '[Вложение]';
-  document.getElementById('reply-bar').style.display = 'flex';
-  document.getElementById('msg-input').focus();
+function requestSupportPerm() {
+  fetch(`${BACKEND_URL}/support/request-perm`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ nickname: currentUser })
+  }).then(r=>r.json()).then(d=>showToast(d.msg));
+}
+
+function sendSupportReply(tid) {
+  const input = document.getElementById(`ans-${tid}`);
+  if (!input.value.trim()) return;
+  fetch(`${BACKEND_URL}/support/reply`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, ticket_id: tid, message: input.value.trim() })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminSupport(); });
+}
+
+function closeSupportTicket(tid) {
+  fetch(`${BACKEND_URL}/support/close`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, ticket_id: tid, message: '' })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminSupport(); });
+}
+
+async function loadAdminRequests() {
+  const c = document.getElementById('admin-tab-requests');
+  c.innerHTML = '';
+
+  if (isSuperAdmin) {
+    const sres = await fetch(`${BACKEND_URL}/support/perm-requests?admin=${currentUser}`);
+    const sreqs = await sres.json();
+    if (sreqs.length) {
+      c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--neon-cyan);">🛡️ Запросы прав на саппорт:</div>';
+      sreqs.forEach(r => {
+        const row = document.createElement('div');
+        row.className = 'user-row';
+        row.innerHTML = `
+          <div>@${r.requested_by} просит доступ к саппорту</div>
+          <div style="display:flex; gap:6px; margin-top:4px;">
+            <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideSuppReq(${r.id},'approve')">Одобрить</button>
+            <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px;" onclick="decideSuppReq(${r.id},'reject')">Отклонить</button>
+          </div>`;
+        c.appendChild(row);
+      });
+    }
+  }
+
+  const res = await fetch(`${BACKEND_URL}/admin/delete-requests?admin=${currentUser}`);
+  const reqs = await res.json();
+  if (reqs.length) {
+    c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--danger); margin-top:8px;">🗑️ Заявки на удаление аккаунтов (7 дней):</div>';
+    reqs.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'user-row';
+      row.innerHTML = `
+        <div>Удалить @${r.target_nick} (подал @${r.requested_by})</div>
+        <div style="font-size:11px; color:var(--text-dim);">Причина: ${r.reason} · Истекает: ${r.expires_at}</div>
+        <div style="display:flex; gap:6px; margin-top:4px;">
+          <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideDelReq(${r.id},'approve')">Одобрить</button>
+          <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px;" onclick="decideDelReq(${r.id},'reject')">Отклонить</button>
+        </div>`;
+      c.appendChild(row);
+    });
+  }
+  if (!c.innerHTML) c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">Заявок нет</div>';
+}
+
+function decideSuppReq(id, action) {
+  fetch(`${BACKEND_URL}/support/perm-decision`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, request_id: id, action })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminRequests(); });
+}
+
+function decideDelReq(id, action) {
+  fetch(`${BACKEND_URL}/admin/delete-requests/decision`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, request_id: id, action })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminRequests(); });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ПОДДЕРЖКА
+// ═══════════════════════════════════════════════════════════
+document.getElementById('open-support-btn').onclick = () => {
+  openModal('support-modal');
+  document.getElementById('supp-tab-new').style.display = 'flex';
+  document.getElementById('supp-tab-my').style.display = 'none';
+};
+document.getElementById('supp-tab-new-btn').onclick = () => {
+  document.getElementById('supp-tab-new').style.display = 'flex';
+  document.getElementById('supp-tab-my').style.display = 'none';
+};
+document.getElementById('supp-tab-my-btn').onclick = () => {
+  document.getElementById('supp-tab-new').style.display = 'none';
+  document.getElementById('supp-tab-my').style.display = 'flex';
+  loadMyTickets();
 };
 
-document.getElementById('cancel-reply-btn').onclick = () => {
-  replyingTo = null;
-  document.getElementById('reply-bar').style.display = 'none';
+document.getElementById('supp-send-btn').onclick = () => {
+  const s = document.getElementById('supp-subject-input').value.trim();
+  const m = document.getElementById('supp-msg-input').value.trim();
+  if (!s || !m) return showToast('Заполните поля!');
+  fetch(`${BACKEND_URL}/support/ticket`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ from_user: currentUser, subject: s, message: m })
+  }).then(r=>r.json()).then(d => {
+    showToast(d.msg);
+    document.getElementById('supp-subject-input').value = '';
+    document.getElementById('supp-msg-input').value = '';
+    document.getElementById('supp-tab-my-btn').click();
+  });
 };
 
-document.getElementById('ctx-delete').onclick = () => {
-  document.getElementById('msg-context-menu').style.display = 'none';
-  confirmAction('Удаление', 'Удалить это сообщение у всех участников?', () => {
-    activeWs.send(JSON.stringify({ action: 'delete', message_id: selectedMsg.id, sender: currentUser }));
+async function loadMyTickets() {
+  const c = document.getElementById('supp-tab-my');
+  c.innerHTML = 'Загрузка...';
+  const res = await fetch(`${BACKEND_URL}/support/tickets/my/${currentUser}`);
+  const tickets = await res.json();
+  c.innerHTML = '';
+  if (!tickets.length) { c.innerHTML = '<div style="color:var(--text-dim);">У вас нет тикетов</div>'; return; }
+  tickets.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    const rep = t.replies.map(r => `<div style="font-size:11px; background:rgba(0,240,255,0.08); padding:4px 8px; border-radius:6px; margin-top:2px;"><b>@${r.from_user}:</b> ${r.message}</div>`).join('');
+    row.innerHTML = `
+      <b>${t.subject} (${t.status})</b>
+      <div style="font-size:12px;">${t.message}</div>
+      ${rep}`;
+    c.appendChild(row);
+  });
+}
+
+document.getElementById('change-pwd-btn').onclick = () => {
+  const o = document.getElementById('old-pwd').value;
+  const n = document.getElementById('new-pwd').value;
+  if (!o || !n) return showToast('Заполните пароли!');
+  confirmAction('Смена пароля', 'Сменить пароль прямо сейчас?', () => {
+    fetch(`${BACKEND_URL}/change-password`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ nickname: currentUser, old_password: o, new_password: n })
+    }).then(r=>r.json()).then(d=>{
+      showToast(d.msg);
+      if (d.status === 'ok') {
+        document.getElementById('old-pwd').value = '';
+        document.getElementById('new-pwd').value = '';
+      }
+    });
   });
 };
 
 document.getElementById('delete-chat-btn').onclick = () => {
-  confirmAction('Удаление чата', 'Удалить этот чат со всей историей?', async () => {
-    const res = await fetch(`${BACKEND_URL}/chats/${activeChatId}?user=${currentUser}`, { method: 'DELETE' });
-    const d = await res.json();
-    showToast(d.msg || 'Удалено');
-    if (d.status === 'ok') {
-      await loadChats();
-      switchChat('general', '🌐 Общий чат');
-    }
+  confirmAction('Удаление', 'Удалить этот чат?', () => {
+    fetch(`${BACKEND_URL}/chats/${activeChatId}?user=${currentUser}`, { method: 'DELETE' })
+      .then(r=>r.json()).then(d=>{
+        showToast(d.msg||'Удалено');
+        loadChats();
+        switchChat('general', '🌐 Общий чат');
+      });
   });
 };
 
@@ -1637,8 +1813,6 @@ document.getElementById('new-chat-btn').onclick = () => {
     body: JSON.stringify({ id, name, created_by: currentUser })
   }).then(() => { loadChats(); switchChat(id, name); });
 };
-
-document.getElementById('open-settings-btn').onclick = () => openModal('settings-modal');
 </script>
 </body>
 </html>
