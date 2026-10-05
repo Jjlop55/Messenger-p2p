@@ -1,6 +1,9 @@
+import os
+import uuid
 import sqlite3
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Dict
 
@@ -14,7 +17,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализация базы данных SQLite
+# Папка для загрузки файлов и голосовых
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# Инициализация базы данных
 conn = sqlite3.connect("messenger.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -44,9 +52,22 @@ CREATE TABLE IF NOT EXISTS messages (
     chat_id TEXT,
     sender TEXT,
     text TEXT,
+    file_url TEXT,
+    file_type TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
+conn.commit()
+
+# Безопасное добавление колонок для медиафайлов, если таблица уже существовала
+try:
+    cursor.execute("ALTER TABLE messages ADD COLUMN file_url TEXT")
+except sqlite3.OperationalError:
+    pass
+try:
+    cursor.execute("ALTER TABLE messages ADD COLUMN file_type TEXT")
+except sqlite3.OperationalError:
+    pass
 conn.commit()
 
 class AuthData(BaseModel):
@@ -100,10 +121,40 @@ def invite_user(data: InviteData):
     conn.commit()
     return {"status": "ok"}
 
+@app.post("/upload")
+async def upload_file(request: Request, filename: str = "file.bin"):
+    body = await request.body()
+    # Лимит строго до 10 МБ (10 * 1024 * 1024 байт)
+    if len(body) > 10485760:
+        raise HTTPException(status_code=413, detail="Файл превышает лимит 10 МБ!")
+
+    _, ext = os.path.splitext(filename)
+    unique_name = f"{uuid.uuid4().hex}{ext if ext else '.bin'}"
+    file_path = os.path.join(UPLOAD_DIR, unique_name)
+
+    with open(file_path, "wb") as f:
+        f.write(body)
+
+    return {"status": "ok", "url": f"/uploads/{unique_name}"}
+
 @app.get("/messages/{chat_id}")
 def get_messages(chat_id: str):
-    cursor.execute("SELECT sender, text FROM messages WHERE chat_id = ? ORDER BY id ASC LIMIT 100", (chat_id,))
-    return [{"sender": r[0], "text": r[1]} for r in cursor.fetchall()]
+    cursor.execute("""
+        SELECT sender, text, file_url, file_type, strftime('%H:%M', created_at)
+        FROM messages 
+        WHERE chat_id = ? 
+        ORDER BY id ASC LIMIT 100
+    """, (chat_id,))
+    return [
+        {
+            "sender": r[0],
+            "text": r[1],
+            "file_url": r[2],
+            "file_type": r[3],
+            "time": r[4]
+        }
+        for r in cursor.fetchall()
+    ]
 
 class ConnectionManager:
     def __init__(self):
@@ -119,12 +170,16 @@ class ConnectionManager:
         if chat_id in self.active and ws in self.active[chat_id]:
             self.active[chat_id].remove(ws)
 
-    async def broadcast(self, chat_id: str, sender: str, text: str):
-        cursor.execute("INSERT INTO messages (chat_id, sender, text) VALUES (?, ?, ?)", (chat_id, sender, text))
+    async def broadcast(self, chat_id: str, payload: dict):
+        cursor.execute("""
+            INSERT INTO messages (chat_id, sender, text, file_url, file_type)
+            VALUES (?, ?, ?, ?, ?)
+        """, (chat_id, payload.get("sender"), payload.get("text", ""), payload.get("file_url"), payload.get("file_type")))
         conn.commit()
+
         if chat_id in self.active:
             for ws in self.active[chat_id]:
-                await ws.send_json({"sender": sender, "text": text})
+                await ws.send_json(payload)
 
 manager = ConnectionManager()
 
@@ -134,6 +189,6 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     try:
         while True:
             data = await websocket.receive_json()
-            await manager.broadcast(chat_id, data["sender"], data["text"])
+            await manager.broadcast(chat_id, data)
     except WebSocketDisconnect:
         manager.disconnect(chat_id, websocket)
