@@ -1,25 +1,18 @@
 import os
-import sys
 import time
 import uuid
 import json
 import sqlite3
 from datetime import datetime, timedelta
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from typing import Dict, List, Optional, Set
+
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Dict, Set
 
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -29,7 +22,10 @@ SERVER_START_TIME = time.time()
 conn = sqlite3.connect("messenger.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Базовые таблицы
+# ═══════════════════════════════════════════════════════════
+#  ТАБЛИЦЫ БАЗЫ ДАННЫХ
+# ═══════════════════════════════════════════════════════════
+
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     nickname TEXT PRIMARY KEY,
@@ -85,11 +81,11 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to_id INTEGER,
     reply_to_text TEXT,
     reply_to_sender TEXT,
+    is_edited INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
 
-# Заявки на удаление аккаунтов (7 дней)
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS delete_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,7 +98,6 @@ CREATE TABLE IF NOT EXISTS delete_requests (
 )
 """)
 
-# Оповещения пользователям
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,36 +107,133 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS bans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    banned_by TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    ban_type TEXT DEFAULT 'permanent',
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS mutes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    muted_by TEXT NOT NULL,
+    reason TEXT,
+    duration_minutes INTEGER DEFAULT 10,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nickname TEXT NOT NULL,
+    session_token TEXT UNIQUE,
+    user_agent TEXT,
+    ip_address TEXT,
+    logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active INTEGER DEFAULT 1
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    nickname TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    UNIQUE(message_id, nickname)
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS pinned_messages (
+    chat_id TEXT PRIMARY KEY,
+    message_id INTEGER,
+    pinned_by TEXT,
+    message_text TEXT,
+    pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_user TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'open',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS support_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    from_user TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS support_perm_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requested_by TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    decided_at TIMESTAMP,
+    decided_by TEXT
+)
+""")
+
 conn.commit()
 
 # Безопасное добавление колонок
-for col, ctype in [
-    ("last_pwd_change", "TIMESTAMP"),
-    ("is_superadmin", "INTEGER DEFAULT 0"),
-    ("is_admin", "INTEGER DEFAULT 0"),
-    ("admin_perms", "TEXT DEFAULT '{}'"),
-    ("admin_notified", "INTEGER DEFAULT 0"),
-    ("granted_by", "TEXT"),
-    ("revoked_by", "TEXT"),
-    ("last_login", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-]:
+_safe_alters = [
+    ("users", "last_pwd_change", "TIMESTAMP"),
+    ("users", "is_superadmin", "INTEGER DEFAULT 0"),
+    ("users", "is_admin", "INTEGER DEFAULT 0"),
+    ("users", "admin_perms", "TEXT DEFAULT '{}'"),
+    ("users", "admin_notified", "INTEGER DEFAULT 0"),
+    ("users", "granted_by", "TEXT"),
+    ("users", "revoked_by", "TEXT"),
+    ("users", "last_login", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+    ("messages", "is_edited", "INTEGER DEFAULT 0"),
+    ("user_sessions", "session_token", "TEXT"),
+    ("user_sessions", "last_active", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+    ("user_sessions", "is_active", "INTEGER DEFAULT 1"),
+]
+for tbl, col, ctype in _safe_alters:
     try:
-        cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {ctype}")
+        cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype}")
     except sqlite3.OperationalError:
         pass
 conn.commit()
 
-# Назначение Главного Администратора
-cursor.execute("UPDATE users SET is_superadmin = 1, is_admin = 1 WHERE LOWER(nickname) IN ('jjlop55', 'gglo55')")
+cursor.execute("UPDATE users SET is_superadmin=1, is_admin=1 WHERE LOWER(nickname) IN ('jjlop55','gglo55')")
 conn.commit()
 
 def is_super(nick: str) -> bool:
     return nick.lower() in ("jjlop55", "gglo55")
 
-# Очистка файлов старше 4 дней и просроченных заявок на удаление (7 дней)
+def now_str() -> str:
+    return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
 def periodic_cleanup():
-    cutoff_files = datetime.utcnow() - timedelta(days=4)
-    cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff_files.strftime('%Y-%m-%d %H:%M:%S'),))
+    ns = now_str()
+    cutoff = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff,))
     for msg_id, f_url in cursor.fetchall():
         try:
             rel = f_url.lstrip("/")
@@ -149,23 +241,30 @@ def periodic_cleanup():
                 os.remove(rel)
         except Exception:
             pass
-        cursor.execute("UPDATE messages SET file_url = NULL, text = '[Срок хранения файла (4 дня) истёк]' WHERE id = ?", (msg_id,))
-    
-    # Проверка просроченных заявок (7 дней)
-    now_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute("SELECT id, target_nick, requested_by FROM delete_requests WHERE expires_at < ? AND status = 'pending'", (now_str,))
+        cursor.execute("UPDATE messages SET file_url=NULL, text='[Срок хранения файла (4 дня) истёк]' WHERE id=?", (msg_id,))
+
+    cursor.execute("SELECT id,target_nick,requested_by FROM delete_requests WHERE expires_at < ? AND status='pending'", (ns,))
     for req_id, t_nick, r_by in cursor.fetchall():
-        cursor.execute("UPDATE delete_requests SET status = 'expired' WHERE id = ?", (req_id,))
-        cursor.execute("""
-            INSERT INTO notifications (to_user, text)
-            VALUES (?, ?)
-        """, (r_by, f"Главный администратор не принял вашу заявку на удаление @{t_nick} (истёк 7-дневный срок рассмотрения)."))
+        cursor.execute("UPDATE delete_requests SET status='expired' WHERE id=?", (req_id,))
+        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                       (r_by, f"Главный администратор не принял заявку на удаление @{t_nick} (истёк срок 7 дней)."))
+
+    cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
+    cursor.execute("DELETE FROM bans WHERE ban_type='temporary' AND expires_at < ?", (ns,))
+
+    old = (datetime.utcnow() - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("UPDATE user_sessions SET is_active=0 WHERE last_active < ?", (old,))
     conn.commit()
 
-# Модели
+# ═══════════════════════════════════════════════════════════
+#  МОДЕЛИ ДАННЫХ
+# ═══════════════════════════════════════════════════════════
+
 class AuthData(BaseModel):
     nickname: str
     password: str
+    user_agent: str = ""
+    ip_address: str = ""
 
 class PwdChangeData(BaseModel):
     nickname: str
@@ -201,9 +300,72 @@ class DeleteUserAction(BaseModel):
 class ReqDecision(BaseModel):
     admin_nick: str
     request_id: int
-    action: str  # approve / reject
+    action: str
 
-# WebSocket Connection Tracker
+class BanData(BaseModel):
+    admin_nick: str
+    target_nick: str
+    reason: str
+    ban_type: str = "permanent"
+    duration_hours: int = 0
+
+class UnbanData(BaseModel):
+    admin_nick: str
+    target_nick: str
+
+class MuteData(BaseModel):
+    admin_nick: str
+    target_nick: str
+    reason: str = ""
+    duration_minutes: int = 10
+
+class UnmuteData(BaseModel):
+    admin_nick: str
+    target_nick: str
+
+class KickData(BaseModel):
+    admin_nick: str
+    target_nick: str
+
+class TerminateSessionData(BaseModel):
+    nickname: str
+    session_token: str
+    target_session_id: int
+
+class TerminateAllSessionsData(BaseModel):
+    nickname: str
+    session_token: str
+
+class HeartbeatData(BaseModel):
+    nickname: str
+    session_token: str
+
+class SupportTicketData(BaseModel):
+    from_user: str
+    subject: str
+    message: str
+
+class SupportReplyData(BaseModel):
+    admin_nick: str
+    ticket_id: int
+    message: str
+
+class SupportCloseData(BaseModel):
+    admin_nick: str
+    ticket_id: int
+
+class SupportPermRequestData(BaseModel):
+    nickname: str
+
+class SupportPermDecision(BaseModel):
+    admin_nick: str
+    request_id: int
+    action: str
+
+# ═══════════════════════════════════════════════════════════
+#  CONNECTION MANAGER
+# ═══════════════════════════════════════════════════════════
+
 class ConnectionManager:
     def __init__(self):
         self.user_sockets: Dict[str, Set[WebSocket]] = {}
@@ -211,142 +373,264 @@ class ConnectionManager:
 
     async def connect(self, chat_id: str, ws: WebSocket, nick: str):
         await ws.accept()
-        if nick not in self.user_sockets:
-            self.user_sockets[nick] = set()
-        self.user_sockets[nick].add(ws)
-
-        if chat_id not in self.chat_sockets:
-            self.chat_sockets[chat_id] = set()
-        self.chat_sockets[chat_id].add(ws)
+        self.user_sockets.setdefault(nick, set()).add(ws)
+        self.chat_sockets.setdefault(chat_id, set()).add(ws)
 
     def disconnect(self, chat_id: str, ws: WebSocket, nick: str):
         if nick in self.user_sockets:
             self.user_sockets[nick].discard(ws)
             if not self.user_sockets[nick]:
                 del self.user_sockets[nick]
-
         if chat_id in self.chat_sockets:
             self.chat_sockets[chat_id].discard(ws)
             if not self.chat_sockets[chat_id]:
                 del self.chat_sockets[chat_id]
 
     def is_online(self, nick: str) -> bool:
-        return nick in self.user_sockets and len(self.user_sockets[nick]) > 0
+        return nick in self.user_sockets and bool(self.user_sockets[nick])
+
+    def online_users(self) -> List[str]:
+        return list(self.user_sockets.keys())
 
     async def send_to_user(self, nick: str, payload: dict):
-        if nick in self.user_sockets:
-            for ws in list(self.user_sockets[nick]):
-                try:
-                    await ws.send_json(payload)
-                except Exception:
-                    pass
+        for ws in list(self.user_sockets.get(nick, [])):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
 
     async def broadcast_chat(self, chat_id: str, payload: dict):
-        if chat_id in self.chat_sockets:
-            for ws in list(self.chat_sockets[chat_id]):
-                try:
-                    await ws.send_json(payload)
-                except Exception:
-                    pass
+        for ws in list(self.chat_sockets.get(chat_id, [])):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
+
+    async def kick_user(self, nick: str, reason: str = "Вы были принудительно отключены."):
+        for ws in list(self.user_sockets.get(nick, [])):
+            try:
+                await ws.send_json({"action": "kicked", "msg": reason})
+                await ws.close()
+            except Exception:
+                pass
+
+    async def notify_support_staff(self, payload: dict):
+        cursor.execute("SELECT nickname, admin_perms, is_superadmin FROM users WHERE is_admin=1 OR is_superadmin=1")
+        for row in cursor.fetchall():
+            nick, perms_raw, is_sup = row
+            perms = json.loads(perms_raw or '{}')
+            if is_sup or is_super(nick) or perms.get("can_handle_support", False):
+                await self.send_to_user(nick, payload)
 
 manager = ConnectionManager()
 
-@app.post("/auth")
-def auth_user(data: AuthData):
-    periodic_cleanup()
-    cursor.execute("""
-        SELECT password, is_superadmin, is_admin, admin_perms, admin_notified, granted_by, revoked_by 
-        FROM users WHERE nickname = ?
-    """, (data.nickname,))
-    row = cursor.fetchone()
-    now_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+# ═══════════════════════════════════════════════════════════
+#  АВТОРИЗАЦИЯ И СЕССИИ
+# ═══════════════════════════════════════════════════════════
 
-    if row:
-        if row[0] == data.password:
-            cursor.execute("UPDATE users SET last_login = ? WHERE nickname = ?", (now_str, data.nickname))
+@app.post("/auth")
+async def auth_user(data: AuthData, request: Request):
+    periodic_cleanup()
+    ns = now_str()
+    ip = data.ip_address or (request.client.host if request.client else "127.0.0.1")
+
+    cursor.execute(
+        "SELECT reason, banned_by, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)",
+        (data.nickname,)
+    )
+    ban = cursor.fetchone()
+    if ban:
+        reason, banned_by, ban_type, expires_at = ban
+        if ban_type == "permanent":
+            return {"status": "banned", "msg": f"Ваш аккаунт заблокирован навсегда. Причина: {reason}",
+                    "reason": reason, "banned_by": banned_by, "expires_at": None}
+        if ban_type == "temporary" and expires_at and expires_at > ns:
+            return {"status": "banned",
+                    "msg": f"Ваш аккаунт временно заблокирован до {expires_at}. Причина: {reason}",
+                    "reason": reason, "banned_by": banned_by, "expires_at": expires_at}
+        else:
+            cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
             conn.commit()
 
-            perms = json.loads(row[3]) if row[3] else {}
-            notify_granted = (row[4] == 0 and row[2] == 1 and row[1] == 0)
-            revoked_from = row[6]
+    cursor.execute(
+        "SELECT password, is_superadmin, is_admin, admin_perms, admin_notified, granted_by, revoked_by "
+        "FROM users WHERE nickname=?", (data.nickname,)
+    )
+    row = cursor.fetchone()
+    session_token = uuid.uuid4().hex
 
-            if notify_granted:
-                cursor.execute("UPDATE users SET admin_notified = 1 WHERE nickname = ?", (data.nickname,))
-                conn.commit()
-            if revoked_from:
-                cursor.execute("UPDATE users SET revoked_by = NULL WHERE nickname = ?", (data.nickname,))
-                conn.commit()
+    if row:
+        if row[0] != data.password:
+            return {"status": "error", "msg": "Неверный пароль для этого аккаунта!"}
 
-            return {
-                "status": "ok",
-                "msg": "logged_in",
-                "is_superadmin": bool(row[1]) or is_super(data.nickname),
-                "is_admin": bool(row[2]) or bool(row[1]) or is_super(data.nickname),
-                "admin_perms": perms,
-                "admin_notice": notify_granted,
-                "granted_by": row[5],
-                "revoked_by": revoked_from
-            }
-        return {"status": "error", "msg": "Неверный пароль для этого аккаунта!"}
+        cursor.execute("UPDATE users SET last_login=? WHERE nickname=?", (ns, data.nickname))
+        cursor.execute(
+            "INSERT INTO user_sessions(nickname,session_token,user_agent,ip_address,logged_in_at,last_active,is_active) "
+            "VALUES(?,?,?,?,?,?,1)",
+            (data.nickname, session_token, data.user_agent, ip, ns, ns)
+        )
+        cursor.execute(
+            "DELETE FROM user_sessions WHERE nickname=? AND id NOT IN "
+            "(SELECT id FROM user_sessions WHERE nickname=? ORDER BY id DESC LIMIT 20)",
+            (data.nickname, data.nickname)
+        )
+        conn.commit()
+
+        perms = json.loads(row[3]) if row[3] else {}
+        notify_granted = (row[4] == 0 and row[2] == 1 and row[1] == 0)
+        revoked_from = row[6]
+
+        if notify_granted:
+            cursor.execute("UPDATE users SET admin_notified=1 WHERE nickname=?", (data.nickname,))
+            conn.commit()
+        if revoked_from:
+            cursor.execute("UPDATE users SET revoked_by=NULL WHERE nickname=?", (data.nickname,))
+            conn.commit()
+
+        return {
+            "status": "ok", "msg": "logged_in",
+            "is_superadmin": bool(row[1]) or is_super(data.nickname),
+            "is_admin": bool(row[2]) or bool(row[1]) or is_super(data.nickname),
+            "admin_perms": perms,
+            "admin_notice": notify_granted,
+            "granted_by": row[5],
+            "revoked_by": revoked_from,
+            "session_token": session_token
+        }
     else:
         is_sup = 1 if is_super(data.nickname) else 0
         perms = {
-            "can_delete_messages": True,
-            "can_delete_chats": True,
-            "can_kick_users": True,
-            "can_view_all_chats": True,
-            "can_grant_admins": True,
-            "can_delete_users_direct": True,
-            "can_request_delete_users": True
+            "can_delete_messages": True, "can_delete_chats": True, "can_kick_users": True,
+            "can_view_all_chats": True, "can_grant_admins": True, "can_delete_users_direct": True,
+            "can_request_delete_users": True, "can_ban_users": True, "can_mute_users": True,
+            "can_handle_support": True
         } if is_sup else {}
 
-        cursor.execute("""
-            INSERT INTO users (nickname, password, last_login, is_superadmin, is_admin, admin_perms, admin_notified)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
-        """, (data.nickname, data.password, now_str, is_sup, is_sup, json.dumps(perms)))
+        cursor.execute(
+            "INSERT INTO users(nickname,password,last_login,is_superadmin,is_admin,admin_perms,admin_notified) "
+            "VALUES(?,?,?,?,?,?,1)",
+            (data.nickname, data.password, ns, is_sup, is_sup, json.dumps(perms))
+        )
+        cursor.execute(
+            "INSERT INTO user_sessions(nickname,session_token,user_agent,ip_address,logged_in_at,last_active,is_active) "
+            "VALUES(?,?,?,?,?,?,1)",
+            (data.nickname, session_token, data.user_agent, ip, ns, ns)
+        )
         conn.commit()
+
         return {
-            "status": "ok",
-            "msg": "registered",
-            "is_superadmin": bool(is_sup),
-            "is_admin": bool(is_sup),
-            "admin_perms": perms,
-            "admin_notice": False,
-            "revoked_by": None
+            "status": "ok", "msg": "registered",
+            "is_superadmin": bool(is_sup), "is_admin": bool(is_sup),
+            "admin_perms": perms, "admin_notice": False, "revoked_by": None,
+            "session_token": session_token
         }
 
 @app.post("/change-password")
 def change_password(data: PwdChangeData):
-    cursor.execute("SELECT password, last_pwd_change FROM users WHERE nickname = ?", (data.nickname,))
+    cursor.execute("SELECT password, last_pwd_change FROM users WHERE nickname=?", (data.nickname,))
     row = cursor.fetchone()
     if not row or row[0] != data.old_password:
         return {"status": "error", "msg": "Текущий пароль указан неверно!"}
-
     if row[1]:
         diff = datetime.utcnow() - datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
         if diff < timedelta(hours=3):
             mins = int((timedelta(hours=3) - diff).total_seconds() / 60)
             return {"status": "error", "msg": f"Пароль можно менять раз в 3 часа! Подождите {mins} мин."}
-
-    now_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute("UPDATE users SET password = ?, last_pwd_change = ? WHERE nickname = ?", (data.new_password, now_str, data.nickname))
+    ns = now_str()
+    cursor.execute("UPDATE users SET password=?, last_pwd_change=? WHERE nickname=?",
+                   (data.new_password, ns, data.nickname))
     conn.commit()
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
-# Получение списка СВОИХ чатов (строго где пользователь участник)
+# ═══════════════════════════════════════════════════════════
+#  УПРАВЛЕНИЕ СЕССИЯМИ ПОЛЬЗОВАТЕЛЯ (УСТРОЙСТВА)
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/sessions/my/{nickname}")
+def get_my_sessions(nickname: str, token: str):
+    cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1",
+                   (nickname, token))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=403, detail="Недействительный токен сессии")
+
+    cursor.execute("""
+        SELECT id, user_agent, ip_address, logged_in_at, last_active, is_active,
+               CASE WHEN session_token=? THEN 1 ELSE 0 END as is_current
+        FROM user_sessions WHERE nickname=? AND is_active=1
+        ORDER BY last_active DESC LIMIT 20
+    """, (token, nickname))
+    sessions = []
+    for r in cursor.fetchall():
+        sessions.append({
+            "id": r[0], "user_agent": r[1], "ip_address": r[2],
+            "logged_in_at": r[3], "last_active": r[4],
+            "is_active": bool(r[5]), "is_current": bool(r[6])
+        })
+    return sessions
+
+@app.post("/sessions/heartbeat")
+def session_heartbeat(data: HeartbeatData):
+    ns = now_str()
+    cursor.execute(
+        "UPDATE user_sessions SET last_active=?, is_active=1 WHERE nickname=? AND session_token=?",
+        (ns, data.nickname, data.session_token)
+    )
+    cursor.execute("UPDATE users SET last_login=? WHERE nickname=?", (ns, data.nickname))
+    conn.commit()
+    return {"status": "ok"}
+
+@app.post("/sessions/terminate")
+async def terminate_session(data: TerminateSessionData):
+    cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1",
+                   (data.nickname, data.session_token))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=403, detail="Недействительный токен")
+
+    cursor.execute("SELECT session_token FROM user_sessions WHERE id=? AND nickname=?",
+                   (data.target_session_id, data.nickname))
+    target = cursor.fetchone()
+    if not target:
+        return {"status": "error", "msg": "Сессия не найдена!"}
+
+    cursor.execute("UPDATE user_sessions SET is_active=0 WHERE id=?", (data.target_session_id,))
+    conn.commit()
+
+    if target[0] != data.session_token:
+        await manager.kick_user(data.nickname, "Эта сессия была завершена вами с другого устройства.")
+    return {"status": "ok", "msg": "Сессия завершена."}
+
+@app.post("/sessions/terminate-others")
+async def terminate_other_sessions(data: TerminateAllSessionsData):
+    cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1",
+                   (data.nickname, data.session_token))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=403, detail="Недействительный токен")
+
+    cursor.execute(
+        "UPDATE user_sessions SET is_active=0 WHERE nickname=? AND session_token!=?",
+        (data.nickname, data.session_token)
+    )
+    conn.commit()
+
+    await manager.kick_user(data.nickname, "Все другие сессии были завершены с вашего основного устройства.")
+    return {"status": "ok", "msg": "Все другие сессии завершены."}
+
+# ═══════════════════════════════════════════════════════════
+#  ЧАТЫ И ПРИГЛАШЕНИЯ
+# ═══════════════════════════════════════════════════════════
+
 @app.get("/chats/{nickname}")
 def get_user_chats(nickname: str):
     cursor.execute("""
         SELECT DISTINCT c.id, c.name FROM chats c
-        JOIN members m ON c.id = m.chat_id
-        WHERE m.nickname = ?
+        JOIN members m ON c.id=m.chat_id WHERE m.nickname=?
     """, (nickname,))
     return [{"id": r[0], "name": r[1]} for r in cursor.fetchall()]
 
 @app.post("/chats")
 def create_chat(data: ChatData):
-    cursor.execute("INSERT OR IGNORE INTO chats VALUES (?, ?, ?, CURRENT_TIMESTAMP)", (data.id, data.name, data.created_by))
-    cursor.execute("INSERT OR IGNORE INTO members VALUES (?, ?)", (data.id, data.created_by))
+    cursor.execute("INSERT OR IGNORE INTO chats VALUES(?,?,?,CURRENT_TIMESTAMP)", (data.id, data.name, data.created_by))
+    cursor.execute("INSERT OR IGNORE INTO members VALUES(?,?)", (data.id, data.created_by))
     conn.commit()
     return {"status": "ok"}
 
@@ -354,349 +638,607 @@ def create_chat(data: ChatData):
 def delete_chat(chat_id: str, user: str):
     if chat_id == "general":
         return {"status": "error", "msg": "Общий чат удалить нельзя!"}
-    cursor.execute("SELECT created_by FROM chats WHERE id = ?", (chat_id,))
+    cursor.execute("SELECT created_by FROM chats WHERE id=?", (chat_id,))
     row = cursor.fetchone()
     if not row:
         return {"status": "error", "msg": "Чат не найден!"}
-
-    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (user,))
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (user,))
     u = cursor.fetchone()
     can_del = False
     if u:
-        perms = json.loads(u[2]) if u[2] else {}
-        if u[0] or is_super(user) or (u[1] and perms.get("can_delete_chats", False)) or row[0] == user:
-            can_del = True
-
+        perms = json.loads(u[2] or '{}')
+        can_del = u[0] or is_super(user) or (u[1] and perms.get("can_delete_chats")) or row[0] == user
     if not can_del:
         return {"status": "error", "msg": "У вас нет прав на удаление этого чата!"}
-
-    cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
-    cursor.execute("DELETE FROM members WHERE chat_id = ?", (chat_id,))
-    cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-    cursor.execute("DELETE FROM invites WHERE chat_id = ?", (chat_id,))
+    cursor.execute("DELETE FROM chats WHERE id=?", (chat_id,))
+    cursor.execute("DELETE FROM members WHERE chat_id=?", (chat_id,))
+    cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    cursor.execute("DELETE FROM invites WHERE chat_id=?", (chat_id,))
+    cursor.execute("DELETE FROM pinned_messages WHERE chat_id=?", (chat_id,))
     conn.commit()
     return {"status": "ok"}
 
-# Приглашения
 @app.get("/invites/{nickname}")
 def get_invites(nickname: str):
-    cursor.execute("SELECT id, chat_id, chat_name, from_user FROM invites WHERE to_user = ?", (nickname,))
+    cursor.execute("SELECT id, chat_id, chat_name, from_user FROM invites WHERE to_user=?", (nickname,))
     return [{"id": r[0], "chat_id": r[1], "chat_name": r[2], "from_user": r[3]} for r in cursor.fetchall()]
 
 @app.post("/invite")
 def send_invite(data: InviteData):
-    cursor.execute("SELECT 1 FROM users WHERE nickname = ?", (data.to_user,))
+    cursor.execute("SELECT 1 FROM users WHERE nickname=?", (data.to_user,))
     if not cursor.fetchone():
         return {"status": "error", "msg": "Пользователь не найден!"}
-
-    cursor.execute("SELECT 1 FROM members WHERE chat_id = ? AND nickname = ?", (data.chat_id, data.to_user))
+    cursor.execute("SELECT 1 FROM members WHERE chat_id=? AND nickname=?", (data.chat_id, data.to_user))
     if cursor.fetchone():
-        return {"status": "error", "msg": "Пользователь уже находится в этом чате!"}
-
-    cursor.execute("INSERT INTO invites (chat_id, chat_name, from_user, to_user) VALUES (?, ?, ?, ?)",
+        return {"status": "error", "msg": "Пользователь уже в этом чате!"}
+    cursor.execute("INSERT INTO invites(chat_id,chat_name,from_user,to_user) VALUES(?,?,?,?)",
                    (data.chat_id, data.chat_name, data.from_user, data.to_user))
     conn.commit()
     return {"status": "ok", "msg": "Приглашение отправлено!"}
 
 @app.post("/invite/respond")
 def respond_invite(data: InviteAction):
-    cursor.execute("SELECT chat_id, to_user FROM invites WHERE id = ?", (data.invite_id,))
+    cursor.execute("SELECT chat_id, to_user FROM invites WHERE id=?", (data.invite_id,))
     row = cursor.fetchone()
     if not row or row[1] != data.nickname:
         return {"status": "error", "msg": "Приглашение не найдено!"}
-
-    chat_id = row[0]
     if data.action == "accept":
-        cursor.execute("INSERT OR IGNORE INTO members VALUES (?, ?)", (chat_id, data.nickname))
-    # При отклонении строго удаляем инвайт, не добавляя в members
-    cursor.execute("DELETE FROM invites WHERE id = ?", (data.invite_id,))
+        cursor.execute("INSERT OR IGNORE INTO members VALUES(?,?)", (row[0], data.nickname))
+    cursor.execute("DELETE FROM invites WHERE id=?", (data.invite_id,))
     conn.commit()
     return {"status": "ok"}
 
-# Загрузка файлов
+# ═══════════════════════════════════════════════════════════
+#  ФАЙЛЫ И СООБЩЕНИЯ
+# ═══════════════════════════════════════════════════════════
+
 @app.post("/upload")
 async def upload_file(request: Request, filename: str = "file.bin"):
     periodic_cleanup()
     body = await request.body()
     if len(body) > 10485760:
-        raise HTTPException(status_code=413, detail="Файл превышает 10 МБ!")
-
+        raise HTTPException(status_code=413, detail="Файл превышает лимит 10 МБ!")
     _, ext = os.path.splitext(filename)
-    unique_name = f"{uuid.uuid4().hex}{ext if ext else '.bin'}"
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
-    with open(file_path, "wb") as f:
+    unique_name = f"{uuid.uuid4().hex}{ext or '.bin'}"
+    with open(os.path.join(UPLOAD_DIR, unique_name), "wb") as f:
         f.write(body)
-
     return {"status": "ok", "url": f"/uploads/{unique_name}"}
+
+def _get_reactions(msg_ids: list) -> dict:
+    if not msg_ids:
+        return {}
+    ph = ",".join("?" * len(msg_ids))
+    cursor.execute(f"SELECT message_id,emoji,COUNT(*) FROM reactions WHERE message_id IN ({ph}) GROUP BY message_id,emoji", msg_ids)
+    out: Dict[int, Dict] = {}
+    for mid, emoji, cnt in cursor.fetchall():
+        out.setdefault(mid, {})[emoji] = cnt
+    return out
 
 @app.get("/messages/{chat_id}")
 def get_messages(chat_id: str):
     periodic_cleanup()
     cursor.execute("""
-        SELECT id, sender, text, file_url, file_type, 
-               reply_to_id, reply_to_text, reply_to_sender, 
-               strftime('%H:%M', created_at)
-        FROM messages 
-        WHERE chat_id = ? 
-        ORDER BY id ASC LIMIT 150
+        SELECT id,sender,text,file_url,file_type,reply_to_id,reply_to_text,reply_to_sender,
+               strftime('%H:%M',created_at),is_edited
+        FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 150
     """, (chat_id,))
-    return [
-        {
-            "id": r[0],
-            "sender": r[1],
-            "text": r[2],
-            "file_url": r[3],
-            "file_type": r[4],
-            "reply_to_id": r[5],
-            "reply_to_text": r[6],
-            "reply_to_sender": r[7],
-            "time": r[8]
-        }
-        for r in cursor.fetchall()
-    ]
+    rows = cursor.fetchall()
+    rmap = _get_reactions([r[0] for r in rows])
+    return [{
+        "id": r[0], "sender": r[1], "text": r[2], "file_url": r[3], "file_type": r[4],
+        "reply_to_id": r[5], "reply_to_text": r[6], "reply_to_sender": r[7],
+        "time": r[8], "is_edited": bool(r[9]), "reactions": rmap.get(r[0], {})
+    } for r in rows]
 
-# Оповещения
+@app.get("/pinned/{chat_id}")
+def get_pinned(chat_id: str):
+    cursor.execute("SELECT message_id,pinned_by,message_text,pinned_at FROM pinned_messages WHERE chat_id=?", (chat_id,))
+    row = cursor.fetchone()
+    return {"message_id": row[0], "pinned_by": row[1], "message_text": row[2], "pinned_at": row[3]} if row else None
+
 @app.get("/notifications/{nickname}")
 def get_notifications(nickname: str):
-    cursor.execute("SELECT id, text FROM notifications WHERE to_user = ? AND is_read = 0", (nickname,))
+    cursor.execute("SELECT id,text FROM notifications WHERE to_user=? AND is_read=0", (nickname,))
     rows = cursor.fetchall()
-    cursor.execute("UPDATE notifications SET is_read = 1 WHERE to_user = ?", (nickname,))
+    cursor.execute("UPDATE notifications SET is_read=1 WHERE to_user=?", (nickname,))
     conn.commit()
     return [{"id": r[0], "text": r[1]} for r in rows]
 
-# Мониторинг сервера для всех пользователей
+# ═══════════════════════════════════════════════════════════
+#  МОНИТОРИНГ И ХРАНИЛИЩЕ
+# ═══════════════════════════════════════════════════════════
+
+def _calc_storage():
+    ub = sum(os.path.getsize(os.path.join(root, f))
+             for root, _, files in os.walk(UPLOAD_DIR) for f in files)
+    uploads_mb = round(ub / 1048576, 2)
+    db_kb = round(os.path.getsize("messenger.db") / 1024, 1) if os.path.exists("messenger.db") else 0
+    total_mb = round(uploads_mb + db_kb / 1024, 2)
+    level = "full" if total_mb >= 500 else "critical" if total_mb >= 450 else "warning" if total_mb >= 300 else "ok"
+    until = max(0, int((500 - total_mb) / 0.02))
+    return uploads_mb, db_kb, total_mb, level, until
+
 @app.get("/server/monitoring")
 def server_monitoring():
     uptime_sec = int(time.time() - SERVER_START_TIME)
     h, rem = divmod(uptime_sec, 3600)
     m, s = divmod(rem, 60)
-    uptime_fmt = f"{h}ч {m}м {s}с"
-
-    # Подсчет размера uploads
-    uploads_bytes = 0
-    for root, _, files in os.walk(UPLOAD_DIR):
-        for f in files:
-            uploads_bytes += os.path.getsize(os.path.join(root, f))
-    uploads_mb = round(uploads_bytes / (1024 * 1024), 2)
-
-    db_size_kb = round(os.path.getsize("messenger.db") / 1024, 1) if os.path.exists("messenger.db") else 0
-
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
-
-    cursor.execute("SELECT COUNT(*) FROM chats")
-    total_chats = cursor.fetchone()[0]
-
-    cursor.execute("SELECT COUNT(*) FROM messages")
-    total_msgs = cursor.fetchone()[0]
-
+    uploads_mb, db_kb, total_mb, level, until = _calc_storage()
+    cursor.execute("SELECT COUNT(*) FROM users"); tu = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM chats"); tc = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM messages"); tm = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM support_tickets WHERE status='open'"); ts = cursor.fetchone()[0]
     return {
-        "status": "online",
-        "uptime": uptime_fmt,
-        "online_count": len(manager.user_sockets),
-        "total_users": total_users,
-        "total_chats": total_chats,
-        "total_messages": total_msgs,
-        "uploads_mb": uploads_mb,
-        "db_size_kb": db_size_kb
+        "status": "online", "uptime": f"{h}ч {m}м {s}с",
+        "online_count": len(manager.user_sockets), "online_users": manager.online_users(),
+        "total_users": tu, "total_chats": tc, "total_messages": tm,
+        "open_support_tickets": ts,
+        "uploads_mb": uploads_mb, "db_size_kb": db_kb,
+        "total_storage_mb": total_mb, "storage_warning_level": level, "messages_until_cleanup": until
     }
 
-# Админ-панель: пользователи
+@app.get("/storage-status")
+def storage_status():
+    uploads_mb, _, total_mb, level, until = _calc_storage()
+    return {"level": level, "uploads_mb": uploads_mb, "total_mb": total_mb, "messages_until_cleanup": until}
+
+@app.get("/check-mute/{nickname}")
+def check_mute(nickname: str):
+    ns = now_str()
+    cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
+    conn.commit()
+    cursor.execute(
+        "SELECT expires_at,reason FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>? ORDER BY expires_at DESC LIMIT 1",
+        (nickname, ns)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return {"is_muted": False, "expires_at": None, "reason": None, "remaining_minutes": 0}
+    exp, reason = row
+    rem = max(0, int((datetime.strptime(exp, '%Y-%m-%d %H:%M:%S') - datetime.utcnow()).total_seconds() / 60))
+    return {"is_muted": True, "expires_at": exp, "reason": reason, "remaining_minutes": rem}
+
+# ═══════════════════════════════════════════════════════════
+#  ПОДДЕРЖКА (SUPPORT)
+# ═══════════════════════════════════════════════════════════
+
+def _is_support_staff(nick: str) -> bool:
+    if is_super(nick):
+        return True
+    cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE nickname=?", (nick,))
+    r = cursor.fetchone()
+    if not r:
+        return False
+    if r[0]:
+        return True
+    perms = json.loads(r[1] or '{}')
+    return perms.get("can_handle_support", False)
+
+@app.post("/support/ticket")
+async def create_support_ticket(data: SupportTicketData):
+    if not data.subject.strip() or not data.message.strip():
+        return {"status": "error", "msg": "Заполните тему и текст обращения!"}
+    cursor.execute(
+        "INSERT INTO support_tickets(from_user,subject,message) VALUES(?,?,?)",
+        (data.from_user, data.subject.strip(), data.message.strip())
+    )
+    ticket_id = cursor.lastrowid
+
+    cursor.execute("SELECT nickname FROM users WHERE is_admin=1 OR is_superadmin=1")
+    for row in cursor.fetchall():
+        nick = row[0]
+        if _is_support_staff(nick):
+            cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                           (nick, f"📩 Новое обращение в поддержку #{ticket_id} от @{data.from_user}: «{data.subject[:35]}»"))
+    conn.commit()
+
+    await manager.notify_support_staff({
+        "action": "new_support_ticket",
+        "ticket_id": ticket_id,
+        "from_user": data.from_user,
+        "subject": data.subject
+    })
+    return {"status": "ok", "msg": "Обращение отправлено в поддержку!", "ticket_id": ticket_id}
+
+@app.get("/support/tickets/my/{nickname}")
+def get_my_tickets(nickname: str):
+    cursor.execute("""
+        SELECT id,subject,message,status,created_at FROM support_tickets
+        WHERE from_user=? ORDER BY id DESC LIMIT 30
+    """, (nickname,))
+    tickets = []
+    for row in cursor.fetchall():
+        tid = row[0]
+        cursor.execute(
+            "SELECT from_user,message,created_at FROM support_replies WHERE ticket_id=? ORDER BY id ASC",
+            (tid,)
+        )
+        replies = [{"from_user": r[0], "message": r[1], "created_at": r[2]} for r in cursor.fetchall()]
+        tickets.append({
+            "id": tid, "subject": row[1], "message": row[2],
+            "status": row[3], "created_at": row[4], "replies": replies
+        })
+    return tickets
+
+@app.get("/support/tickets/all")
+def get_all_tickets(admin: str):
+    if not _is_support_staff(admin):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute("""
+        SELECT id,from_user,subject,message,status,created_at FROM support_tickets
+        ORDER BY id DESC LIMIT 50
+    """)
+    tickets = []
+    for row in cursor.fetchall():
+        tid = row[0]
+        cursor.execute(
+            "SELECT from_user,message,created_at FROM support_replies WHERE ticket_id=? ORDER BY id ASC",
+            (tid,)
+        )
+        replies = [{"from_user": r[0], "message": r[1], "created_at": r[2]} for r in cursor.fetchall()]
+        tickets.append({
+            "id": tid, "from_user": row[1], "subject": row[2],
+            "message": row[3], "status": row[4], "created_at": row[5], "replies": replies
+        })
+    return tickets
+
+@app.post("/support/reply")
+async def reply_to_ticket(data: SupportReplyData):
+    if not _is_support_staff(data.admin_nick):
+        return {"status": "error", "msg": "У вас нет прав на ответы в поддержке!"}
+    cursor.execute("SELECT from_user, subject FROM support_tickets WHERE id=?", (data.ticket_id,))
+    ticket = cursor.fetchone()
+    if not ticket:
+        return {"status": "error", "msg": "Обращение не найдено!"}
+
+    cursor.execute(
+        "INSERT INTO support_replies(ticket_id,from_user,message) VALUES(?,?,?)",
+        (data.ticket_id, data.admin_nick, data.message)
+    )
+    cursor.execute("UPDATE support_tickets SET status='answered' WHERE id=?", (data.ticket_id,))
+
+    from_user = ticket[0]
+    cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                   (from_user, f"💬 Поддержка ответила на ваше обращение #{data.ticket_id} «{ticket[1][:30]}»"))
+    conn.commit()
+
+    await manager.send_to_user(from_user, {
+        "action": "support_reply",
+        "ticket_id": data.ticket_id,
+        "from_user": data.admin_nick,
+        "message": data.message
+    })
+    return {"status": "ok", "msg": "Ответ отправлен пользователю!"}
+
+@app.post("/support/close")
+def close_ticket(data: SupportCloseData):
+    if not _is_support_staff(data.admin_nick):
+        return {"status": "error", "msg": "Нет прав!"}
+    cursor.execute("UPDATE support_tickets SET status='closed' WHERE id=?", (data.ticket_id,))
+    conn.commit()
+    return {"status": "ok", "msg": "Обращение закрыто."}
+
+@app.post("/support/request-perm")
+def request_support_perm(data: SupportPermRequestData):
+    cursor.execute("SELECT is_admin, is_superadmin FROM users WHERE nickname=?", (data.nickname,))
+    user = cursor.fetchone()
+    if not user or (not user[0] and not user[1]):
+        return {"status": "error", "msg": "Только администраторы могут запрашивать право на поддержку!"}
+
+    if is_super(data.nickname):
+        return {"status": "error", "msg": "Вы уже Главный Администратор!"}
+
+    today = datetime.utcnow().date().isoformat()
+    cursor.execute(
+        "SELECT 1 FROM support_perm_requests WHERE requested_by=? AND DATE(created_at)=? AND status='pending'",
+        (data.nickname, today)
+    )
+    if cursor.fetchone():
+        return {"status": "error", "msg": "Вы уже подали заявку сегодня! Лимит — 1 запрос в день."}
+
+    cursor.execute("INSERT INTO support_perm_requests(requested_by) VALUES(?)", (data.nickname,))
+    req_id = cursor.lastrowid
+
+    cursor.execute("SELECT nickname FROM users WHERE is_superadmin=1")
+    for row in cursor.fetchall():
+        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                       (row[0], f"🛡️ @{data.nickname} просит право на ответы в поддержке (запрос #{req_id})."))
+    conn.commit()
+    return {"status": "ok", "msg": "Запрос отправлен Главному Администратору! (1 раз в сутки)"}
+
+@app.get("/support/perm-requests")
+def get_support_perm_requests(admin: str):
+    if not is_super(admin):
+        raise HTTPException(status_code=403, detail="Доступно только Главному Администратору")
+    cursor.execute(
+        "SELECT id,requested_by,status,created_at FROM support_perm_requests WHERE status='pending' ORDER BY id DESC"
+    )
+    return [{"id": r[0], "requested_by": r[1], "status": r[2], "created_at": r[3]} for r in cursor.fetchall()]
+
+@app.post("/support/perm-decision")
+async def decide_support_perm(data: SupportPermDecision):
+    if not is_super(data.admin_nick):
+        return {"status": "error", "msg": "Только Главный Администратор принимает решения!"}
+    cursor.execute("SELECT requested_by FROM support_perm_requests WHERE id=? AND status='pending'", (data.request_id,))
+    row = cursor.fetchone()
+    if not row:
+        return {"status": "error", "msg": "Запрос не найден или уже закрыт!"}
+
+    nick = row[0]
+    ns = now_str()
+    cursor.execute(
+        "UPDATE support_perm_requests SET status=?, decided_at=?, decided_by=? WHERE id=?",
+        (data.action, ns, data.admin_nick, data.request_id)
+    )
+
+    if data.action == "approve":
+        cursor.execute("SELECT admin_perms FROM users WHERE nickname=?", (nick,))
+        perms_row = cursor.fetchone()
+        perms = json.loads(perms_row[0] or '{}') if perms_row else {}
+        perms["can_handle_support"] = True
+        cursor.execute("UPDATE users SET admin_perms=? WHERE nickname=?", (json.dumps(perms), nick))
+        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                       (nick, f"✅ @{data.admin_nick} одобрил ваше право на ответы в поддержке!"))
+        await manager.send_to_user(nick, {"action": "support_perm_granted"})
+        msg = f"Право на поддержку успешно выдано @{nick}."
+    else:
+        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                       (nick, f"❌ @{data.admin_nick} отклонил ваш запрос на поддержку."))
+        msg = f"Запрос @{nick} отклонён."
+
+    conn.commit()
+    return {"status": "ok", "msg": msg}
+
+# ═══════════════════════════════════════════════════════════
+#  АДМИНИСТРАТИВНЫЕ ДЕЙСТВИЯ
+# ═══════════════════════════════════════════════════════════
+
 @app.get("/admin/users")
 def get_admin_users(admin: str, query: str = ""):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname = ?", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
 
+    ns = now_str()
     cursor.execute("""
-        SELECT nickname, created_at, last_login, is_superadmin, is_admin, admin_perms
-        FROM users 
-        WHERE nickname LIKE ? 
-        ORDER BY last_login DESC LIMIT 60
+        SELECT nickname,created_at,last_login,is_superadmin,is_admin,admin_perms
+        FROM users WHERE nickname LIKE ? ORDER BY last_login DESC LIMIT 60
     """, (f"%{query}%",))
-    
+
     users_list = []
     for r in cursor.fetchall():
+        nick = r[0]
+        cursor.execute(
+            "SELECT 1 FROM bans WHERE LOWER(target_nick)=LOWER(?) AND (ban_type='permanent' OR expires_at>?)",
+            (nick, ns)
+        )
+        is_banned = cursor.fetchone() is not None
+        cursor.execute("SELECT 1 FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>?", (nick, ns))
+        is_muted = cursor.fetchone() is not None
         users_list.append({
-            "nickname": r[0],
-            "created_at": r[1],
-            "last_login": r[2],
-            "is_superadmin": bool(r[3]) or is_super(r[0]),
-            "is_admin": bool(r[4]) or bool(r[3]) or is_super(r[0]),
-            "perms": json.loads(r[5]) if r[5] else {},
-            "is_online": manager.is_online(r[0])
+            "nickname": nick, "created_at": r[1], "last_login": r[2],
+            "is_superadmin": bool(r[3]) or is_super(nick),
+            "is_admin": bool(r[4]) or bool(r[3]) or is_super(nick),
+            "perms": json.loads(r[5] or '{}'),
+            "is_online": manager.is_online(nick),
+            "is_banned": is_banned, "is_muted": is_muted
         })
 
     cursor.execute("SELECT COUNT(*) FROM users")
-    total_count = cursor.fetchone()[0]
+    total = cursor.fetchone()[0]
+    return {"total_users": total, "online_count": len(manager.user_sockets), "users": users_list}
 
-    return {
-        "total_users": total_count,
-        "online_count": len(manager.user_sockets),
-        "users": users_list
-    }
-
-# Админ-панель: все группы и их участники
 @app.get("/admin/groups")
 def get_admin_groups(admin: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname = ?", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute("SELECT id,name,created_by,created_at FROM chats")
+    result = []
+    for cid, cname, cc, cca in cursor.fetchall():
+        cursor.execute("SELECT nickname FROM members WHERE chat_id=?", (cid,))
+        result.append({"id": cid, "name": cname, "created_by": cc, "created_at": cca,
+                        "members": [m[0] for m in cursor.fetchall()]})
+    return result
 
-    cursor.execute("SELECT id, name, created_by, created_at FROM chats")
-    chats = cursor.fetchall()
-    groups_list = []
+@app.get("/admin/user-sessions")
+def admin_get_user_sessions(admin: str, target: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute(
+        "SELECT user_agent,ip_address,logged_in_at,last_active,is_active FROM user_sessions "
+        "WHERE nickname=? ORDER BY id DESC LIMIT 5", (target,)
+    )
+    return [{"user_agent": r[0], "ip_address": r[1], "logged_in_at": r[2],
+             "last_active": r[3], "is_active": bool(r[4])} for r in cursor.fetchall()]
 
-    for cid, cname, ccreator, ccreated in chats:
-        cursor.execute("SELECT nickname FROM members WHERE chat_id = ?", (cid,))
-        members = [m[0] for m in cursor.fetchall()]
-        groups_list.append({
-            "id": cid,
-            "name": cname,
-            "created_by": ccreator,
-            "created_at": ccreated,
-            "members": members
-        })
-    return groups_list
-
-# Назначение или снятие прав
 @app.post("/admin/set-perms")
 async def set_admin_permissions(data: AdminPermsData):
-    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (data.admin_nick,))
+    cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
     adm = cursor.fetchone()
     if not adm:
         raise HTTPException(status_code=403, detail="Отказано")
-    perms_adm = json.loads(adm[2]) if adm[2] else {}
-    if not adm[0] and not is_super(data.admin_nick) and not perms_adm.get("can_grant_admins", False):
-        return {"status": "error", "msg": "У вас нет права изменять роли администраторов!"}
-
+    perms_adm = json.loads(adm[1] or '{}')
+    if not adm[0] and not is_super(data.admin_nick) and not perms_adm.get("can_grant_admins"):
+        return {"status": "error", "msg": "У вас нет права назначать администраторов!"}
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Нельзя изменять права Главного Администратора!"}
 
-    # Проверяем, есть ли хоть одна галочка
     has_any = any(data.perms.values())
     if has_any:
-        cursor.execute("""
-            UPDATE users 
-            SET is_admin = 1, admin_perms = ?, admin_notified = 0, granted_by = ?, revoked_by = NULL
-            WHERE nickname = ?
-        """, (json.dumps(data.perms), data.admin_nick, data.target_nick))
+        cursor.execute(
+            "UPDATE users SET is_admin=1,admin_perms=?,admin_notified=0,granted_by=?,revoked_by=NULL WHERE nickname=?",
+            (json.dumps(data.perms), data.admin_nick, data.target_nick)
+        )
         conn.commit()
-        return {"status": "ok", "msg": f"Права администратора для @{data.target_nick} успешно обновлены!"}
+        return {"status": "ok", "msg": f"Права для @{data.target_nick} обновлены!"}
     else:
-        # Лишение ВСЕХ прав
-        cursor.execute("""
-            UPDATE users 
-            SET is_admin = 0, admin_perms = '{}', admin_notified = 1, granted_by = NULL, revoked_by = ?
-            WHERE nickname = ?
-        """, (data.admin_nick, data.target_nick))
+        cursor.execute(
+            "UPDATE users SET is_admin=0,admin_perms='{}',admin_notified=1,granted_by=NULL,revoked_by=? WHERE nickname=?",
+            (data.admin_nick, data.target_nick)
+        )
         conn.commit()
+        await manager.send_to_user(data.target_nick, {"action": "admin_revoked", "revoked_by": data.admin_nick})
+        return {"status": "ok", "msg": f"Все права у @{data.target_nick} отозваны!"}
 
-        # Мгновенное оповещение по WebSocket
-        await manager.send_to_user(data.target_nick, {
-            "action": "admin_revoked",
-            "revoked_by": data.admin_nick
-        })
-        return {"status": "ok", "msg": f"Все администраторские права у @{data.target_nick} полностью отозваны!"}
+@app.post("/admin/ban")
+def ban_user(data: BanData):
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Главного администратора заблокировать невозможно!"}
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm:
+        raise HTTPException(status_code=403, detail="Отказано")
+    perms = json.loads(adm[2] or '{}')
+    if not adm[0] and not is_super(data.admin_nick) and not perms.get("can_ban_users"):
+        return {"status": "error", "msg": "У вас нет прав на блокировку пользователей!"}
+    expires_at = None
+    if data.ban_type == "temporary" and data.duration_hours > 0:
+        expires_at = (datetime.utcnow() + timedelta(hours=data.duration_hours)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    cursor.execute("INSERT INTO bans(target_nick,banned_by,reason,ban_type,expires_at) VALUES(?,?,?,?,?)",
+                   (data.target_nick, data.admin_nick, data.reason, data.ban_type, expires_at))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} заблокирован. Причина: {data.reason}"}
 
-# Удаление аккаунта / Подача заявки на удаление
+@app.post("/admin/unban")
+def unban_user(data: UnbanData):
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm:
+        raise HTTPException(status_code=403, detail="Отказано")
+    perms = json.loads(adm[2] or '{}')
+    if not adm[0] and not is_super(data.admin_nick) and not perms.get("can_ban_users"):
+        return {"status": "error", "msg": "У вас нет прав на разблокировку!"}
+    cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} разблокирован."}
+
+@app.get("/admin/bans")
+def get_bans(admin: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    periodic_cleanup()
+    cursor.execute("SELECT id,target_nick,banned_by,reason,ban_type,expires_at,created_at FROM bans ORDER BY id DESC")
+    return [{"id": r[0], "target_nick": r[1], "banned_by": r[2], "reason": r[3],
+             "ban_type": r[4], "expires_at": r[5], "created_at": r[6]} for r in cursor.fetchall()]
+
+@app.post("/admin/mute")
+def mute_user(data: MuteData):
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm:
+        raise HTTPException(status_code=403, detail="Отказано")
+    perms = json.loads(adm[2] or '{}')
+    if not adm[0] and not is_super(data.admin_nick) and not perms.get("can_mute_users"):
+        return {"status": "error", "msg": "У вас нет прав на заглушение пользователей!"}
+    exp = (datetime.utcnow() + timedelta(minutes=data.duration_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    cursor.execute("INSERT INTO mutes(target_nick,muted_by,reason,duration_minutes,expires_at) VALUES(?,?,?,?,?)",
+                   (data.target_nick, data.admin_nick, data.reason, data.duration_minutes, exp))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} заглушен на {data.duration_minutes} мин."}
+
+@app.post("/admin/unmute")
+def unmute_user(data: UnmuteData):
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm:
+        raise HTTPException(status_code=403, detail="Отказано")
+    perms = json.loads(adm[2] or '{}')
+    if not adm[0] and not is_super(data.admin_nick) and not perms.get("can_mute_users"):
+        return {"status": "error", "msg": "Нет прав!"}
+    cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    conn.commit()
+    return {"status": "ok", "msg": f"Мьют с @{data.target_nick} снят."}
+
+@app.post("/admin/kick")
+async def kick_user(data: KickData):
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm:
+        raise HTTPException(status_code=403, detail="Отказано")
+    perms = json.loads(adm[2] or '{}')
+    if not adm[0] and not is_super(data.admin_nick) and not perms.get("can_kick_users"):
+        return {"status": "error", "msg": "Нет прав на кик пользователей!"}
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Нельзя кикнуть Главного Администратора!"}
+    await manager.kick_user(data.target_nick)
+    return {"status": "ok", "msg": f"@{data.target_nick} принудительно отключён."}
+
 @app.post("/admin/delete-user")
 def delete_user_action(data: DeleteUserAction):
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Главного администратора удалить невозможно!"}
-
-    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (data.admin_nick,))
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
     adm = cursor.fetchone()
     if not adm:
         raise HTTPException(status_code=403, detail="Отказано")
-
-    is_super_admin = bool(adm[0]) or is_super(data.admin_nick)
-    perms = json.loads(adm[2]) if adm[2] else {}
-
-    can_direct = is_super_admin or perms.get("can_delete_users_direct", False)
-    can_request = perms.get("can_request_delete_users", False)
-
-    if can_direct:
-        # Прямое мгновенное удаление
-        cursor.execute("DELETE FROM users WHERE nickname = ?", (data.target_nick,))
-        cursor.execute("DELETE FROM members WHERE nickname = ?", (data.target_nick,))
-        cursor.execute("DELETE FROM invites WHERE to_user = ? OR from_user = ?", (data.target_nick, data.target_nick))
+    perms = json.loads(adm[2] or '{}')
+    is_sup = bool(adm[0]) or is_super(data.admin_nick)
+    if is_sup or perms.get("can_delete_users_direct"):
+        cursor.execute("DELETE FROM users WHERE nickname=?", (data.target_nick,))
+        cursor.execute("DELETE FROM members WHERE nickname=?", (data.target_nick,))
+        cursor.execute("DELETE FROM invites WHERE to_user=? OR from_user=?", (data.target_nick, data.target_nick))
+        cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+        cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
         conn.commit()
-        return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} успешно удалён навсегда!"}
-
-    elif can_request:
+        return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} полностью удалён!"}
+    elif perms.get("can_request_delete_users"):
         if not data.reason.strip():
-            return {"status": "error", "msg": "Укажите причину для подачи заявки на удаление!"}
-
-        expires = datetime.utcnow() + timedelta(days=7)
-        cursor.execute("""
-            INSERT INTO delete_requests (target_nick, requested_by, reason, expires_at)
-            VALUES (?, ?, ?, ?)
-        """, (data.target_nick, data.admin_nick, data.reason.strip(), expires.strftime('%Y-%m-%d %H:%M:%S')))
+            return {"status": "error", "msg": "Укажите причину для заявки!"}
+        exp = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("INSERT INTO delete_requests(target_nick,requested_by,reason,expires_at) VALUES(?,?,?,?)",
+                       (data.target_nick, data.admin_nick, data.reason.strip(), exp))
         conn.commit()
-        return {"status": "ok", "msg": f"Заявка на удаление @{data.target_nick} отправлена главному администратору (срок рассмотрения: 7 дней)."}
+        return {"status": "ok", "msg": f"Заявка на удаление @{data.target_nick} отправлена Главному Администратору."}
+    return {"status": "error", "msg": "Нет прав на удаление аккаунтов!"}
 
-    else:
-        return {"status": "error", "msg": "У вас нет прав на удаление аккаунтов!"}
-
-# Список заявок на удаление
 @app.get("/admin/delete-requests")
 def get_delete_requests(admin: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname = ?", (admin,))
+    cursor.execute("SELECT is_superadmin FROM users WHERE nickname=?", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
-
     periodic_cleanup()
-    cursor.execute("""
-        SELECT id, target_nick, requested_by, reason, created_at, expires_at
-        FROM delete_requests 
-        WHERE status = 'pending'
-        ORDER BY id DESC
-    """)
-    return [{
-        "id": r[0],
-        "target_nick": r[1],
-        "requested_by": r[2],
-        "reason": r[3],
-        "created_at": r[4],
-        "expires_at": r[5]
-    } for r in cursor.fetchall()]
+    cursor.execute("SELECT id,target_nick,requested_by,reason,created_at,expires_at FROM delete_requests WHERE status='pending' ORDER BY id DESC")
+    return [{"id": r[0], "target_nick": r[1], "requested_by": r[2],
+             "reason": r[3], "created_at": r[4], "expires_at": r[5]} for r in cursor.fetchall()]
 
-# Одобрение / отклонение заявки главным администратором
 @app.post("/admin/delete-requests/decision")
 def decide_delete_request(data: ReqDecision):
     if not is_super(data.admin_nick):
-        return {"status": "error", "msg": "Принимать решения по заявкам может только Главный Администратор!"}
-
-    cursor.execute("SELECT target_nick, requested_by FROM delete_requests WHERE id = ? AND status = 'pending'", (data.request_id,))
+        return {"status": "error", "msg": "Только Главный Администратор!"}
+    cursor.execute("SELECT target_nick,requested_by FROM delete_requests WHERE id=? AND status='pending'", (data.request_id,))
     req = cursor.fetchone()
     if not req:
-        return {"status": "error", "msg": "Заявка не найдена или уже обработана!"}
-
-    target, requester = req[0], req[1]
+        return {"status": "error", "msg": "Заявка не найдена!"}
+    target, requester = req
     if data.action == "approve":
-        cursor.execute("UPDATE delete_requests SET status = 'approved' WHERE id = ?", (data.request_id,))
-        cursor.execute("DELETE FROM users WHERE nickname = ?", (target,))
-        cursor.execute("DELETE FROM members WHERE nickname = ?", (target,))
-        cursor.execute("""
-            INSERT INTO notifications (to_user, text)
-            VALUES (?, ?)
-        """, (requester, f"Главный администратор одобрил вашу заявку: аккаунт @{target} был удалён."))
+        cursor.execute("UPDATE delete_requests SET status='approved' WHERE id=?", (data.request_id,))
+        cursor.execute("DELETE FROM users WHERE nickname=?", (target,))
+        cursor.execute("DELETE FROM members WHERE nickname=?", (target,))
+        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                       (requester, f"Главный администратор одобрил заявку: @{target} был удалён."))
         conn.commit()
-        return {"status": "ok", "msg": f"Заявка одобрена: @{target} удалён!"}
+        return {"status": "ok", "msg": f"@{target} удалён!"}
     else:
-        cursor.execute("UPDATE delete_requests SET status = 'rejected' WHERE id = ?", (data.request_id,))
-        cursor.execute("""
-            INSERT INTO notifications (to_user, text)
-            VALUES (?, ?)
-        """, (requester, f"Главный администратор отклонил вашу заявку на удаление @{target}."))
+        cursor.execute("UPDATE delete_requests SET status='rejected' WHERE id=?", (data.request_id,))
+        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
+                       (requester, f"Главный администратор отклонил заявку на удаление @{target}."))
         conn.commit()
         return {"status": "ok", "msg": "Заявка отклонена."}
 
-# WebSocket Endpoint с Heartbeat и мультиудалением
+# ═══════════════════════════════════════════════════════════
+#  WEBSOCKET ENDPOINT
+# ═══════════════════════════════════════════════════════════
+
 @app.websocket("/ws/{chat_id}/{nickname}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
     await manager.connect(chat_id, websocket, nickname)
@@ -706,68 +1248,142 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
             action = data.get("action", "send")
 
             if action == "ping":
+                token = data.get("session_token")
+                if token:
+                    ns = now_str()
+                    cursor.execute(
+                        "UPDATE user_sessions SET last_active=?,is_active=1 WHERE nickname=? AND session_token=?",
+                        (ns, nickname, token)
+                    )
+                    conn.commit()
                 await websocket.send_json({"action": "pong"})
+
+            elif action == "send":
+                sender = data.get("sender")
+                ns = now_str()
+                cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
+                conn.commit()
+                cursor.execute(
+                    "SELECT expires_at,reason FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>? LIMIT 1",
+                    (sender, ns)
+                )
+                mute = cursor.fetchone()
+                if mute:
+                    await websocket.send_json({"action": "muted",
+                                               "msg": f"Вы заглушены до {mute[0]}. Причина: {mute[1] or 'не указана'}"})
+                    continue
+
+                # Проверка переполнения диска и автоочистка старых сообщений
+                _, _, total_mb, level, _ = _calc_storage()
+                if level == "full":
+                    cursor.execute("SELECT id, file_url FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 1", (chat_id,))
+                    old_msg = cursor.fetchone()
+                    if old_msg:
+                        mid, furl = old_msg
+                        if furl:
+                            try:
+                                rel = furl.lstrip("/")
+                                if os.path.exists(rel):
+                                    os.remove(rel)
+                            except Exception:
+                                pass
+                        cursor.execute("DELETE FROM messages WHERE id=?", (mid,))
+                        conn.commit()
+                        await manager.broadcast_chat(chat_id, {
+                            "action": "storage_cleanup_notice",
+                            "deleted_message_id": mid,
+                            "msg": "Память сервера исчерпана. Самое старое сообщение в диалоге было удалено для освобождения места."
+                        })
+
+                cursor.execute(
+                    "INSERT INTO messages(chat_id,sender,text,file_url,file_type,reply_to_id,reply_to_text,reply_to_sender) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (chat_id, sender, data.get("text",""), data.get("file_url"),
+                     data.get("file_type"), data.get("reply_to_id"),
+                     data.get("reply_to_text"), data.get("reply_to_sender"))
+                )
+                conn.commit()
+                data["id"] = cursor.lastrowid
+                data["action"] = "new_message"
+                data["is_edited"] = False
+                data["reactions"] = {}
+                await manager.broadcast_chat(chat_id, data)
+
+            elif action == "edit":
+                msg_id = data.get("message_id")
+                sender = data.get("sender")
+                new_text = data.get("new_text","")
+                cursor.execute("SELECT sender FROM messages WHERE id=?", (msg_id,))
+                row = cursor.fetchone()
+                if row and row[0] == sender:
+                    cursor.execute("UPDATE messages SET text=?,is_edited=1 WHERE id=?", (new_text, msg_id))
+                    conn.commit()
+                    await manager.broadcast_chat(chat_id, {"action":"message_edited","message_id":msg_id,"new_text":new_text})
+
+            elif action == "react":
+                msg_id = data.get("message_id")
+                emoji = data.get("emoji")
+                nick = data.get("sender")
+                cursor.execute("SELECT id,emoji FROM reactions WHERE message_id=? AND nickname=?", (msg_id, nick))
+                existing = cursor.fetchone()
+                if existing:
+                    if existing[1] == emoji:
+                        cursor.execute("DELETE FROM reactions WHERE id=?", (existing[0],))
+                    else:
+                        cursor.execute("UPDATE reactions SET emoji=? WHERE id=?", (emoji, existing[0]))
+                else:
+                    cursor.execute("INSERT INTO reactions(message_id,nickname,emoji) VALUES(?,?,?)", (msg_id, nick, emoji))
+                conn.commit()
+                cursor.execute("SELECT emoji,COUNT(*) FROM reactions WHERE message_id=? GROUP BY emoji", (msg_id,))
+                counts = {r[0]: r[1] for r in cursor.fetchall()}
+                await manager.broadcast_chat(chat_id, {"action":"reactions_updated","message_id":msg_id,"reactions":counts})
+
+            elif action == "pin":
+                msg_id = data.get("message_id")
+                pinner = data.get("sender")
+                msg_text = data.get("text","")
+                cursor.execute("SELECT is_superadmin,is_admin FROM users WHERE nickname=?", (pinner,))
+                u = cursor.fetchone()
+                cursor.execute("SELECT created_by FROM chats WHERE id=?", (chat_id,))
+                ch = cursor.fetchone()
+                can_pin = (u and (u[0] or u[1])) or is_super(pinner) or (ch and ch[0] == pinner)
+                if can_pin:
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO pinned_messages(chat_id,message_id,pinned_by,message_text) VALUES(?,?,?,?)",
+                        (chat_id, msg_id, pinner, msg_text)
+                    )
+                    conn.commit()
+                    await manager.broadcast_chat(chat_id, {"action":"message_pinned","message_id":msg_id,"pinned_by":pinner,"text":msg_text})
 
             elif action == "delete":
                 msg_id = data.get("message_id")
                 sender = data.get("sender")
-                cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (sender,))
+                cursor.execute("SELECT is_superadmin,is_admin,admin_perms FROM users WHERE nickname=?", (sender,))
                 u = cursor.fetchone()
-                can_del_any = False
+                can_del = False
                 if u:
-                    perms = json.loads(u[2]) if u[2] else {}
-                    can_del_any = bool(u[0]) or is_super(sender) or (bool(u[1]) and perms.get("can_delete_messages", False))
-
-                if can_del_any:
-                    cursor.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+                    perms = json.loads(u[2] or '{}')
+                    can_del = bool(u[0]) or is_super(sender) or (bool(u[1]) and perms.get("can_delete_messages"))
+                if can_del:
+                    cursor.execute("DELETE FROM messages WHERE id=?", (msg_id,))
                 else:
-                    cursor.execute("DELETE FROM messages WHERE id = ? AND sender = ?", (msg_id, sender))
+                    cursor.execute("DELETE FROM messages WHERE id=? AND sender=?", (msg_id, sender))
                 conn.commit()
-
-                await manager.broadcast_chat(chat_id, {
-                    "action": "deleted",
-                    "message_ids": [msg_id],
-                    "deleted_by": sender
-                })
+                await manager.broadcast_chat(chat_id, {"action":"deleted","message_ids":[msg_id],"deleted_by":sender})
 
             elif action == "delete_batch":
-                msg_ids = data.get("message_ids", [])
+                msg_ids = data.get("message_ids",[])
                 sender = data.get("sender")
-                cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (sender,))
+                cursor.execute("SELECT is_superadmin,is_admin,admin_perms FROM users WHERE nickname=?", (sender,))
                 u = cursor.fetchone()
-                can_del_any = bool(u[0]) or is_super(sender) or (bool(u[1]) and json.loads(u[2] or '{}').get("can_delete_messages", False)) if u else False
-
+                can_del = (bool(u[0]) or is_super(sender) or (bool(u[1]) and json.loads(u[2] or '{}').get("can_delete_messages"))) if u else False
                 for mid in msg_ids:
-                    if can_del_any:
-                        cursor.execute("DELETE FROM messages WHERE id = ?", (mid,))
+                    if can_del:
+                        cursor.execute("DELETE FROM messages WHERE id=?", (mid,))
                     else:
-                        cursor.execute("DELETE FROM messages WHERE id = ? AND sender = ?", (mid, sender))
+                        cursor.execute("DELETE FROM messages WHERE id=? AND sender=?", (mid, sender))
                 conn.commit()
-
-                await manager.broadcast_chat(chat_id, {
-                    "action": "deleted",
-                    "message_ids": msg_ids,
-                    "deleted_by": sender
-                })
-
-            elif action == "send":
-                cursor.execute("""
-                    INSERT INTO messages (chat_id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    chat_id,
-                    data.get("sender"),
-                    data.get("text", ""),
-                    data.get("file_url"),
-                    data.get("file_type"),
-                    data.get("reply_to_id"),
-                    data.get("reply_to_text"),
-                    data.get("reply_to_sender")
-                ))
-                conn.commit()
-                data["id"] = cursor.lastrowid
-                data["action"] = "new_message"
-                await manager.broadcast_chat(chat_id, data)
+                await manager.broadcast_chat(chat_id, {"action":"deleted","message_ids":msg_ids,"deleted_by":sender})
 
     except WebSocketDisconnect:
         manager.disconnect(chat_id, websocket, nickname)
