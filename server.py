@@ -1,4 +1,6 @@
 import os
+import sys
+import time
 import uuid
 import json
 import sqlite3
@@ -23,10 +25,11 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
+SERVER_START_TIME = time.time()
 conn = sqlite3.connect("messenger.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Создание таблиц
+# Базовые таблицы
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     nickname TEXT PRIMARY KEY,
@@ -38,7 +41,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_admin INTEGER DEFAULT 0,
     admin_perms TEXT DEFAULT '{}',
     admin_notified INTEGER DEFAULT 0,
-    granted_by TEXT
+    granted_by TEXT,
+    revoked_by TEXT
 )
 """)
 
@@ -84,9 +88,33 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
+
+# Заявки на удаление аккаунтов (7 дней)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS delete_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    status TEXT DEFAULT 'pending'
+)
+""")
+
+# Оповещения пользователям
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_user TEXT NOT NULL,
+    text TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
 conn.commit()
 
-# Безопасное добавление колонок для старых баз
+# Безопасное добавление колонок
 for col, ctype in [
     ("last_pwd_change", "TIMESTAMP"),
     ("is_superadmin", "INTEGER DEFAULT 0"),
@@ -94,6 +122,7 @@ for col, ctype in [
     ("admin_perms", "TEXT DEFAULT '{}'"),
     ("admin_notified", "INTEGER DEFAULT 0"),
     ("granted_by", "TEXT"),
+    ("revoked_by", "TEXT"),
     ("last_login", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
 ]:
     try:
@@ -102,16 +131,17 @@ for col, ctype in [
         pass
 conn.commit()
 
-# Назначение Jjlop55 супер-администратором
-cursor.execute("UPDATE users SET is_superadmin = 1, is_admin = 1 WHERE LOWER(nickname) = 'jjlop55'")
+# Назначение Главного Администратора
+cursor.execute("UPDATE users SET is_superadmin = 1, is_admin = 1 WHERE LOWER(nickname) IN ('jjlop55', 'gglo55')")
 conn.commit()
 
-# Хранилище подключений онлайн
-online_users: Set[str] = set()
+def is_super(nick: str) -> bool:
+    return nick.lower() in ("jjlop55", "gglo55")
 
-def cleanup_old_files():
-    cutoff = datetime.utcnow() - timedelta(days=4)
-    cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff.strftime('%Y-%m-%d %H:%M:%S'),))
+# Очистка файлов старше 4 дней и просроченных заявок на удаление (7 дней)
+def periodic_cleanup():
+    cutoff_files = datetime.utcnow() - timedelta(days=4)
+    cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff_files.strftime('%Y-%m-%d %H:%M:%S'),))
     for msg_id, f_url in cursor.fetchall():
         try:
             rel = f_url.lstrip("/")
@@ -120,6 +150,16 @@ def cleanup_old_files():
         except Exception:
             pass
         cursor.execute("UPDATE messages SET file_url = NULL, text = '[Срок хранения файла (4 дня) истёк]' WHERE id = ?", (msg_id,))
+    
+    # Проверка просроченных заявок (7 дней)
+    now_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("SELECT id, target_nick, requested_by FROM delete_requests WHERE expires_at < ? AND status = 'pending'", (now_str,))
+    for req_id, t_nick, r_by in cursor.fetchall():
+        cursor.execute("UPDATE delete_requests SET status = 'expired' WHERE id = ?", (req_id,))
+        cursor.execute("""
+            INSERT INTO notifications (to_user, text)
+            VALUES (?, ?)
+        """, (r_by, f"Главный администратор не принял вашу заявку на удаление @{t_nick} (истёк 7-дневный срок рассмотрения)."))
     conn.commit()
 
 # Модели
@@ -146,17 +186,78 @@ class InviteData(BaseModel):
 class InviteAction(BaseModel):
     invite_id: int
     nickname: str
-    action: str  # accept / decline
+    action: str
 
 class AdminPermsData(BaseModel):
     admin_nick: str
     target_nick: str
     perms: dict
 
+class DeleteUserAction(BaseModel):
+    admin_nick: str
+    target_nick: str
+    reason: str = ""
+
+class ReqDecision(BaseModel):
+    admin_nick: str
+    request_id: int
+    action: str  # approve / reject
+
+# WebSocket Connection Tracker
+class ConnectionManager:
+    def __init__(self):
+        self.user_sockets: Dict[str, Set[WebSocket]] = {}
+        self.chat_sockets: Dict[str, Set[WebSocket]] = {}
+
+    async def connect(self, chat_id: str, ws: WebSocket, nick: str):
+        await ws.accept()
+        if nick not in self.user_sockets:
+            self.user_sockets[nick] = set()
+        self.user_sockets[nick].add(ws)
+
+        if chat_id not in self.chat_sockets:
+            self.chat_sockets[chat_id] = set()
+        self.chat_sockets[chat_id].add(ws)
+
+    def disconnect(self, chat_id: str, ws: WebSocket, nick: str):
+        if nick in self.user_sockets:
+            self.user_sockets[nick].discard(ws)
+            if not self.user_sockets[nick]:
+                del self.user_sockets[nick]
+
+        if chat_id in self.chat_sockets:
+            self.chat_sockets[chat_id].discard(ws)
+            if not self.chat_sockets[chat_id]:
+                del self.chat_sockets[chat_id]
+
+    def is_online(self, nick: str) -> bool:
+        return nick in self.user_sockets and len(self.user_sockets[nick]) > 0
+
+    async def send_to_user(self, nick: str, payload: dict):
+        if nick in self.user_sockets:
+            for ws in list(self.user_sockets[nick]):
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    pass
+
+    async def broadcast_chat(self, chat_id: str, payload: dict):
+        if chat_id in self.chat_sockets:
+            for ws in list(self.chat_sockets[chat_id]):
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    pass
+
+manager = ConnectionManager()
+
 @app.post("/auth")
 def auth_user(data: AuthData):
-    cleanup_old_files()
-    cursor.execute("SELECT password, is_superadmin, is_admin, admin_perms, admin_notified, granted_by FROM users WHERE nickname = ?", (data.nickname,))
+    periodic_cleanup()
+    cursor.execute("""
+        SELECT password, is_superadmin, is_admin, admin_perms, admin_notified, granted_by, revoked_by 
+        FROM users WHERE nickname = ?
+    """, (data.nickname,))
     row = cursor.fetchone()
     now_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -164,46 +265,54 @@ def auth_user(data: AuthData):
         if row[0] == data.password:
             cursor.execute("UPDATE users SET last_login = ? WHERE nickname = ?", (now_str, data.nickname))
             conn.commit()
+
             perms = json.loads(row[3]) if row[3] else {}
-            notify = (row[4] == 0 and row[2] == 1 and row[1] == 0)
-            if notify:
+            notify_granted = (row[4] == 0 and row[2] == 1 and row[1] == 0)
+            revoked_from = row[6]
+
+            if notify_granted:
                 cursor.execute("UPDATE users SET admin_notified = 1 WHERE nickname = ?", (data.nickname,))
+                conn.commit()
+            if revoked_from:
+                cursor.execute("UPDATE users SET revoked_by = NULL WHERE nickname = ?", (data.nickname,))
                 conn.commit()
 
             return {
                 "status": "ok",
                 "msg": "logged_in",
-                "is_superadmin": bool(row[1]),
-                "is_admin": bool(row[2]) or bool(row[1]),
+                "is_superadmin": bool(row[1]) or is_super(data.nickname),
+                "is_admin": bool(row[2]) or bool(row[1]) or is_super(data.nickname),
                 "admin_perms": perms,
-                "admin_notice": notify,
-                "granted_by": row[5]
+                "admin_notice": notify_granted,
+                "granted_by": row[5],
+                "revoked_by": revoked_from
             }
         return {"status": "error", "msg": "Неверный пароль для этого аккаунта!"}
     else:
-        # Новый аккаунт
-        is_super = 1 if data.nickname.lower() == "jjlop55" else 0
-        is_adm = 1 if is_super else 0
+        is_sup = 1 if is_super(data.nickname) else 0
         perms = {
             "can_delete_messages": True,
             "can_delete_chats": True,
             "can_kick_users": True,
             "can_view_all_chats": True,
-            "can_grant_admins": True
-        } if is_super else {}
+            "can_grant_admins": True,
+            "can_delete_users_direct": True,
+            "can_request_delete_users": True
+        } if is_sup else {}
 
         cursor.execute("""
             INSERT INTO users (nickname, password, last_login, is_superadmin, is_admin, admin_perms, admin_notified)
             VALUES (?, ?, ?, ?, ?, ?, 1)
-        """, (data.nickname, data.password, now_str, is_super, is_adm, json.dumps(perms)))
+        """, (data.nickname, data.password, now_str, is_sup, is_sup, json.dumps(perms)))
         conn.commit()
         return {
             "status": "ok",
             "msg": "registered",
-            "is_superadmin": bool(is_super),
-            "is_admin": bool(is_adm),
+            "is_superadmin": bool(is_sup),
+            "is_admin": bool(is_sup),
             "admin_perms": perms,
-            "admin_notice": False
+            "admin_notice": False,
+            "revoked_by": None
         }
 
 @app.post("/change-password")
@@ -211,37 +320,27 @@ def change_password(data: PwdChangeData):
     cursor.execute("SELECT password, last_pwd_change FROM users WHERE nickname = ?", (data.nickname,))
     row = cursor.fetchone()
     if not row or row[0] != data.old_password:
-        return {"status": "error", "msg": "Старый пароль указан неверно!"}
+        return {"status": "error", "msg": "Текущий пароль указан неверно!"}
 
     if row[1]:
-        last_change = datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
-        diff = datetime.utcnow() - last_change
+        diff = datetime.utcnow() - datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
         if diff < timedelta(hours=3):
-            left_mins = int((timedelta(hours=3) - diff).total_seconds() / 60)
-            return {"status": "error", "msg": f"Пароль можно менять раз в 3 часа! Подождите ещё {left_mins} мин."}
+            mins = int((timedelta(hours=3) - diff).total_seconds() / 60)
+            return {"status": "error", "msg": f"Пароль можно менять раз в 3 часа! Подождите {mins} мин."}
 
     now_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("UPDATE users SET password = ?, last_pwd_change = ? WHERE nickname = ?", (data.new_password, now_str, data.nickname))
     conn.commit()
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
+# Получение списка СВОИХ чатов (строго где пользователь участник)
 @app.get("/chats/{nickname}")
-def get_chats(nickname: str):
-    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (nickname,))
-    u = cursor.fetchone()
-    is_admin = False
-    if u:
-        perms = json.loads(u[2]) if u[2] else {}
-        is_admin = bool(u[0]) or (bool(u[1]) and perms.get("can_view_all_chats", False))
-
-    if is_admin:
-        cursor.execute("SELECT DISTINCT id, name FROM chats")
-    else:
-        cursor.execute("""
-            SELECT DISTINCT c.id, c.name FROM chats c
-            JOIN members m ON c.id = m.chat_id
-            WHERE m.nickname = ?
-        """, (nickname,))
+def get_user_chats(nickname: str):
+    cursor.execute("""
+        SELECT DISTINCT c.id, c.name FROM chats c
+        JOIN members m ON c.id = m.chat_id
+        WHERE m.nickname = ?
+    """, (nickname,))
     return [{"id": r[0], "name": r[1]} for r in cursor.fetchall()]
 
 @app.post("/chats")
@@ -262,13 +361,13 @@ def delete_chat(chat_id: str, user: str):
 
     cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (user,))
     u = cursor.fetchone()
-    can_delete = False
+    can_del = False
     if u:
         perms = json.loads(u[2]) if u[2] else {}
-        if u[0] or (u[1] and perms.get("can_delete_chats", False)) or row[0] == user:
-            can_delete = True
+        if u[0] or is_super(user) or (u[1] and perms.get("can_delete_chats", False)) or row[0] == user:
+            can_del = True
 
-    if not can_delete:
+    if not can_del:
         return {"status": "error", "msg": "У вас нет прав на удаление этого чата!"}
 
     cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
@@ -278,6 +377,7 @@ def delete_chat(chat_id: str, user: str):
     conn.commit()
     return {"status": "ok"}
 
+# Приглашения
 @app.get("/invites/{nickname}")
 def get_invites(nickname: str):
     cursor.execute("SELECT id, chat_id, chat_name, from_user FROM invites WHERE to_user = ?", (nickname,))
@@ -291,7 +391,7 @@ def send_invite(data: InviteData):
 
     cursor.execute("SELECT 1 FROM members WHERE chat_id = ? AND nickname = ?", (data.chat_id, data.to_user))
     if cursor.fetchone():
-        return {"status": "error", "msg": "Пользователь уже в этом чате!"}
+        return {"status": "error", "msg": "Пользователь уже находится в этом чате!"}
 
     cursor.execute("INSERT INTO invites (chat_id, chat_name, from_user, to_user) VALUES (?, ?, ?, ?)",
                    (data.chat_id, data.chat_name, data.from_user, data.to_user))
@@ -308,13 +408,15 @@ def respond_invite(data: InviteAction):
     chat_id = row[0]
     if data.action == "accept":
         cursor.execute("INSERT OR IGNORE INTO members VALUES (?, ?)", (chat_id, data.nickname))
+    # При отклонении строго удаляем инвайт, не добавляя в members
     cursor.execute("DELETE FROM invites WHERE id = ?", (data.invite_id,))
     conn.commit()
     return {"status": "ok"}
 
+# Загрузка файлов
 @app.post("/upload")
 async def upload_file(request: Request, filename: str = "file.bin"):
-    cleanup_old_files()
+    periodic_cleanup()
     body = await request.body()
     if len(body) > 10485760:
         raise HTTPException(status_code=413, detail="Файл превышает 10 МБ!")
@@ -329,7 +431,7 @@ async def upload_file(request: Request, filename: str = "file.bin"):
 
 @app.get("/messages/{chat_id}")
 def get_messages(chat_id: str):
-    cleanup_old_files()
+    periodic_cleanup()
     cursor.execute("""
         SELECT id, sender, text, file_url, file_type, 
                reply_to_id, reply_to_text, reply_to_sender, 
@@ -353,19 +455,65 @@ def get_messages(chat_id: str):
         for r in cursor.fetchall()
     ]
 
-# Статистика и Админ-панель
+# Оповещения
+@app.get("/notifications/{nickname}")
+def get_notifications(nickname: str):
+    cursor.execute("SELECT id, text FROM notifications WHERE to_user = ? AND is_read = 0", (nickname,))
+    rows = cursor.fetchall()
+    cursor.execute("UPDATE notifications SET is_read = 1 WHERE to_user = ?", (nickname,))
+    conn.commit()
+    return [{"id": r[0], "text": r[1]} for r in rows]
+
+# Мониторинг сервера для всех пользователей
+@app.get("/server/monitoring")
+def server_monitoring():
+    uptime_sec = int(time.time() - SERVER_START_TIME)
+    h, rem = divmod(uptime_sec, 3600)
+    m, s = divmod(rem, 60)
+    uptime_fmt = f"{h}ч {m}м {s}с"
+
+    # Подсчет размера uploads
+    uploads_bytes = 0
+    for root, _, files in os.walk(UPLOAD_DIR):
+        for f in files:
+            uploads_bytes += os.path.getsize(os.path.join(root, f))
+    uploads_mb = round(uploads_bytes / (1024 * 1024), 2)
+
+    db_size_kb = round(os.path.getsize("messenger.db") / 1024, 1) if os.path.exists("messenger.db") else 0
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM chats")
+    total_chats = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM messages")
+    total_msgs = cursor.fetchone()[0]
+
+    return {
+        "status": "online",
+        "uptime": uptime_fmt,
+        "online_count": len(manager.user_sockets),
+        "total_users": total_users,
+        "total_chats": total_chats,
+        "total_messages": total_msgs,
+        "uploads_mb": uploads_mb,
+        "db_size_kb": db_size_kb
+    }
+
+# Админ-панель: пользователи
 @app.get("/admin/users")
 def get_admin_users(admin: str, query: str = ""):
     cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname = ?", (admin,))
     row = cursor.fetchone()
-    if not row or (not row[0] and not row[1]):
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
 
     cursor.execute("""
         SELECT nickname, created_at, last_login, is_superadmin, is_admin, admin_perms
         FROM users 
         WHERE nickname LIKE ? 
-        ORDER BY last_login DESC LIMIT 50
+        ORDER BY last_login DESC LIMIT 60
     """, (f"%{query}%",))
     
     users_list = []
@@ -374,65 +522,181 @@ def get_admin_users(admin: str, query: str = ""):
             "nickname": r[0],
             "created_at": r[1],
             "last_login": r[2],
-            "is_superadmin": bool(r[3]),
-            "is_admin": bool(r[4]),
+            "is_superadmin": bool(r[3]) or is_super(r[0]),
+            "is_admin": bool(r[4]) or bool(r[3]) or is_super(r[0]),
             "perms": json.loads(r[5]) if r[5] else {},
-            "is_online": r[0] in online_users
+            "is_online": manager.is_online(r[0])
         })
+
     cursor.execute("SELECT COUNT(*) FROM users")
     total_count = cursor.fetchone()[0]
 
     return {
         "total_users": total_count,
-        "online_count": len(online_users),
+        "online_count": len(manager.user_sockets),
         "users": users_list
     }
 
+# Админ-панель: все группы и их участники
+@app.get("/admin/groups")
+def get_admin_groups(admin: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname = ?", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+
+    cursor.execute("SELECT id, name, created_by, created_at FROM chats")
+    chats = cursor.fetchall()
+    groups_list = []
+
+    for cid, cname, ccreator, ccreated in chats:
+        cursor.execute("SELECT nickname FROM members WHERE chat_id = ?", (cid,))
+        members = [m[0] for m in cursor.fetchall()]
+        groups_list.append({
+            "id": cid,
+            "name": cname,
+            "created_by": ccreator,
+            "created_at": ccreated,
+            "members": members
+        })
+    return groups_list
+
+# Назначение или снятие прав
 @app.post("/admin/set-perms")
-def set_admin_permissions(data: AdminPermsData):
+async def set_admin_permissions(data: AdminPermsData):
     cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (data.admin_nick,))
     adm = cursor.fetchone()
     if not adm:
         raise HTTPException(status_code=403, detail="Отказано")
+    perms_adm = json.loads(adm[2]) if adm[2] else {}
+    if not adm[0] and not is_super(data.admin_nick) and not perms_adm.get("can_grant_admins", False):
+        return {"status": "error", "msg": "У вас нет права изменять роли администраторов!"}
+
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Нельзя изменять права Главного Администратора!"}
+
+    # Проверяем, есть ли хоть одна галочка
+    has_any = any(data.perms.values())
+    if has_any:
+        cursor.execute("""
+            UPDATE users 
+            SET is_admin = 1, admin_perms = ?, admin_notified = 0, granted_by = ?, revoked_by = NULL
+            WHERE nickname = ?
+        """, (json.dumps(data.perms), data.admin_nick, data.target_nick))
+        conn.commit()
+        return {"status": "ok", "msg": f"Права администратора для @{data.target_nick} успешно обновлены!"}
+    else:
+        # Лишение ВСЕХ прав
+        cursor.execute("""
+            UPDATE users 
+            SET is_admin = 0, admin_perms = '{}', admin_notified = 1, granted_by = NULL, revoked_by = ?
+            WHERE nickname = ?
+        """, (data.admin_nick, data.target_nick))
+        conn.commit()
+
+        # Мгновенное оповещение по WebSocket
+        await manager.send_to_user(data.target_nick, {
+            "action": "admin_revoked",
+            "revoked_by": data.admin_nick
+        })
+        return {"status": "ok", "msg": f"Все администраторские права у @{data.target_nick} полностью отозваны!"}
+
+# Удаление аккаунта / Подача заявки на удаление
+@app.post("/admin/delete-user")
+def delete_user_action(data: DeleteUserAction):
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Главного администратора удалить невозможно!"}
+
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm:
+        raise HTTPException(status_code=403, detail="Отказано")
+
+    is_super_admin = bool(adm[0]) or is_super(data.admin_nick)
     perms = json.loads(adm[2]) if adm[2] else {}
-    if not adm[0] and not perms.get("can_grant_admins", False):
-        return {"status": "error", "msg": "У вас нет права выдавать роли администратора!"}
 
-    if data.target_nick.lower() == "jjlop55" and not adm[0]:
-        return {"status": "error", "msg": "Нельзя изменять права главного администратора!"}
+    can_direct = is_super_admin or perms.get("can_delete_users_direct", False)
+    can_request = perms.get("can_request_delete_users", False)
 
+    if can_direct:
+        # Прямое мгновенное удаление
+        cursor.execute("DELETE FROM users WHERE nickname = ?", (data.target_nick,))
+        cursor.execute("DELETE FROM members WHERE nickname = ?", (data.target_nick,))
+        cursor.execute("DELETE FROM invites WHERE to_user = ? OR from_user = ?", (data.target_nick, data.target_nick))
+        conn.commit()
+        return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} успешно удалён навсегда!"}
+
+    elif can_request:
+        if not data.reason.strip():
+            return {"status": "error", "msg": "Укажите причину для подачи заявки на удаление!"}
+
+        expires = datetime.utcnow() + timedelta(days=7)
+        cursor.execute("""
+            INSERT INTO delete_requests (target_nick, requested_by, reason, expires_at)
+            VALUES (?, ?, ?, ?)
+        """, (data.target_nick, data.admin_nick, data.reason.strip(), expires.strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+        return {"status": "ok", "msg": f"Заявка на удаление @{data.target_nick} отправлена главному администратору (срок рассмотрения: 7 дней)."}
+
+    else:
+        return {"status": "error", "msg": "У вас нет прав на удаление аккаунтов!"}
+
+# Список заявок на удаление
+@app.get("/admin/delete-requests")
+def get_delete_requests(admin: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname = ?", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+
+    periodic_cleanup()
     cursor.execute("""
-        UPDATE users 
-        SET is_admin = 1, admin_perms = ?, admin_notified = 0, granted_by = ?
-        WHERE nickname = ?
-    """, (json.dumps(data.perms), data.admin_nick, data.target_nick))
-    conn.commit()
-    return {"status": "ok", "msg": f"Права для @{data.target_nick} успешно обновлены!"}
+        SELECT id, target_nick, requested_by, reason, created_at, expires_at
+        FROM delete_requests 
+        WHERE status = 'pending'
+        ORDER BY id DESC
+    """)
+    return [{
+        "id": r[0],
+        "target_nick": r[1],
+        "requested_by": r[2],
+        "reason": r[3],
+        "created_at": r[4],
+        "expires_at": r[5]
+    } for r in cursor.fetchall()]
 
-# WebSocket Менеджер
-class ConnectionManager:
-    def __init__(self):
-        self.active: Dict[str, List[WebSocket]] = {}
+# Одобрение / отклонение заявки главным администратором
+@app.post("/admin/delete-requests/decision")
+def decide_delete_request(data: ReqDecision):
+    if not is_super(data.admin_nick):
+        return {"status": "error", "msg": "Принимать решения по заявкам может только Главный Администратор!"}
 
-    async def connect(self, chat_id: str, ws: WebSocket, nick: str):
-        await ws.accept()
-        online_users.add(nick)
-        if chat_id not in self.active:
-            self.active[chat_id] = []
-        self.active[chat_id].append(ws)
+    cursor.execute("SELECT target_nick, requested_by FROM delete_requests WHERE id = ? AND status = 'pending'", (data.request_id,))
+    req = cursor.fetchone()
+    if not req:
+        return {"status": "error", "msg": "Заявка не найдена или уже обработана!"}
 
-    def disconnect(self, chat_id: str, ws: WebSocket, nick: str):
-        if chat_id in self.active and ws in self.active[chat_id]:
-            self.active[chat_id].remove(ws)
-        online_users.discard(nick)
+    target, requester = req[0], req[1]
+    if data.action == "approve":
+        cursor.execute("UPDATE delete_requests SET status = 'approved' WHERE id = ?", (data.request_id,))
+        cursor.execute("DELETE FROM users WHERE nickname = ?", (target,))
+        cursor.execute("DELETE FROM members WHERE nickname = ?", (target,))
+        cursor.execute("""
+            INSERT INTO notifications (to_user, text)
+            VALUES (?, ?)
+        """, (requester, f"Главный администратор одобрил вашу заявку: аккаунт @{target} был удалён."))
+        conn.commit()
+        return {"status": "ok", "msg": f"Заявка одобрена: @{target} удалён!"}
+    else:
+        cursor.execute("UPDATE delete_requests SET status = 'rejected' WHERE id = ?", (data.request_id,))
+        cursor.execute("""
+            INSERT INTO notifications (to_user, text)
+            VALUES (?, ?)
+        """, (requester, f"Главный администратор отклонил вашу заявку на удаление @{target}."))
+        conn.commit()
+        return {"status": "ok", "msg": "Заявка отклонена."}
 
-    async def broadcast(self, chat_id: str, payload: dict):
-        if chat_id in self.active:
-            for ws in self.active[chat_id]:
-                await ws.send_json(payload)
-
-manager = ConnectionManager()
-
+# WebSocket Endpoint с Heartbeat и мультиудалением
 @app.websocket("/ws/{chat_id}/{nickname}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
     await manager.connect(chat_id, websocket, nickname)
@@ -441,7 +705,10 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
             data = await websocket.receive_json()
             action = data.get("action", "send")
 
-            if action == "delete":
+            if action == "ping":
+                await websocket.send_json({"action": "pong"})
+
+            elif action == "delete":
                 msg_id = data.get("message_id")
                 sender = data.get("sender")
                 cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (sender,))
@@ -449,7 +716,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 can_del_any = False
                 if u:
                     perms = json.loads(u[2]) if u[2] else {}
-                    can_del_any = bool(u[0]) or (bool(u[1]) and perms.get("can_delete_messages", False))
+                    can_del_any = bool(u[0]) or is_super(sender) or (bool(u[1]) and perms.get("can_delete_messages", False))
 
                 if can_del_any:
                     cursor.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
@@ -457,9 +724,29 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     cursor.execute("DELETE FROM messages WHERE id = ? AND sender = ?", (msg_id, sender))
                 conn.commit()
 
-                await manager.broadcast(chat_id, {
+                await manager.broadcast_chat(chat_id, {
                     "action": "deleted",
-                    "message_id": msg_id,
+                    "message_ids": [msg_id],
+                    "deleted_by": sender
+                })
+
+            elif action == "delete_batch":
+                msg_ids = data.get("message_ids", [])
+                sender = data.get("sender")
+                cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname = ?", (sender,))
+                u = cursor.fetchone()
+                can_del_any = bool(u[0]) or is_super(sender) or (bool(u[1]) and json.loads(u[2] or '{}').get("can_delete_messages", False)) if u else False
+
+                for mid in msg_ids:
+                    if can_del_any:
+                        cursor.execute("DELETE FROM messages WHERE id = ?", (mid,))
+                    else:
+                        cursor.execute("DELETE FROM messages WHERE id = ? AND sender = ?", (mid, sender))
+                conn.commit()
+
+                await manager.broadcast_chat(chat_id, {
+                    "action": "deleted",
+                    "message_ids": msg_ids,
                     "deleted_by": sender
                 })
 
@@ -480,7 +767,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 conn.commit()
                 data["id"] = cursor.lastrowid
                 data["action"] = "new_message"
-                await manager.broadcast(chat_id, data)
+                await manager.broadcast_chat(chat_id, data)
 
     except WebSocketDisconnect:
         manager.disconnect(chat_id, websocket, nickname)
