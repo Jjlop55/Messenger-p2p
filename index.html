@@ -3,294 +3,248 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Зашифрованный чат</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <title>Utopia Messenger</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; }
-    header { background: #1e293b; padding: 12px 16px; border-bottom: 1px solid #334155; display: flex; flex-direction: column; gap: 8px; }
-    .inputs-bar { display: flex; gap: 8px; }
-    input, button { padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; outline: none; }
-    input:focus { border-color: #38bdf8; }
-    .flex-1 { flex: 1; }
-    #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; background: #1e293b; border: 1px solid #334155; word-break: break-word; align-self: flex-start; }
-    .msg.mine { align-self: flex-end; background: #0369a1; border-color: #0284c7; }
-    .msg-header { font-size: 11px; color: #94a3b8; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
-    .msg.mine .msg-header { color: #bae6fd; }
-    .msg-text { font-size: 14px; line-height: 1.4; }
-    footer { padding: 12px 16px; background: #1e293b; border-top: 1px solid #334155; display: flex; gap: 8px; }
-    button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; }
-    button:hover { background: #0369a1; }
+    body { background: #0b0f19; color: #f3f4f6; height: 100vh; display: flex; }
+
+    #auth-screen {
+      position: fixed; inset: 0; background: #0b0f19; z-index: 100;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .auth-card {
+      background: #151c2c; border: 1px solid #243048; border-radius: 12px;
+      padding: 24px; width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .auth-card h2 { font-size: 1.25rem; color: #38bdf8; text-align: center; }
+    .auth-card input, .auth-card button {
+      padding: 12px; border-radius: 8px; font-size: 14px; border: 1px solid #2c3c5a; background: #0b0f19; color: #fff; outline: none;
+    }
+    .auth-card button { background: #0284c7; border: none; font-weight: 600; cursor: pointer; }
+    .auth-card button:hover { background: #0369a1; }
+
+    #app { display: none; width: 100vw; height: 100vh; }
+    aside { width: 280px; background: #111726; border-right: 1px solid #243048; display: flex; flex-direction: column; }
+    .user-profile { padding: 16px; border-bottom: 1px solid #243048; font-weight: 600; color: #38bdf8; display: flex; justify-content: space-between; align-items: center; }
+    .chat-controls { padding: 12px; display: flex; gap: 8px; border-bottom: 1px solid #243048; }
+    .chat-controls button { flex: 1; padding: 8px; border-radius: 6px; border: none; background: #1f2a40; color: #fff; font-size: 12px; cursor: pointer; }
+    .chat-controls button:hover { background: #2c3c5a; }
+
+    .chat-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .chat-item { padding: 12px; border-radius: 8px; cursor: pointer; background: transparent; font-size: 14px; }
+    .chat-item:hover { background: #182238; }
+    .chat-item.active { background: #0284c7; color: #fff; }
+
+    main { flex: 1; display: flex; flex-direction: column; background: #0b0f19; }
+    .chat-header { padding: 14px 20px; border-bottom: 1px solid #243048; background: #111726; display: flex; justify-content: space-between; align-items: center; }
+    .invite-btn { padding: 6px 12px; border-radius: 6px; border: none; background: #16a34a; color: #fff; font-size: 12px; cursor: pointer; }
+
+    .messages-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { max-width: 75%; padding: 10px 14px; border-radius: 12px; word-break: break-word; }
+    .msg.mine { align-self: flex-end; background: #0369a1; border-bottom-right-radius: 2px; }
+    .msg.other { align-self: flex-start; background: #1a2336; border-bottom-left-radius: 2px; }
+    .msg-author { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .msg.mine .msg-author { color: #bae6fd; }
+
+    .chat-input-bar { padding: 14px 20px; background: #111726; border-top: 1px solid #243048; display: flex; gap: 10px; }
+    .chat-input-bar input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #243048; background: #0b0f19; color: #fff; outline: none; }
+    .chat-input-bar button { padding: 0 20px; border-radius: 8px; border: none; background: #0284c7; color: #fff; font-weight: 600; cursor: pointer; }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="inputs-bar">
-      <input type="text" id="username" class="flex-1" placeholder="Ваш ник" value="User">
-      <input type="password" id="secretKey" class="flex-1" placeholder="Ключ шифрования (пароль)">
+  <!-- Авторизация -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h2>Вход / Регистрация</h2>
+      <p style="font-size: 12px; color: #94a3b8; text-align: center;">При первом входе аккаунт создастся автоматически</p>
+      <input type="text" id="login-nick" placeholder="Ваш никнейм" autocomplete="off">
+      <input type="password" id="login-pwd" placeholder="Пароль">
+      <button id="auth-btn">Войти</button>
+      <div id="auth-error" style="color: #f87171; font-size: 12px; text-align: center;"></div>
     </div>
-  </header>
+  </div>
 
-  <div id="chat"></div>
+  <!-- Интерфейс мессенджера -->
+  <div id="app">
+    <aside>
+      <div class="user-profile">
+        <span id="profile-nick">@nickname</span>
+        <button onclick="location.reload()" style="background:none; border:none; color:#f87171; cursor:pointer;">Выйти</button>
+      </div>
+      <div class="chat-controls">
+        <button id="new-chat-btn">+ Создать чат</button>
+      </div>
+      <div class="chat-list" id="chat-list"></div>
+    </aside>
 
-  <footer>
-    <input type="text" id="messageInput" class="flex-1" placeholder="Введите сообщение...">
-    <button id="sendBtn">Отправить</button>
-  </footer>
+    <main>
+      <div class="chat-header">
+        <h3 id="current-chat-title">🌐 Общий чат</h3>
+        <button id="invite-btn" class="invite-btn" style="display: none;">+ Пригласить друга</button>
+      </div>
+      <div class="messages-box" id="messages-box"></div>
+      <div class="chat-input-bar">
+        <input type="text" id="msg-input" placeholder="Напишите сообщение..." autocomplete="off">
+        <button id="send-msg-btn">Отправить</button>
+      </div>
+    </main>
+  </div>
 
   <script>
-    const SUPABASE_URL = "https://exrrbaeopoykofhttzvp.supabase.co";
-    const SUPABASE_KEY = "Sb_publishable_iRcg3DReG70WfuJceOsHMw_fqUjnTuB";
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // ВСТАВЬ СВОЙ АДРЕС СЕРВЕРА СЮДА (без слэша на конце)
+    const BACKEND_URL = "https://rycloudflare.com"; // <-- ЗАМЕНИ НА СВОЙ ПОЛНЫЙ АДРЕС
 
-    const chat = document.getElementById("chat");
-    const msgInput = document.getElementById("messageInput");
-    const sendBtn = document.getElementById("sendBtn");
-    const secretKeyInput = document.getElementById("secretKey");
-    const usernameInput = document.getElementById("username");
+    let currentUser = null;
+    let activeChatId = "general";
+    let activeWs = null;
 
-    // Вспомогательные функции кодирования байтов
-    const buf2hex = buf => [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, "0")).join("");
-    const hex2buf = hex => new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+    // Вход / Регистрация
+    document.getElementById('auth-btn').addEventListener('click', async () => {
+      const nickname = document.getElementById('login-nick').value.trim();
+      const password = document.getElementById('login-pwd').value;
+      const errBox = document.getElementById('auth-error');
+      errBox.innerText = '';
 
-    // Генерация AES-ключа из введённого пароля
-    async function deriveKey(password, salt) {
-      const enc = new TextEncoder();
-      const baseKey = await crypto.subtle.importKey(
-        "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
-      );
-      return crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
-        baseKey,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt", "decrypt"]
-      );
-    }
-
-    // Шифрование на клиенте
-    async function encryptText(text, password) {
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const key = await deriveKey(password, salt);
-      const encoded = new TextEncoder().encode(text);
-      const ciphertext = await crypto.Готовый файл `index.html`. В него уже вшиты твои ключи и адрес проекта `https://exrrbaeopoykofhttzvp.supabase.co`.
-
-Здесь реализовано полное сквозное шифрование (E2EE) по стандарту **AES-GCM (256 бит)** через нативный браузерный `crypto.subtle`. Сообщения шифруются на телефоне/компьютере до отправки в базу — в Supabase попадает только зашифрованная строка. Любой человек без твоего секретного пароля комнаты увидит лишь шум.
-
-```html
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Utopia Secure Messenger</title>
-  <script src="[https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2](https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2)"></script>
-  <style>
-    :root {
-      --bg: #0f1117;
-      --card: #181b24;
-      --border: #282d3d;
-      --accent: #22c55e;
-      --accent-hover: #16a34a;
-      --text: #f3f4f6;
-      --subtext: #9ca3af;
-      --bubble-mine: #1e3a2f;
-      --bubble-other: #232836;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
-    
-    header { background: var(--card); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
-    .header-top { display: flex; justify-content: space-between; align-items: center; }
-    .title { font-weight: 700; font-size: 1.1rem; color: var(--accent); }
-    .status { font-size: 0.8rem; color: var(--subtext); display: flex; align-items: center; gap: 6px; }
-    .status-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
-
-    .auth-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    input, button { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 8px; font-size: 0.9rem; outline: none; }
-    input:focus { border-color: var(--accent); }
-
-    #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    
-    .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; word-break: break-word; animation: fadeIn 0.2s ease; }
-    .msg.mine { align-self: flex-end; background: var(--bubble-mine); border-bottom-right-radius: 2px; }
-    .msg.other { align-self: flex-start; background: var(--bubble-other); border-bottom-left-radius: 2px; }
-    .msg-header { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--subtext); margin-bottom: 4px; }
-    .msg-sender { font-weight: 600; color: #6ee7b7; }
-    .msg-text { font-size: 0.95rem; line-height: 1.4; }
-    .msg-error { color: #f87171; font-style: italic; font-size: 0.85rem; }
-
-    footer { background: var(--card); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 8px; }
-    #msg-input { flex: 1; }
-    #send-btn { background: var(--accent); color: #000; border: none; font-weight: 600; cursor: pointer; padding: 0 18px; }
-    #send-btn:active { background: var(--accent-hover); }
-
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-  </style>
-</head>
-<body>
-
-  <header>
-    <div class="header-top">
-      <div class="title">Utopia E2EE Chat</div>
-      <div class="status"><div class="status-dot"></div> Защищено AES-GCM</div>
-    </div>
-    <div class="auth-row">
-      <input type="text" id="nickname" placeholder="Твой никнейм" value="User">
-      <input type="password" id="secret-key" placeholder="Секретный ключ (пароль комнаты)">
-    </div>
-  </header>
-
-  <main id="chat-container"></main>
-
-  <footer>
-    <input type="text" id="msg-input" placeholder="Напишите зашифрованное сообщение..." autocomplete="off">
-    <button id="send-btn">Отправить</button>
-  </footer>
-
-  <script>
-    const SUPABASE_URL = '[https://exrrbaeopoykofhttzvp.supabase.co](https://exrrbaeopoykofhttzvp.supabase.co)';
-    const SUPABASE_KEY = 'Sb_publishable_iRcg3DReG70WfuJceOsHMw_fqUjnTuB';
-    const client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-    const chatContainer = document.getElementById('chat-container');
-    const msgInput = document.getElementById('msg-input');
-    const sendBtn = document.getElementById('send-btn');
-    const nickInput = document.getElementById('nickname');
-    const keyInput = document.getElementById('secret-key');
-
-    // Хелперы Base64
-    const toB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
-    const fromB64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
-
-    // Генерация криптографического ключа из введенного пароля комнаты
-    async function deriveKey(password, salt) {
-      const enc = new TextEncoder();
-      const baseKey = await crypto.subtle.importKey(
-        "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
-      );
-      return crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
-        baseKey, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
-      );
-    }
-
-    // Шифрование на клиенте
-    async function encryptText(text, password) {
-      const enc = new TextEncoder();
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const key = await deriveKey(password, salt);
-      const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(text));
-      return {
-        ciphertext: toB64(cipher),
-        iv: toB64(iv),
-        salt: toB64(salt)
-      };
-    }
-
-    // Расшифровка на клиенте
-    async function decryptText(ciphertextB64, ivB64, saltB64, password) {
-      if (!password) return { text: "🔒 Введите секретный ключ комнаты вверху", error: true };
-      try {
-        const salt = fromB64(saltB64);
-        const iv = fromB64(ivB64);
-        const cipher = fromB64(ciphertextB64);
-        const key = await deriveKey(password, salt);
-        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
-        return { text: new TextDecoder().decode(decrypted), error: false };
-      } catch (e) {
-        return { text: "🔒 Не удалось расшифровать (неверный ключ комнаты)", error: true };
-      }
-    }
-
-    // Отрисовка сообщения на экране
-    async function addMessageToUI(msg, currentPassword) {
-      const isMine = msg.sender === nickInput.value.trim();
-      const decrypted = await decryptText(msg.ciphertext, msg.iv, msg.salt, currentPassword);
-      
-      const el = document.createElement('div');
-      el.className = `msg ${isMine ? 'mine' : 'other'}`;
-      el.dataset.cipher = msg.ciphertext;
-      el.dataset.iv = msg.iv;
-      el.dataset.salt = msg.salt;
-
-      const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      el.innerHTML = `
-        <div class="msg-header">
-          <span class="msg-sender">${msg.sender}</span>
-          <span>${time}</span>
-        </div>
-        <div class="msg-text ${decrypted.error ? 'msg-error' : ''}">${decrypted.text}</div>
-      `;
-      chatContainer.appendChild(el);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    // Загрузка истории
-    async function loadHistory() {
-      chatContainer.innerHTML = '';
-      const { data, error } = await client
-        .from('messages')
-        .select('*')
-        .order('id', { ascending: true })
-        .limit(100);
-
-      if (!error && data) {
-        const pwd = keyInput.value.trim();
-        for (const msg of data) {
-          await addMessageToUI(msg, pwd);
-        }
-      }
-    }
-
-    // Отправка нового сообщения
-    async function sendMessage() {
-      const text = msgInput.value.trim();
-      const password = keyInput.value.trim();
-      const sender = nickInput.value.trim() || 'Аноним';
-
-      if (!text) return;
-      if (!password) {
-        alert("Задайте секретный ключ (пароль комнаты) в шапке сайта!");
+      if (!nickname || !password) {
+        errBox.innerText = 'Заполните все поля!';
         return;
       }
 
-      msgInput.value = '';
-      const { ciphertext, iv, salt } = await encryptText(text, password);
+      try {
+        const res = await fetch(`${BACKEND_URL}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nickname, password })
+        });
+        const data = await res.json();
 
-      const { error } = await client.from('messages').insert([{
-        sender,
-        ciphertext,
-        iv,
-        salt
-      }]);
+        if (data.status === 'ok') {
+          currentUser = nickname;
+          document.getElementById('auth-screen').style.display = 'none';
+          document.getElementById('app').style.display = 'flex';
+          document.getElementById('profile-nick').innerText = '@' + currentUser;
 
-      if (error) {
-        alert("Ошибка отправки: " + error.message);
+          // Гарантируем добавление в общий чат
+          await fetch(`${BACKEND_URL}/chats`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: 'general', name: '🌐 Общий чат', created_by: currentUser })
+          });
+
+          await loadChats();
+          switchChat('general', '🌐 Общий чат');
+        } else {
+          errBox.innerText = data.msg;
+        }
+      } catch (e) {
+        errBox.innerText = 'Ошибка соединения с сервером!';
       }
-    }
-
-    sendBtn.addEventListener('click', sendMessage);
-    msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
-    
-    // Перерасшифровать сообщения на лету при смене ключа
-    keyInput.addEventListener('input', () => {
-      loadHistory();
     });
 
-    // Режим реального времени (WebSockets)
-    client
-      .channel('realtime:messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-        addMessageToUI(payload.new, keyInput.value.trim());
-      })
-      .subscribe();
+    // Список чатов
+    async function loadChats() {
+      const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
+      const chats = await res.json();
+      const listEl = document.getElementById('chat-list');
+      listEl.innerHTML = '';
 
-    loadHistory();
+      chats.forEach(c => {
+        const div = document.createElement('div');
+        div.className = `chat-item ${c.id === activeChatId ? 'active' : ''}`;
+        div.innerText = c.name;
+        div.onclick = () => switchChat(c.id, c.name);
+        listEl.appendChild(div);
+      });
+    }
+
+    // Переключение чата и подключение WebSocket
+    async function switchChat(chatId, chatName) {
+      activeChatId = chatId;
+      document.getElementById('current-chat-title').innerText = chatName;
+      document.getElementById('invite-btn').style.display = chatId === 'general' ? 'none' : 'block';
+
+      document.querySelectorAll('.chat-item').forEach(el => {
+        el.classList.toggle('active', el.innerText === chatName);
+      });
+
+      // Загрузка истории
+      const box = document.getElementById('messages-box');
+      box.innerHTML = '';
+      const res = await fetch(`${BACKEND_URL}/messages/${chatId}`);
+      const history = await res.json();
+      history.forEach(renderMessage);
+
+      // Закрываем старый сокет и открываем новый под активный чат
+      if (activeWs) activeWs.close();
+      const wsUrl = BACKEND_URL.replace('http', 'ws') + `/ws/${chatId}`;
+      activeWs = new WebSocket(wsUrl);
+
+      activeWs.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        renderMessage(msg);
+      };
+    }
+
+    function renderMessage(msg) {
+      const box = document.getElementById('messages-box');
+      const isMine = msg.sender === currentUser;
+      const el = document.createElement('div');
+      el.className = `msg ${isMine ? 'mine' : 'other'}`;
+      el.innerHTML = `
+        <div class="msg-author">${msg.sender}</div>
+        <div class="msg-body">${msg.text}</div>
+      `;
+      box.appendChild(el);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    // Отправка сообщений
+    function sendMsg() {
+      const input = document.getElementById('msg-input');
+      const text = input.value.trim();
+      if (!text || !activeWs || activeWs.readyState !== WebSocket.OPEN) return;
+
+      activeWs.send(JSON.stringify({ sender: currentUser, text: text }));
+      input.value = '';
+    }
+
+    document.getElementById('send-msg-btn').addEventListener('click', sendMsg);
+    document.getElementById('msg-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+
+    // Создание чата
+    document.getElementById('new-chat-btn').addEventListener('click', async () => {
+      const name = prompt('Название новой комнаты:');
+      if (!name) return;
+      const id = 'chat_' + Date.now();
+
+      await fetch(`${BACKEND_URL}/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, created_by: currentUser })
+      });
+
+      await loadChats();
+      switchChat(id, name);
+    });
+
+    // Приглашение друга в приватный чат
+    document.getElementById('invite-btn').addEventListener('click', async () => {
+      const friend = prompt('Никнейм друга:');
+      if (!friend) return;
+
+      const res = await fetch(`${BACKEND_URL}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: activeChatId, nickname: friend })
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        alert(`@${friend} добавлен!`);
+      } else {
+        alert(data.msg);
+      }
+    });
   </script>
 </body>
 </html>
