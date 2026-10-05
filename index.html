@@ -150,20 +150,17 @@
       padding: 4px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 11px;
     }
 
-    /* Плашка ответа */
     #reply-bar {
       display: none; background: var(--bg-panel); border-top: var(--glass-border);
       padding: 8px 16px; justify-content: space-between; align-items: center;
       border-left: 4px solid var(--accent); flex-shrink: 0;
     }
 
-    /* Плашка мультивыбора сообщений */
     #selection-bar {
       display: none; background: var(--bg-panel); border-top: var(--glass-border);
       padding: 10px 16px; justify-content: space-between; align-items: center; flex-shrink: 0; z-index: 25;
     }
 
-    /* Закреплённая нижняя строка */
     .chat-input-wrapper {
       background: var(--bg-panel); backdrop-filter: blur(16px);
       padding: 10px 16px; border-top: var(--glass-border);
@@ -185,7 +182,6 @@
       padding: 8px 16px; align-items: center; justify-content: space-between; z-index: 30;
     }
 
-    /* Модалки (Стекло, плавные скругления) */
     .modal-overlay {
       display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65);
       backdrop-filter: blur(8px); z-index: 8000; align-items: center; justify-content: center; padding: 20px;
@@ -197,7 +193,6 @@
     }
     .modal-title { font-size: 1.25rem; color: var(--accent); font-weight: 700; }
 
-    /* Табы админки */
     .admin-nav { display: flex; gap: 6px; border-bottom: var(--glass-border); padding-bottom: 8px; }
     .admin-tab-btn {
       flex: 1; padding: 8px; font-size: 12px; font-weight: 600; border: none; border-radius: 12px;
@@ -218,7 +213,6 @@
       color: var(--text-dim); padding: 4px 0;
     }
 
-    /* Мониторинг плашки */
     .mon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .mon-card {
       background: rgba(255,255,255,0.03); border: var(--glass-border); border-radius: var(--radius-md);
@@ -227,7 +221,6 @@
     .mon-card .val { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
     .mon-card .lbl { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
 
-    /* Контекстное меню */
     #msg-context-menu {
       display: none; position: fixed; background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(12px);
       border-radius: var(--radius-md); border: var(--glass-border);
@@ -250,7 +243,7 @@
 
   <div id="top-toast"></div>
 
-  <!-- Окно подтверждения (Confirm Dialog) -->
+  <!-- Диалог подтверждения -->
   <div class="modal-overlay" id="confirm-modal" style="z-index: 12000;">
     <div class="modal-card" style="max-width: 340px; text-align: center;">
       <h3 class="modal-title" id="confirm-title" style="font-size: 1.15rem;">Подтверждение</h3>
@@ -262,7 +255,7 @@
     </div>
   </div>
 
-  <!-- Авторизация -->
+  <!-- Экран входа -->
   <div id="auth-screen">
     <div class="auth-card">
       <h2>Utopia Messenger</h2>
@@ -282,14 +275,11 @@
           <span id="my-nick">@user</span>
         </div>
         <div class="action-icons">
-          <!-- Мониторинг для всех -->
           <button class="icon-btn" id="open-monitoring" title="Мониторинг сервера">📊</button>
-          <!-- Приглашения -->
           <button class="icon-btn" id="open-invites" title="Приглашения в чаты">
             📩
             <span class="badge-count" id="invites-badge" style="display: none;">0</span>
           </button>
-          <!-- Настройки -->
           <button class="icon-btn" id="open-settings" title="Настройки">⚙️</button>
         </div>
       </div>
@@ -310,7 +300,8 @@
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
           <button class="pill-btn" id="invite-btn" style="display: none; padding: 6px 14px; font-size: 12px;">+ Пригласить</button>
-          <button class="icon-btn" id="delete-chat-btn" style="color: var(--danger);" title="Удалить чат">🗑️</button>
+          <!-- Кнопка удаления чата по умолчанию скрыта -->
+          <button class="icon-btn" id="delete-chat-btn" style="color: var(--danger); display: none;" title="Удалить чат">🗑️</button>
         </div>
       </div>
 
@@ -343,7 +334,6 @@
         <button class="icon-btn" id="send-btn" style="display: none; color: var(--accent);">➤</button>
         <button id="voice-btn" title="Записать голосовое">🎙️</button>
 
-        <!-- Заблокированный микрофон -->
         <div id="locked-voice-bar">
           <div style="display: flex; align-items: center; gap: 10px;">
             <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--danger);"></div>
@@ -360,7 +350,7 @@
     </main>
   </div>
 
-  <!-- Модалка мониторинга сервера (для всех) -->
+  <!-- Мониторинг сервера -->
   <div class="modal-overlay" id="mon-modal">
     <div class="modal-card">
       <h3 class="modal-title">📊 Мониторинг сервера</h3>
@@ -394,7 +384,7 @@
     </div>
   </div>
 
-  <!-- Модалка приглашений -->
+  <!-- Приглашения -->
   <div class="modal-overlay" id="invites-modal">
     <div class="modal-card">
       <h3 class="modal-title">📩 Приглашения в чаты</h3>
@@ -403,7 +393,7 @@
     </div>
   </div>
 
-  <!-- Меню настроек -->
+  <!-- Настройки -->
   <div class="modal-overlay" id="settings-modal">
     <div class="modal-card">
       <h3 class="modal-title">Настройки</h3>
@@ -439,23 +429,19 @@
         <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
       </div>
 
-      <!-- Вкладка Пользователи -->
       <div id="admin-tab-users" style="display: flex; flex-direction: column; gap: 10px;">
         <input type="text" id="admin-search-input" placeholder="🔍 Поиск юзеров..." style="padding: 10px; border-radius: 10px; border: var(--glass-border); background: #0c1017; color: #fff;">
         <div id="admin-users-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto;"></div>
       </div>
 
-      <!-- Вкладка Группы -->
       <div id="admin-tab-groups" style="display: none; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto;"></div>
-
-      <!-- Вкладка Заявки -->
       <div id="admin-tab-requests" style="display: none; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto;"></div>
 
       <button class="pill-btn" onclick="document.getElementById('admin-modal').style.display='none'">Закрыть</button>
     </div>
   </div>
 
-  <!-- Модалка выдачи прав -->
+  <!-- Настройка прав -->
   <div class="modal-overlay" id="grant-modal">
     <div class="modal-card">
       <h3 class="modal-title" id="grant-user-title">Права администратора</h3>
@@ -496,11 +482,9 @@
     let replyingTo = null;
     let targetGrantUser = null;
 
-    // Режим выбора нескольких сообщений
     let isSelectionMode = false;
     let selectedMsgIds = new Set();
 
-    // Голосовые
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
@@ -511,7 +495,6 @@
     let recSeconds = 0;
     const MAX_REC_SECONDS = 300;
 
-    // Универсальный диалог подтверждения
     function confirmAction(title, text, onConfirm) {
       document.getElementById('confirm-title').innerText = title;
       document.getElementById('confirm-text').innerText = text;
@@ -531,7 +514,6 @@
       noBtn.onclick = cleanup;
     }
 
-    // E2EE Шифрование
     async function getChatCryptoKey(chatId) {
       const enc = new TextEncoder();
       const keyMat = await crypto.subtle.importKey("raw", enc.encode("utopia_secure_" + chatId), "PBKDF2", false, ["deriveKey"]);
@@ -563,7 +545,6 @@
       } catch (e) { return "[Зашифрованное сообщение]"; }
     }
 
-    // Авторизация
     window.addEventListener('DOMContentLoaded', () => {
       if (window.innerWidth <= 768) document.getElementById('back-btn').style.display = 'block';
       const saved = localStorage.getItem('utopia_saved_user');
@@ -641,7 +622,6 @@
       location.reload();
     }
 
-    // Смена пароля
     document.getElementById('change-pwd-btn').onclick = () => {
       const oldP = document.getElementById('old-pwd').value;
       const newP = document.getElementById('new-pwd').value;
@@ -663,7 +643,6 @@
       });
     };
 
-    // Оповещения
     async function checkNotifications() {
       try {
         const res = await fetch(`${BACKEND_URL}/notifications/${currentUser}`);
@@ -672,7 +651,6 @@
       } catch (e) {}
     }
 
-    // Приглашения
     async function checkInvites() {
       try {
         const res = await fetch(`${BACKEND_URL}/invites/${currentUser}`);
@@ -722,7 +700,6 @@
       await checkInvites();
     }
 
-    // Загрузка комнат
     async function loadChats() {
       const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
       activeChatList = await res.json();
@@ -748,13 +725,15 @@
       document.getElementById('chat-aside').style.display = 'flex';
     };
 
-    // Переключение комнат и сокеты
     async function switchChat(chatId, chatName) {
       activeChatId = chatId;
       exitSelectionMode();
       document.getElementById('chat-title').innerText = chatName;
-      document.getElementById('invite-btn').style.display = chatId === 'general' ? 'none' : 'block';
-      document.getElementById('delete-chat-btn').style.display = chatId === 'general' ? 'none' : 'block';
+
+      // Общий чат не приглашает и не удаляется
+      const isGeneral = (chatId === 'general');
+      document.getElementById('invite-btn').style.display = isGeneral ? 'none' : 'block';
+      document.getElementById('delete-chat-btn').style.display = isGeneral ? 'none' : 'block';
 
       document.querySelectorAll('.chat-item').forEach(el => el.classList.toggle('active', el.innerText === chatName));
 
@@ -772,7 +751,6 @@
       const wsUrl = BACKEND_URL.replace('https', 'wss').replace('http', 'ws') + `/ws/${chatId}/${currentUser}`;
       activeWs = new WebSocket(wsUrl);
 
-      // Heartbeat ping
       const pingInt = setInterval(() => {
         if (activeWs && activeWs.readyState === WebSocket.OPEN) {
           activeWs.send(JSON.stringify({ action: 'ping' }));
@@ -811,7 +789,6 @@
       setTimeout(() => t.classList.remove('show'), 3000);
     }
 
-    // Удаление текущего чата
     document.getElementById('delete-chat-btn').onclick = () => {
       confirmAction('Удаление чата', 'Вы действительно хотите удалить этот чат со всей историей?', async () => {
         const res = await fetch(`${BACKEND_URL}/chats/${activeChatId}?user=${currentUser}`, { method: 'DELETE' });
@@ -824,7 +801,6 @@
       });
     };
 
-    // Отрисовка сообщения
     function renderMessage(msg) {
       const box = document.getElementById('messages-box');
       const isMine = msg.sender === currentUser;
@@ -863,7 +839,6 @@
       box.scrollTop = box.scrollHeight;
     }
 
-    // Мультивыбор сообщений
     function toggleSelectMessage(id, el) {
       if (selectedMsgIds.has(id)) {
         selectedMsgIds.delete(id);
@@ -904,7 +879,6 @@
       });
     };
 
-    // Контекстное меню
     function bindLongPress(node, msg) {
       let timer = null;
       const trigger = (e) => {
@@ -964,7 +938,6 @@
       });
     };
 
-    // Отправка сообщений
     const msgInput = document.getElementById('msg-input');
     const sendBtn = document.getElementById('send-btn');
     const voiceBtn = document.getElementById('voice-btn');
@@ -1002,7 +975,6 @@
     sendBtn.onclick = sendTextMessage;
     msgInput.onkeydown = (e) => { if (e.key === 'Enter') sendTextMessage(); };
 
-    // Файлы
     const fileInput = document.getElementById('file-input');
     document.getElementById('attach-btn').onclick = () => fileInput.click();
     fileInput.onchange = async () => {
@@ -1047,7 +1019,6 @@
       }
     };
 
-    // Запись голосовых
     async function startRecordingSession() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1107,7 +1078,7 @@
             replyingTo = null;
             document.getElementById('reply-bar').style.display = 'none';
           }
-        } catch (e) { alert('Ошибка отправки голосового!'); }
+        } catch (e) { alert('Ошибка отправки аудио!'); }
       };
       mediaRecorder.stop();
       mediaRecorder.stream.getTracks().forEach(t => t.stop());
@@ -1143,7 +1114,6 @@
     };
     document.getElementById('send-locked-voice-btn').onclick = stopAndSendVoice;
 
-    // Мониторинг
     document.getElementById('open-monitoring').onclick = async () => {
       try {
         const res = await fetch(`${BACKEND_URL}/server/monitoring`);
@@ -1158,12 +1128,10 @@
       } catch (e) { alert('Не удалось получить статус сервера'); }
     };
 
-    // Настройки
     document.getElementById('open-settings').onclick = () => {
       document.getElementById('settings-modal').style.display = 'flex';
     };
 
-    // Админ-панель: переключение табов
     document.getElementById('admin-panel-btn').onclick = async () => {
       document.getElementById('settings-modal').style.display = 'none';
       showAdminTab('users');
@@ -1188,7 +1156,7 @@
     document.getElementById('tab-groups-btn').onclick = () => showAdminTab('groups');
     document.getElementById('tab-requests-btn').onclick = () => showAdminTab('requests');
 
-    // Админка: пользователи
+    // Исправлено: ник и значок обёрнуты вместе, скрыта кнопка удаления для superadmin
     async function loadAdminUsers(query = '') {
       const res = await fetch(`${BACKEND_URL}/admin/users?admin=${currentUser}&query=${encodeURIComponent(query)}`);
       const data = await res.json();
@@ -1196,17 +1164,25 @@
       list.innerHTML = '';
 
       data.users.forEach(u => {
+        const isSuper = (u.nickname.toLowerCase() === 'jjlop55' || u.nickname.toLowerCase() === 'gglo55');
+        const badge = u.is_superadmin ? '👑' : (u.is_admin ? '⚡' : '');
+
         const row = document.createElement('div');
         row.className = 'user-row';
         row.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <b>@${u.nickname}</b> ${u.is_superadmin ? '👑' : (u.is_admin ? '⚡' : '')}
+            <div style="display:inline-flex; align-items:center; gap:6px;">
+              <b>@${u.nickname}</b>
+              ${badge ? `<span>${badge}</span>` : ''}
+            </div>
             <span class="user-status ${u.is_online ? 'online' : 'offline'}">${u.is_online ? 'Онлайн' : 'Офлайн'}</span>
           </div>
           <div style="font-size: 11px; color: var(--text-dim);">Визит: ${u.last_login || 'нет данных'}</div>
           <div style="display: flex; gap: 6px; margin-top: 4px;">
             <button class="pill-btn" style="padding: 6px; font-size: 12px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">Права</button>
-            <button class="pill-btn" style="padding: 6px; font-size: 12px; background: rgba(239,68,68,0.2); color: var(--danger);" onclick="handleDeleteUser('${u.nickname}')">Удалить аккаунт</button>
+            ${!isSuper ? `
+              <button class="pill-btn" style="padding: 6px; font-size: 12px; background: rgba(239,68,68,0.2); color: var(--danger);" onclick="handleDeleteUser('${u.nickname}')">Удалить аккаунт</button>
+            ` : ''}
           </div>
         `;
         list.appendChild(row);
@@ -1215,7 +1191,7 @@
 
     document.getElementById('admin-search-input').oninput = (e) => loadAdminUsers(e.target.value.trim());
 
-    // Админка: группы и участники
+    // Исправлено: для общего чата (general) кнопка удаления не отрисовывается
     async function loadAdminGroups() {
       const res = await fetch(`${BACKEND_URL}/admin/groups?admin=${currentUser}`);
       const groups = await res.json();
@@ -1226,10 +1202,14 @@
         const card = document.createElement('div');
         card.className = 'user-row';
         const membersTags = g.members.map(m => `@${m}`).join(', ');
+        const isGeneral = (g.id === 'general');
+
         card.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <b>«${g.name}»</b>
-            <button class="pill-btn" style="padding: 4px 10px; font-size: 11px; background: rgba(239,68,68,0.2); color: var(--danger);" onclick="adminDeleteGroup('${g.id}', '${g.name}')">Удалить группу</button>
+            ${!isGeneral ? `
+              <button class="pill-btn" style="padding: 4px 10px; font-size: 11px; background: rgba(239,68,68,0.2); color: var(--danger); flex: 0 0 auto;" onclick="adminDeleteGroup('${g.id}', '${g.name}')">Удалить группу</button>
+            ` : '<span style="font-size: 11px; color: var(--text-dim);">Основная комната</span>'}
           </div>
           <div style="font-size: 11px; color: var(--text-dim);">Создатель: @${g.created_by}</div>
           <div style="font-size: 12px; color: var(--accent); margin-top: 2px;">Участники: ${membersTags || 'нет'}</div>
@@ -1247,7 +1227,6 @@
       });
     }
 
-    // Удаление аккаунта (прямое или по заявке)
     function handleDeleteUser(targetNick) {
       if (targetNick.toLowerCase() === 'jjlop55' || targetNick.toLowerCase() === 'gglo55') {
         return alert('Главного администратора удалить невозможно!');
@@ -1271,7 +1250,6 @@
       });
     }
 
-    // Админка: заявки на удаление
     async function loadAdminRequests() {
       const res = await fetch(`${BACKEND_URL}/admin/delete-requests?admin=${currentUser}`);
       const reqs = await res.json();
@@ -1312,7 +1290,6 @@
       });
     }
 
-    // Настройка прав
     function openGrantModal(nick, perms) {
       targetGrantUser = nick;
       document.getElementById('grant-user-title').innerText = `Права для @${nick}`;
@@ -1350,7 +1327,6 @@
       });
     };
 
-    // Создание чата
     document.getElementById('new-chat-btn').onclick = () => {
       const name = prompt('Название нового чата:');
       if (!name) return;
@@ -1366,7 +1342,6 @@
       });
     };
 
-    // Пригласить в чат
     document.getElementById('invite-btn').onclick = () => {
       const friend = prompt('Никнейм пользователя для приглашения:');
       if (!friend) return;
