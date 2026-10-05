@@ -27,15 +27,15 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 SERVER_START_TIME = time.time()
 
-# Подключение к SQLite в режиме повышенной надёжности (WAL предотвращает краши базы при нагрузке)
-conn = sqlite3.connect("messenger.db", check_same_thread=False, timeout=20.0)
+# Подключение к SQLite с защитой от блокировок очереди
+conn = sqlite3.connect("messenger.db", check_same_thread=False, timeout=25.0)
 cursor = conn.cursor()
 cursor.execute("PRAGMA journal_mode=WAL;")
-cursor.execute("PRAGMA busy_timeout=20000;")
+cursor.execute("PRAGMA busy_timeout=25000;")
 conn.commit()
 
 # ═══════════════════════════════════════════════════════════
-#  ТАБЛИЦЫ БАЗЫ ДАННЫХ
+#  ТАБЛИЦЫ
 # ═══════════════════════════════════════════════════════════
 
 cursor.execute("""
@@ -78,13 +78,13 @@ CREATE TABLE IF NOT EXISTS members (
 """)
 
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS invites (
+CREATE TABLE IF NOT EXISTS friends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id TEXT,
-    chat_name TEXT,
-    from_user TEXT,
-    to_user TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user1 TEXT NOT NULL,
+    user2 TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user1, user2)
 )
 """)
 
@@ -102,18 +102,6 @@ CREATE TABLE IF NOT EXISTS messages (
     is_edited INTEGER DEFAULT 0,
     is_read INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS delete_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    target_nick TEXT NOT NULL,
-    requested_by TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP NOT NULL,
-    status TEXT DEFAULT 'pending'
 )
 """)
 
@@ -164,61 +152,11 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS reactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message_id INTEGER NOT NULL,
-    nickname TEXT NOT NULL,
-    emoji TEXT NOT NULL,
-    UNIQUE(message_id, nickname)
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS pinned_messages (
-    chat_id TEXT PRIMARY KEY,
-    message_id INTEGER,
-    pinned_by TEXT,
-    message_text TEXT,
-    pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS support_tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_user TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    message TEXT NOT NULL,
-    status TEXT DEFAULT 'open',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS support_replies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticket_id INTEGER NOT NULL,
-    from_user TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS support_perm_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    requested_by TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    decided_at TIMESTAMP,
-    decided_by TEXT
-)
-""")
-
+# Всегда гарантируем наличие Общего чата
+cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES ('general', '🌐 Общий чат', 'system', 0)")
 conn.commit()
 
-# Безопасное добавление колонок в старые БД
+# Безопасное добавление колонок
 _safe_alters = [
     ("users", "avatar_url", "TEXT DEFAULT ''"),
     ("users", "bio", "TEXT DEFAULT ''"),
@@ -252,11 +190,9 @@ def verify_pwd(plain: str, stored: str) -> bool:
         return True
     return stored == hash_pwd(plain)
 
-# Очистка общего чата 4 раза в час (сообщения старше 15 минут) + файлов старше 4 дней
 def periodic_cleanup():
     ns = now_str()
-
-    # Очистка общего чата general (каждые 15 минут = 4 раза в час)
+    # Очистка общего чата general 4 раза в час (сообщения старше 15 мин)
     gen_cutoff = (datetime.utcnow() - timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("DELETE FROM messages WHERE chat_id='general' AND created_at < ?", (gen_cutoff,))
 
@@ -272,19 +208,12 @@ def periodic_cleanup():
             pass
         cursor.execute("UPDATE messages SET file_url=NULL, text='[Срок хранения файла (4 дня) истёк]' WHERE id=?", (msg_id,))
 
-    # Просроченные заявки
-    cursor.execute("SELECT id,target_nick,requested_by FROM delete_requests WHERE expires_at < ? AND status='pending'", (ns,))
-    for req_id, t_nick, r_by in cursor.fetchall():
-        cursor.execute("UPDATE delete_requests SET status='expired' WHERE id=?", (req_id,))
-        cursor.execute("INSERT INTO notifications(to_user,text) VALUES(?,?)",
-                       (r_by, f"Главный администратор не принял заявку на удаление @{t_nick} (истёк срок 7 дней)."))
-
     cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
     cursor.execute("DELETE FROM bans WHERE ban_type='temporary' AND expires_at < ?", (ns,))
     conn.commit()
 
 # ═══════════════════════════════════════════════════════════
-#  Pydantic Модели
+#  Pydantic МОДЕЛИ
 # ═══════════════════════════════════════════════════════════
 
 class AuthData(BaseModel):
@@ -293,16 +222,16 @@ class AuthData(BaseModel):
     user_agent: str = ""
     ip_address: str = ""
 
-class PwdChangeData(BaseModel):
-    nickname: str
-    old_password: str
-    new_password: str
-
 class ProfileUpdateData(BaseModel):
     current_nickname: str
     new_nickname: Optional[str] = None
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
+
+class FriendActionData(BaseModel):
+    from_user: str
+    target_user: str
+    action: str  # request / accept / decline / remove
 
 class DirectChatData(BaseModel):
     from_user: str
@@ -312,52 +241,13 @@ class ReadChatData(BaseModel):
     chat_id: str
     nickname: str
 
-class InviteData(BaseModel):
-    chat_id: str
-    chat_name: str
-    from_user: str
-    to_user: str
-
-class InviteAction(BaseModel):
-    invite_id: int
-    nickname: str
-    action: str
-
-class AdminPermsData(BaseModel):
-    admin_nick: str
-    target_nick: str
-    perms: dict
-
-class DeleteUserAction(BaseModel):
-    admin_nick: str
-    target_nick: str
-    reason: str = ""
-
-class BanData(BaseModel):
-    admin_nick: str
-    target_nick: str
-    reason: str
-    ban_type: str = "permanent"
-    duration_hours: int = 0
-
-class MuteData(BaseModel):
-    admin_nick: str
-    target_nick: str
-    reason: str = ""
-    duration_minutes: int = 10
-
-class SupportTicketData(BaseModel):
-    from_user: str
-    subject: str
-    message: str
-
-class SupportReplyData(BaseModel):
-    admin_nick: str
-    ticket_id: int
-    message: str
+class ChatCreateData(BaseModel):
+    id: str
+    name: str
+    created_by: str
 
 # ═══════════════════════════════════════════════════════════
-#  CONNECTION MANAGER (Безопасная обработка сбоев сокетов)
+#  CONNECTION MANAGER
 # ═══════════════════════════════════════════════════════════
 
 class ConnectionManager:
@@ -387,37 +277,23 @@ class ConnectionManager:
         return list(self.user_sockets.keys())
 
     async def send_to_user(self, nick: str, payload: dict):
-        dead = []
         for ws in list(self.user_sockets.get(nick, [])):
             try:
                 await ws.send_json(payload)
             except Exception:
-                dead.append(ws)
-        for d in dead:
-            self.user_sockets.get(nick, set()).discard(d)
+                pass
 
     async def broadcast_chat(self, chat_id: str, payload: dict):
-        dead = []
         for ws in list(self.chat_sockets.get(chat_id, [])):
             try:
                 await ws.send_json(payload)
-            except Exception:
-                dead.append(ws)
-        for d in dead:
-            self.chat_sockets.get(chat_id, set()).discard(d)
-
-    async def kick_user(self, nick: str, reason: str = "Вы были принудительно отключены."):
-        for ws in list(self.user_sockets.get(nick, [])):
-            try:
-                await ws.send_json({"action": "kicked", "msg": reason})
-                await ws.close()
             except Exception:
                 pass
 
 manager = ConnectionManager()
 
 # ═══════════════════════════════════════════════════════════
-#  ЭНДПОИНТЫ АВТОРИЗАЦИИ И ПРОФИЛЯ
+#  МАРШРУТЫ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/ping")
@@ -431,24 +307,21 @@ async def auth_user(data: AuthData, request: Request):
     ns = now_str()
     ip = data.ip_address or (request.client.host if request.client else "127.0.0.1")
 
-    # Проверка бана
-    cursor.execute(
-        "SELECT reason, banned_by, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)",
-        (data.nickname,)
-    )
+    # Проверка банов
+    cursor.execute("SELECT reason, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
     ban = cursor.fetchone()
     if ban:
-        reason, banned_by, ban_type, expires_at = ban
+        reason, ban_type, expires_at = ban
         if ban_type == "permanent" or (ban_type == "temporary" and expires_at and expires_at > ns):
-            return {"status": "banned", "msg": f"Аккаунт заблокирован! Причина: {reason}", "expires_at": expires_at}
+            return {"status": "banned", "msg": f"Аккаунт заблокирован! Причина: {reason}"}
         else:
             cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
             conn.commit()
 
-    cursor.execute(
-        "SELECT password, is_superadmin, is_admin, admin_perms, admin_notified, granted_by, revoked_by, avatar_url, bio "
-        "FROM users WHERE nickname=?", (data.nickname,)
-    )
+    cursor.execute("""
+        SELECT password, is_superadmin, is_admin, admin_perms, avatar_url, bio 
+        FROM users WHERE nickname=?
+    """, (data.nickname,))
     row = cursor.fetchone()
     session_token = uuid.uuid4().hex
 
@@ -459,23 +332,21 @@ async def auth_user(data: AuthData, request: Request):
         hashed = hash_pwd(data.password)
         cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, data.nickname))
         cursor.execute(
-            "INSERT INTO user_sessions(nickname,session_token,user_agent,ip_address,logged_in_at,last_active,is_active) "
-            "VALUES(?,?,?,?,?,?,1)",
+            "INSERT INTO user_sessions (nickname, session_token, user_agent, ip_address, logged_in_at, last_active, is_active) VALUES (?,?,?,?,?,?,1)",
             (data.nickname, session_token, data.user_agent, ip, ns, ns)
         )
+        # Добавляем в общий чат
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES ('general', ?)", (data.nickname,))
         conn.commit()
 
         perms = json.loads(row[3]) if row[3] else {}
         return {
-            "status": "ok", "msg": "logged_in",
+            "status": "ok",
             "is_superadmin": bool(row[1]) or is_super(data.nickname),
             "is_admin": bool(row[2]) or bool(row[1]) or is_super(data.nickname),
             "admin_perms": perms,
-            "admin_notice": bool(row[4] == 0 and row[2] == 1 and row[1] == 0),
-            "granted_by": row[5],
-            "revoked_by": row[6],
-            "avatar_url": row[7] or "",
-            "bio": row[8] or "",
+            "avatar_url": row[4] or "",
+            "bio": row[5] or "",
             "session_token": session_token
         }
     else:
@@ -488,27 +359,31 @@ async def auth_user(data: AuthData, request: Request):
         } if is_sup else {}
 
         hashed = hash_pwd(data.password)
+        cursor.execute("""
+            INSERT INTO users (nickname, password, last_login, is_superadmin, is_admin, admin_perms, admin_notified)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+        """, (data.nickname, hashed, ns, is_sup, is_sup, json.dumps(perms)))
         cursor.execute(
-            "INSERT INTO users(nickname,password,last_login,is_superadmin,is_admin,admin_perms,admin_notified) "
-            "VALUES(?,?,?,?,?,?,1)",
-            (data.nickname, hashed, ns, is_sup, is_sup, json.dumps(perms))
-        )
-        cursor.execute(
-            "INSERT INTO user_sessions(nickname,session_token,user_agent,ip_address,logged_in_at,last_active,is_active) "
-            "VALUES(?,?,?,?,?,?,1)",
+            "INSERT INTO user_sessions (nickname, session_token, user_agent, ip_address, logged_in_at, last_active, is_active) VALUES (?,?,?,?,?,?,1)",
             (data.nickname, session_token, data.user_agent, ip, ns, ns)
         )
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES ('general', ?)", (data.nickname,))
         conn.commit()
 
         return {
-            "status": "ok", "msg": "registered",
-            "is_superadmin": bool(is_sup), "is_admin": bool(is_sup),
-            "admin_perms": perms, "admin_notice": False, "revoked_by": None,
-            "avatar_url": "", "bio": "",
+            "status": "ok",
+            "is_superadmin": bool(is_sup),
+            "is_admin": bool(is_sup),
+            "admin_perms": perms,
+            "avatar_url": "",
+            "bio": "",
             "session_token": session_token
         }
 
-# Обновление профиля: аватар, био, смена юзернейма (раз в 1 день + проверка уникальности)
+# ═══════════════════════════════════════════════════════════
+#  ПРОФИЛЬ (СТРОГИЙ ЗАПРЕТ СМЕНЫ НИКА ДЛЯ ГЛАВНОГО АДМИНА)
+# ═══════════════════════════════════════════════════════════
+
 @app.post("/profile/update")
 def update_profile(data: ProfileUpdateData):
     cursor.execute("SELECT nickname, last_username_change FROM users WHERE nickname=?", (data.current_nickname,))
@@ -516,23 +391,25 @@ def update_profile(data: ProfileUpdateData):
     if not user:
         return {"status": "error", "msg": "Пользователь не найден!"}
 
-    # Проверка смены ника
     new_nick = data.new_nickname.strip() if data.new_nickname else data.current_nickname
+
+    # СИСТЕМНЫЙ ЗАПРЕТ: Главному администратору смена ника заблокирована намертво
     if new_nick != data.current_nickname:
-        # Проверка кулдауна 1 день
+        if is_super(data.current_nickname):
+            return {"status": "error", "msg": "🔒 Смена юзернейма для Главного Администратора заблокирована на уровне ядра системы!"}
+
         last_change = user[1]
         if last_change:
             diff = datetime.utcnow() - datetime.strptime(last_change, '%Y-%m-%d %H:%M:%S')
             if diff < timedelta(days=1):
                 hours_left = int(24 - (diff.total_seconds() / 3600))
-                return {"status": "error", "msg": f"Юзернейм можно менять только 1 раз в день! Осталось ждать: {hours_left} ч."}
+                return {"status": "error", "msg": f"Юзернейм можно менять только 1 раз в день! Ждать ещё {hours_left} ч."}
 
-        # Проверка уникальности
         cursor.execute("SELECT 1 FROM users WHERE LOWER(nickname)=LOWER(?)", (new_nick,))
         if cursor.fetchone():
-            return {"status": "error", "msg": f"Юзернейм @{new_nick} уже занят другим пользователем!"}
+            return {"status": "error", "msg": f"Юзернейм @{new_nick} уже занят!"}
 
-        # Каскадное обновление юзернейма во всех таблицах
+        # Каскадное обновление юзернейма
         cursor.execute("UPDATE users SET nickname=?, last_username_change=? WHERE nickname=?", (new_nick, now_str(), data.current_nickname))
         cursor.execute("UPDATE members SET nickname=? WHERE nickname=?", (new_nick, data.current_nickname))
         cursor.execute("UPDATE messages SET sender=? WHERE sender=?", (new_nick, data.current_nickname))
@@ -540,149 +417,187 @@ def update_profile(data: ProfileUpdateData):
         cursor.execute("UPDATE chats SET created_by=? WHERE created_by=?", (new_nick, data.current_nickname))
         cursor.execute("UPDATE chats SET direct_user1=? WHERE direct_user1=?", (new_nick, data.current_nickname))
         cursor.execute("UPDATE chats SET direct_user2=? WHERE direct_user2=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE invites SET from_user=? WHERE from_user=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE invites SET to_user=? WHERE to_user=?", (new_nick, data.current_nickname))
+        cursor.execute("UPDATE friends SET user1=? WHERE user1=?", (new_nick, data.current_nickname))
+        cursor.execute("UPDATE friends SET user2=? WHERE user2=?", (new_nick, data.current_nickname))
         cursor.execute("UPDATE user_sessions SET nickname=? WHERE nickname=?", (new_nick, data.current_nickname))
         conn.commit()
 
-    # Обновление аватара и био
     target_nick = new_nick if new_nick != data.current_nickname else data.current_nickname
     if data.avatar_url is not None:
         cursor.execute("UPDATE users SET avatar_url=? WHERE nickname=?", (data.avatar_url, target_nick))
     if data.bio is not None:
-        cursor.execute("UPDATE users SET bio=? WHERE nickname=?", (data.bio[:140], target_nick))
+        # Лимит 45 слов
+        words = data.bio.strip().split()
+        if len(words) > 45:
+            return {"status": "error", "msg": "Описание «О себе» не должно превышать 45 слов!"}
+        cursor.execute("UPDATE users SET bio=? WHERE nickname=?", (" ".join(words), target_nick))
     conn.commit()
 
-    return {"status": "ok", "msg": "Профиль успешно сохранён!", "new_nickname": target_nick}
+    return {"status": "ok", "msg": "Профиль успешно обновлён!", "new_nickname": target_nick}
 
 # ═══════════════════════════════════════════════════════════
-#  ЛИЧНЫЕ ДИАЛОГИ (DM 1-на-1) И НЕПРОЧИТАННЫЕ СООБЩЕНИЯ
+#  СИСТЕМА ДРУЗЕЙ В СТИЛЕ DISCORD
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/friends/action")
+async def manage_friend(data: FriendActionData):
+    if data.from_user == data.target_user:
+        return {"status": "error", "msg": "Нельзя взаимодействовать с самим собой!"}
+
+    cursor.execute("SELECT 1 FROM users WHERE nickname=?", (data.target_user,))
+    if not cursor.fetchone():
+        return {"status": "error", "msg": f"Пользователь @{data.target_user} не найден!"}
+
+    if data.action == "request":
+        # Проверяем, нет ли уже дружбы или заявки
+        cursor.execute("""
+            SELECT id, status FROM friends 
+            WHERE (user1=? AND user2=?) OR (user1=? AND user2=?)
+        """, (data.from_user, data.target_user, data.target_user, data.from_user))
+        row = cursor.fetchone()
+        if row:
+            if row[1] == "accepted":
+                return {"status": "error", "msg": "Вы уже друзья!"}
+            return {"status": "error", "msg": "Заявка уже отправлена!"}
+
+        cursor.execute("INSERT INTO friends (user1, user2, status) VALUES (?, ?, 'pending')", (data.from_user, data.target_user))
+        conn.commit()
+        await manager.send_to_user(data.target_user, {"action": "friend_request", "from": data.from_user})
+        return {"status": "ok", "msg": f"Заявка в друзья отправлена @{data.target_user}!"}
+
+    elif data.action == "accept":
+        cursor.execute("UPDATE friends SET status='accepted' WHERE user1=? AND user2=?", (data.target_user, data.from_user))
+        conn.commit()
+        await manager.send_to_user(data.target_user, {"action": "friend_accepted", "by": data.from_user})
+        return {"status": "ok", "msg": f"Заявка от @{data.target_user} принята!"}
+
+    elif data.action in ("decline", "remove"):
+        cursor.execute("""
+            DELETE FROM friends 
+            WHERE (user1=? AND user2=?) OR (user1=? AND user2=?)
+        """, (data.from_user, data.target_user, data.target_user, data.from_user))
+        conn.commit()
+        return {"status": "ok", "msg": "Удалено из друзей."}
+
+    return {"status": "error", "msg": "Неизвестное действие"}
+
+@app.get("/friends/{nickname}")
+def get_friends(nickname: str):
+    # Принятые друзья
+    cursor.execute("""
+        SELECT CASE WHEN user1=? THEN user2 ELSE user1 END as friend_nick
+        FROM friends 
+        WHERE (user1=? OR user2=?) AND status='accepted'
+    """, (nickname, nickname, nickname))
+    friend_nicks = [r[0] for r in cursor.fetchall()]
+
+    friends_list = []
+    for fn in friend_nicks:
+        cursor.execute("SELECT nickname, avatar_url, bio, last_login FROM users WHERE nickname=?", (fn,))
+        u = cursor.fetchone()
+        if u:
+            friends_list.append({
+                "nickname": u[0],
+                "avatar_url": u[1] or "",
+                "bio": u[2] or "",
+                "last_login": u[3],
+                "is_online": manager.is_online(u[0])
+            })
+
+    # Входящие заявки
+    cursor.execute("""
+        SELECT u.nickname, u.avatar_url, u.bio
+        FROM friends f
+        JOIN users u ON f.user1 = u.nickname
+        WHERE f.user2=? AND f.status='pending'
+    """, (nickname,))
+    incoming = [{"nickname": r[0], "avatar_url": r[1] or "", "bio": r[2] or ""} for r in cursor.fetchall()]
+
+    # Исходящие заявки
+    cursor.execute("""
+        SELECT u.nickname, u.avatar_url
+        FROM friends f
+        JOIN users u ON f.user2 = u.nickname
+        WHERE f.user1=? AND f.status='pending'
+    """, (nickname,))
+    outgoing = [{"nickname": r[0], "avatar_url": r[1] or ""} for r in cursor.fetchall()]
+
+    return {"friends": friends_list, "incoming": incoming, "outgoing": outgoing}
+
+# ═══════════════════════════════════════════════════════════
+#  ДИАЛОГИ И ЧАТЫ
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/direct-chat")
 def get_or_create_direct_chat(data: DirectChatData):
     if data.from_user == data.target_user:
-        return {"status": "error", "msg": "Нельзя создать личный диалог с самим собой!"}
+        return {"status": "error", "msg": "Нельзя писать самому себе!"}
 
-    cursor.execute("SELECT 1 FROM users WHERE nickname=?", (data.target_user,))
-    if not cursor.fetchone():
-        return {"status": "error", "msg": "Пользователь не найден в сети!"}
-
-    # Ищем существующий личный чат между двумя пользователями
     cursor.execute("""
-        SELECT id, name FROM chats
+        SELECT id FROM chats 
         WHERE is_direct=1 AND (
-            (direct_user1=? AND direct_user2=?) OR
+            (direct_user1=? AND direct_user2=?) OR 
             (direct_user1=? AND direct_user2=?)
         ) LIMIT 1
     """, (data.from_user, data.target_user, data.target_user, data.from_user))
-    existing = cursor.fetchone()
+    row = cursor.fetchone()
 
-    if existing:
-        return {"status": "ok", "chat_id": existing[0], "chat_name": f"💬 @{data.target_user}"}
+    if row:
+        return {"status": "ok", "chat_id": row[0], "chat_name": f"💬 @{data.target_user}"}
 
-    # Создаём новый личный диалог
-    chat_id = f"dm_{uuid.uuid4().hex[:12]}"
-    chat_name = f"💬 @{data.target_user}"
+    cid = f"dm_{uuid.uuid4().hex[:12]}"
+    cname = f"💬 @{data.target_user}"
     cursor.execute(
-        "INSERT INTO chats(id, name, created_by, is_direct, direct_user1, direct_user2) VALUES(?,?,?,1,?,?)",
-        (chat_id, chat_name, data.from_user, data.from_user, data.target_user)
+        "INSERT INTO chats (id, name, created_by, is_direct, direct_user1, direct_user2) VALUES (?, ?, ?, 1, ?, ?)",
+        (cid, cname, data.from_user, data.from_user, data.target_user)
     )
-    cursor.execute("INSERT OR IGNORE INTO members VALUES(?,?)", (chat_id, data.from_user))
-    cursor.execute("INSERT OR IGNORE INTO members VALUES(?,?)", (chat_id, data.target_user))
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, data.from_user))
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, data.target_user))
     conn.commit()
 
-    return {"status": "ok", "chat_id": chat_id, "chat_name": chat_name}
-
-@app.get("/unread-counts/{nickname}")
-def get_unread_counts(nickname: str):
-    # Подсчёт непрочитанных сообщений по чатам, в которых состоит пользователь
-    cursor.execute("""
-        SELECT m.chat_id, COUNT(msg.id)
-        FROM members m
-        JOIN messages msg ON m.chat_id = msg.chat_id
-        WHERE m.nickname = ? AND msg.sender != ? AND msg.is_read = 0
-        GROUP BY m.chat_id
-    """, (nickname, nickname))
-    res = {r[0]: r[1] for r in cursor.fetchall()}
-    return res
-
-@app.post("/messages/read")
-def mark_messages_read(data: ReadChatData):
-    cursor.execute("""
-        UPDATE messages SET is_read=1
-        WHERE chat_id=? AND sender!=? AND is_read=0
-    """, (data.chat_id, data.nickname))
-    conn.commit()
-    return {"status": "ok"}
-
-# ═══════════════════════════════════════════════════════════
-#  ОСТАЛЬНЫЕ ЭНДПОИНТЫ (ЧАТЫ, ФАЙЛЫ, ПОДДЕРЖКА, АДМИНКА)
-# ═══════════════════════════════════════════════════════════
-
-@app.get("/users/all")
-def get_all_users_directory(query: str = ""):
-    periodic_cleanup()
-    cursor.execute("""
-        SELECT nickname, created_at, last_login, is_superadmin, is_admin, avatar_url, bio
-        FROM users WHERE LOWER(nickname) LIKE ? ORDER BY last_login DESC LIMIT 100
-    """, (f"%{query.lower()}%",))
-    
-    users = []
-    for r in cursor.fetchall():
-        nick = r[0]
-        users.append({
-            "nickname": nick,
-            "created_at": r[1],
-            "last_login": r[2],
-            "is_superadmin": bool(r[3]) or is_super(nick),
-            "is_admin": bool(r[4]) or bool(r[3]) or is_super(nick),
-            "avatar_url": r[5] or "",
-            "bio": r[6] or "",
-            "is_online": manager.is_online(nick)
-        })
-    return users
+    return {"status": "ok", "chat_id": cid, "chat_name": cname}
 
 @app.get("/chats/{nickname}")
 def get_user_chats(nickname: str):
+    # Общий чат ВСЕГДА идёт первым
     cursor.execute("""
         SELECT DISTINCT c.id, c.name, c.is_direct, c.direct_user1, c.direct_user2
         FROM chats c
-        JOIN members m ON c.id=m.chat_id WHERE m.nickname=?
+        LEFT JOIN members m ON c.id=m.chat_id
+        WHERE c.id='general' OR m.nickname=?
     """, (nickname,))
-    result = []
+    
+    chats = []
     for r in cursor.fetchall():
         cid, cname, is_dir, u1, u2 = r
-        # Для личных диалогов динамически подставляем имя собеседника
         if is_dir:
             partner = u2 if u1 == nickname else u1
             cname = f"💬 @{partner}"
-        result.append({"id": cid, "name": cname})
-    return result
+        chats.append({"id": cid, "name": cname})
+
+    # Сортируем: general на 1-м месте
+    chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
+    return chats
+
+@app.post("/chats")
+def create_custom_chat(data: ChatCreateData):
+    cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES (?, ?, ?, 0)", (data.id, data.name, data.created_by))
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (data.id, data.created_by))
+    conn.commit()
+    return {"status": "ok"}
 
 @app.delete("/chats/{chat_id}")
 def delete_chat(chat_id: str, user: str):
     if chat_id == "general":
-        return {"status": "error", "msg": "Общий чат удалить нельзя!"}
+        return {"status": "error", "msg": "Общий чат защищён от удаления!"}
     cursor.execute("SELECT created_by, is_direct FROM chats WHERE id=?", (chat_id,))
     row = cursor.fetchone()
     if not row:
         return {"status": "error", "msg": "Чат не найден!"}
 
-    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (user,))
-    u = cursor.fetchone()
-    can_del = False
-    if u:
-        perms = json.loads(u[2] or '{}')
-        can_del = u[0] or is_super(user) or (u[1] and perms.get("can_delete_chats")) or row[0] == user or row[1] == 1
-    if not can_del:
-        return {"status": "error", "msg": "У вас нет прав на удаление этого чата!"}
-
     cursor.execute("DELETE FROM chats WHERE id=?", (chat_id,))
     cursor.execute("DELETE FROM members WHERE chat_id=?", (chat_id,))
     cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
-    cursor.execute("DELETE FROM invites WHERE chat_id=?", (chat_id,))
-    cursor.execute("DELETE FROM pinned_messages WHERE chat_id=?", (chat_id,))
     conn.commit()
     return {"status": "ok"}
 
@@ -702,49 +617,32 @@ async def upload_file(request: Request, filename: str = "file.bin"):
 def get_messages(chat_id: str):
     periodic_cleanup()
     cursor.execute("""
-        SELECT id,sender,text,file_url,file_type,reply_to_id,reply_to_text,reply_to_sender,
-               strftime('%H:%M',created_at),is_edited
+        SELECT id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender,
+               strftime('%H:%M', created_at)
         FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 150
     """, (chat_id,))
-    rows = cursor.fetchall()
     return [{
         "id": r[0], "sender": r[1], "text": r[2], "file_url": r[3], "file_type": r[4],
-        "reply_to_id": r[5], "reply_to_text": r[6], "reply_to_sender": r[7],
-        "time": r[8], "is_edited": bool(r[9]), "reactions": {}
-    } for r in rows]
+        "reply_to_id": r[5], "reply_to_text": r[6], "reply_to_sender": r[7], "time": r[8]
+    } for r in cursor.fetchall()]
 
-@app.get("/server/monitoring")
-def server_monitoring():
-    uptime_sec = int(time.time() - SERVER_START_TIME)
-    h, rem = divmod(uptime_sec, 3600)
-    m, s = divmod(rem, 60)
-    cursor.execute("SELECT COUNT(*) FROM users"); tu = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM chats"); tc = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM messages"); tm = cursor.fetchone()[0]
+@app.get("/user/info/{nickname}")
+def get_user_info(nickname: str):
+    cursor.execute("SELECT nickname, avatar_url, bio, last_login FROM users WHERE nickname=?", (nickname,))
+    u = cursor.fetchone()
+    if not u:
+        return {"status": "error"}
     return {
-        "status": "online", "uptime": f"{h}ч {m}м {s}с",
-        "online_count": len(manager.user_sockets), "online_users": manager.online_users(),
-        "total_users": tu, "total_chats": tc, "total_messages": tm,
-        "uploads_mb": 0.5, "total_storage_mb": 1.2, "storage_warning_level": "ok", "messages_until_cleanup": 50000
+        "status": "ok",
+        "nickname": u[0],
+        "avatar_url": u[1] or "",
+        "bio": u[2] or "",
+        "last_login": u[3],
+        "is_online": manager.is_online(u[0])
     }
 
-@app.get("/storage-status")
-def storage_status():
-    return {"level": "ok", "uploads_mb": 0.5, "total_mb": 1.2, "messages_until_cleanup": 50000}
-
-@app.get("/check-mute/{nickname}")
-def check_mute(nickname: str):
-    ns = now_str()
-    cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
-    conn.commit()
-    cursor.execute("SELECT expires_at, reason FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>?", (nickname, ns))
-    row = cursor.fetchone()
-    if not row:
-        return {"is_muted": False, "expires_at": None, "reason": None}
-    return {"is_muted": True, "expires_at": row[0], "reason": row[1]}
-
 # ═══════════════════════════════════════════════════════════
-#  WEBSOCKET ENDPOINT
+#  WEBSOCKET ENDPOINT (WebRTC Видео, Демонстрация экрана, Пинг)
 # ═══════════════════════════════════════════════════════════
 
 @app.websocket("/ws/{chat_id}/{nickname}")
@@ -758,8 +656,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
             if action == "ping":
                 await websocket.send_json({"action": "pong"})
 
-            # Сигналы WebRTC звонков
-            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy"):
+            # Сигналы WebRTC (аудио, камера, демка экрана, качество связи)
+            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "network_warning"):
                 target = data.get("target")
                 if target:
                     if manager.is_online(target):
@@ -769,23 +667,20 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
 
             elif action == "send":
                 sender = data.get("sender")
-                cursor.execute(
-                    "INSERT INTO messages(chat_id,sender,text,file_url,file_type,reply_to_id,reply_to_text,reply_to_sender) "
-                    "VALUES(?,?,?,?,?,?,?,?)",
-                    (chat_id, sender, data.get("text",""), data.get("file_url"),
-                     data.get("file_type"), data.get("reply_to_id"),
-                     data.get("reply_to_text"), data.get("reply_to_sender"))
-                )
+                cursor.execute("""
+                    INSERT INTO messages (chat_id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (chat_id, sender, data.get("text",""), data.get("file_url"), data.get("file_type"),
+                      data.get("reply_to_id"), data.get("reply_to_text"), data.get("reply_to_sender")))
                 conn.commit()
                 data["id"] = cursor.lastrowid
                 data["action"] = "new_message"
                 await manager.broadcast_chat(chat_id, data)
 
             elif action == "delete":
-                msg_id = data.get("message_id")
-                cursor.execute("DELETE FROM messages WHERE id=?", (msg_id,))
+                cursor.execute("DELETE FROM messages WHERE id=?", (data.get("message_id"),))
                 conn.commit()
-                await manager.broadcast_chat(chat_id, {"action": "deleted", "message_ids": [msg_id], "deleted_by": data.get("sender")})
+                await manager.broadcast_chat(chat_id, {"action": "deleted", "message_ids": [data.get("message_id")], "deleted_by": data.get("sender")})
 
     except WebSocketDisconnect:
         manager.disconnect(chat_id, websocket, nickname)
