@@ -27,7 +27,7 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 SERVER_START_TIME = time.time()
 
-# SQLite с защитой WAL
+# Подключение к SQLite с защитой WAL
 conn = sqlite3.connect("messenger.db", check_same_thread=False, timeout=25.0)
 cursor = conn.cursor()
 cursor.execute("PRAGMA journal_mode=WAL;")
@@ -171,7 +171,8 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     subject TEXT NOT NULL,
     message TEXT NOT NULL,
     status TEXT DEFAULT 'open',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    user_viewed_at TIMESTAMP
 )
 """)
 
@@ -201,6 +202,7 @@ conn.commit()
 cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES ('general', '🌐 Общий чат', 'system', 0)")
 conn.commit()
 
+# Безопасное добавление колонок
 _safe_alters = [
     ("users", "avatar_url", "TEXT DEFAULT ''"),
     ("users", "bio", "TEXT DEFAULT ''"),
@@ -209,6 +211,7 @@ _safe_alters = [
     ("chats", "direct_user1", "TEXT"),
     ("chats", "direct_user2", "TEXT"),
     ("messages", "is_read", "INTEGER DEFAULT 0"),
+    ("support_tickets", "user_viewed_at", "TIMESTAMP"),
 ]
 for tbl, col, ctype in _safe_alters:
     try:
@@ -236,9 +239,11 @@ def verify_pwd(plain: str, stored: str) -> bool:
 
 def periodic_cleanup():
     ns = now_str()
+    # Автоочистка сообщений общего чата (старше 15 минут)
     gen_cutoff = (datetime.utcnow() - timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("DELETE FROM messages WHERE chat_id='general' AND created_at < ?", (gen_cutoff,))
 
+    # Очистка файлов старше 4 дней
     cutoff_files = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff_files,))
     for msg_id, f_url in cursor.fetchall():
@@ -249,6 +254,20 @@ def periodic_cleanup():
         except Exception:
             pass
         cursor.execute("UPDATE messages SET file_url=NULL, text='[Срок хранения файла (4 дня) истёк]' WHERE id=?", (msg_id,))
+
+    # Автоудаление тикетов, просмотренных пользователем более 4 часов назад
+    cutoff_tickets = (datetime.utcnow() - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("SELECT id FROM support_tickets WHERE user_viewed_at IS NOT NULL AND user_viewed_at < ?", (cutoff_tickets,))
+    for (tid,) in cursor.fetchall():
+        cursor.execute("DELETE FROM support_replies WHERE ticket_id=?", (tid,))
+        cursor.execute("DELETE FROM support_tickets WHERE id=?", (tid,))
+
+    # Удаление просроченных заявок (7 дней)
+    cursor.execute("SELECT id, target_nick, requested_by FROM delete_requests WHERE expires_at < ? AND status='pending'", (ns,))
+    for req_id, t_nick, r_by in cursor.fetchall():
+        cursor.execute("UPDATE delete_requests SET status='expired' WHERE id=?", (req_id,))
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
+                       (r_by, f"Главный администратор не принял заявку на удаление @{t_nick} (истёк срок 7 дней)."))
 
     cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
     cursor.execute("DELETE FROM bans WHERE ban_type='temporary' AND expires_at < ?", (ns,))
@@ -340,6 +359,10 @@ class SupportReplyData(BaseModel):
     admin_nick: str
     ticket_id: int
     message: str
+
+class SupportDeleteData(BaseModel):
+    admin_nick: str
+    ticket_id: int
 
 class SupportPermRequestData(BaseModel):
     nickname: str
@@ -437,8 +460,8 @@ async def auth_user(data: AuthData, request: Request):
             conn.commit()
 
     cursor.execute("""
-        SELECT password, is_superadmin, is_admin, admin_perms, avatar_url, bio 
-        FROM users WHERE nickname=?
+        SELECT password, is_superadmin, is_admin, admin_perms, avatar_url, bio, nickname 
+        FROM users WHERE LOWER(nickname)=LOWER(?)
     """, (data.nickname,))
     row = cursor.fetchone()
     session_token = uuid.uuid4().hex
@@ -447,20 +470,22 @@ async def auth_user(data: AuthData, request: Request):
         if not verify_pwd(data.password, row[0]):
             return {"status": "error", "msg": "Неверный пароль!"}
 
+        canonical_nick = row[6]
         hashed = hash_pwd(data.password)
-        cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, data.nickname))
+        cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, canonical_nick))
         cursor.execute(
             "INSERT INTO user_sessions (nickname, session_token, user_agent, ip_address, logged_in_at, last_active, is_active) VALUES (?,?,?,?,?,?,1)",
-            (data.nickname, session_token, data.user_agent, ip, ns, ns)
+            (canonical_nick, session_token, data.user_agent, ip, ns, ns)
         )
-        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES ('general', ?)", (data.nickname,))
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES ('general', ?)", (canonical_nick,))
         conn.commit()
 
         perms = json.loads(row[3]) if row[3] else {}
         return {
             "status": "ok",
-            "is_superadmin": bool(row[1]) or is_super(data.nickname),
-            "is_admin": bool(row[2]) or bool(row[1]) or is_super(data.nickname),
+            "nickname": canonical_nick,
+            "is_superadmin": bool(row[1]) or is_super(canonical_nick),
+            "is_admin": bool(row[2]) or bool(row[1]) or is_super(canonical_nick),
             "admin_perms": perms,
             "avatar_url": row[4] or "",
             "bio": row[5] or "",
@@ -489,6 +514,7 @@ async def auth_user(data: AuthData, request: Request):
 
         return {
             "status": "ok",
+            "nickname": data.nickname,
             "is_superadmin": bool(is_sup),
             "is_admin": bool(is_sup),
             "admin_perms": perms,
@@ -499,7 +525,7 @@ async def auth_user(data: AuthData, request: Request):
 
 @app.post("/change-password")
 def change_password(data: PwdChangeData):
-    cursor.execute("SELECT password, last_pwd_change FROM users WHERE nickname=?", (data.nickname,))
+    cursor.execute("SELECT password, last_pwd_change FROM users WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
     row = cursor.fetchone()
     if not row or not verify_pwd(data.old_password, row[0]):
         return {"status": "error", "msg": "Текущий пароль указан неверно!"}
@@ -511,25 +537,26 @@ def change_password(data: PwdChangeData):
 
     ns = now_str()
     hashed = hash_pwd(data.new_password)
-    cursor.execute("UPDATE users SET password=?, last_pwd_change=? WHERE nickname=?", (hashed, ns, data.nickname))
+    cursor.execute("UPDATE users SET password=?, last_pwd_change=? WHERE LOWER(nickname)=LOWER(?)", (hashed, ns, data.nickname))
     conn.commit()
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
 # ═══════════════════════════════════════════════════════════
-#  ПРОФИЛЬ: БЛОКИРОВКА ДЛЯ Jjlop55 + 45 СЛОВ
+#  ПРОФИЛЬ: ИСПРАВЛЕН ПОИСК ПОЛЬЗОВАТЕЛЯ И БЛОКИРОВКА Jjlop55
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/profile/update")
 def update_profile(data: ProfileUpdateData):
-    cursor.execute("SELECT nickname, last_username_change FROM users WHERE nickname=?", (data.current_nickname,))
+    cursor.execute("SELECT nickname, last_username_change FROM users WHERE LOWER(nickname)=LOWER(?)", (data.current_nickname.strip(),))
     user = cursor.fetchone()
     if not user:
         return {"status": "error", "msg": "Пользователь не найден!"}
 
-    new_nick = data.new_nickname.strip() if data.new_nickname else data.current_nickname
+    real_current = user[0]
+    new_nick = data.new_nickname.strip() if data.new_nickname else real_current
 
-    if new_nick != data.current_nickname:
-        if is_super(data.current_nickname):
+    if new_nick != real_current:
+        if is_super(real_current):
             return {"status": "error", "msg": "🔒 Смена юзернейма для Главного Администратора заблокирована ядром системы!"}
 
         last_change = user[1]
@@ -539,23 +566,23 @@ def update_profile(data: ProfileUpdateData):
                 hours_left = int(24 - (diff.total_seconds() / 3600))
                 return {"status": "error", "msg": f"Юзернейм можно менять только 1 раз в день! Ждать ещё {hours_left} ч."}
 
-        cursor.execute("SELECT 1 FROM users WHERE LOWER(nickname)=LOWER(?)", (new_nick,))
+        cursor.execute("SELECT 1 FROM users WHERE LOWER(nickname)=LOWER(?) AND LOWER(nickname)!=LOWER(?)", (new_nick, real_current))
         if cursor.fetchone():
             return {"status": "error", "msg": f"Юзернейм @{new_nick} уже занят!"}
 
-        cursor.execute("UPDATE users SET nickname=?, last_username_change=? WHERE nickname=?", (new_nick, now_str(), data.current_nickname))
-        cursor.execute("UPDATE members SET nickname=? WHERE nickname=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE messages SET sender=? WHERE sender=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE messages SET reply_to_sender=? WHERE reply_to_sender=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE chats SET created_by=? WHERE created_by=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE chats SET direct_user1=? WHERE direct_user1=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE chats SET direct_user2=? WHERE direct_user2=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE friends SET user1=? WHERE user1=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE friends SET user2=? WHERE user2=?", (new_nick, data.current_nickname))
-        cursor.execute("UPDATE user_sessions SET nickname=? WHERE nickname=?", (new_nick, data.current_nickname))
+        cursor.execute("UPDATE users SET nickname=?, last_username_change=? WHERE nickname=?", (new_nick, now_str(), real_current))
+        cursor.execute("UPDATE members SET nickname=? WHERE nickname=?", (new_nick, real_current))
+        cursor.execute("UPDATE messages SET sender=? WHERE sender=?", (new_nick, real_current))
+        cursor.execute("UPDATE messages SET reply_to_sender=? WHERE reply_to_sender=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET created_by=? WHERE created_by=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET direct_user1=? WHERE direct_user1=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET direct_user2=? WHERE direct_user2=?", (new_nick, real_current))
+        cursor.execute("UPDATE friends SET user1=? WHERE user1=?", (new_nick, real_current))
+        cursor.execute("UPDATE friends SET user2=? WHERE user2=?", (new_nick, real_current))
+        cursor.execute("UPDATE user_sessions SET nickname=? WHERE nickname=?", (new_nick, real_current))
         conn.commit()
 
-    target_nick = new_nick if new_nick != data.current_nickname else data.current_nickname
+    target_nick = new_nick if new_nick != real_current else real_current
     if data.avatar_url is not None:
         cursor.execute("UPDATE users SET avatar_url=? WHERE nickname=?", (data.avatar_url, target_nick))
     if data.bio is not None:
@@ -568,7 +595,7 @@ def update_profile(data: ProfileUpdateData):
     return {"status": "ok", "msg": "Профиль успешно сохранён!", "new_nickname": target_nick}
 
 # ═══════════════════════════════════════════════════════════
-#  МОНИТОРИНГ СЕРВЕРА (ГАРАНТИРОВАННЫЙ ВЫВОД БЕЗ UNDEFINED)
+#  МОНИТОРИНГ СЕРВЕРА
 # ═══════════════════════════════════════════════════════════
 
 def _calc_storage():
@@ -632,19 +659,19 @@ def storage_status():
     return {"level": level, "uploads_mb": uploads_mb, "total_mb": total_mb, "messages_until_cleanup": 50000}
 
 # ═══════════════════════════════════════════════════════════
-#  МЕНЕДЖЕР СЕССИЙ (УСТРОЙСТВА)
+#  СЕССИИ (УСТРОЙСТВА)
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/sessions/my/{nickname}")
 def get_my_sessions(nickname: str, token: str):
-    cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1", (nickname, token))
+    cursor.execute("SELECT 1 FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND session_token=? AND is_active=1", (nickname, token))
     if not cursor.fetchone():
         raise HTTPException(status_code=403, detail="Недействительный токен")
 
     cursor.execute("""
         SELECT id, user_agent, ip_address, logged_in_at, last_active, is_active,
                CASE WHEN session_token=? THEN 1 ELSE 0 END as is_current
-        FROM user_sessions WHERE nickname=? AND is_active=1
+        FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND is_active=1
         ORDER BY last_active DESC LIMIT 25
     """, (token, nickname))
     return [{
@@ -656,21 +683,20 @@ def get_my_sessions(nickname: str, token: str):
 @app.post("/sessions/heartbeat")
 def session_heartbeat(data: HeartbeatData):
     ns = now_str()
-    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE nickname=? AND session_token=?",
+    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE LOWER(nickname)=LOWER(?) AND session_token=?",
                    (ns, data.nickname, data.session_token))
-    cursor.execute("UPDATE users SET last_login=? WHERE nickname=?", (ns, data.nickname))
+    cursor.execute("UPDATE users SET last_login=? WHERE LOWER(nickname)=LOWER(?)", (ns, data.nickname))
     conn.commit()
     return {"status": "ok"}
 
 @app.post("/sessions/terminate")
 async def terminate_specific_session(data: TerminateSessionData):
-    cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1",
+    cursor.execute("SELECT 1 FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND session_token=? AND is_active=1",
                    (data.nickname, data.session_token))
     if not cursor.fetchone():
         raise HTTPException(status_code=403, detail="Недействительный токен")
 
-    cursor.execute("SELECT session_token FROM user_sessions WHERE id=? AND nickname=?",
-                   (data.target_session_id, data.nickname))
+    cursor.execute("SELECT session_token FROM user_sessions WHERE id=?", (data.target_session_id,))
     target = cursor.fetchone()
     if not target:
         return {"status": "error", "msg": "Сессия не найдена!"}
@@ -679,23 +705,23 @@ async def terminate_specific_session(data: TerminateSessionData):
     conn.commit()
 
     if target[0] != data.session_token:
-        await manager.kick_user(data.nickname, "Сессия была завершена вами с другого устройства.")
+        await manager.kick_user(data.nickname, "Сессия была завершена с другого устройства.")
     return {"status": "ok", "msg": "Сессия успешно отключена."}
 
 @app.post("/sessions/terminate-all")
 async def terminate_all_sessions(data: TerminateAllSessionsData):
-    cursor.execute("SELECT 1 FROM user_sessions WHERE nickname=? AND session_token=? AND is_active=1",
+    cursor.execute("SELECT 1 FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND session_token=? AND is_active=1",
                    (data.nickname, data.session_token))
     if not cursor.fetchone():
         raise HTTPException(status_code=403, detail="Недействительный токен")
 
     if data.include_current:
-        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE nickname=?", (data.nickname,))
+        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
         conn.commit()
         await manager.kick_user(data.nickname, "Все сеансы были принудительно сброшены.")
         return {"status": "ok", "msg": "Все сессии завершены, включая текущую."}
     else:
-        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE nickname=? AND session_token!=?",
+        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE LOWER(nickname)=LOWER(?) AND session_token!=?",
                        (data.nickname, data.session_token))
         conn.commit()
         await manager.kick_user(data.nickname, "Все другие сессии были завершены с основного устройства.")
@@ -707,37 +733,40 @@ async def terminate_all_sessions(data: TerminateAllSessionsData):
 
 @app.post("/friends/action")
 async def manage_friend(data: FriendActionData):
-    if data.from_user == data.target_user:
+    if data.from_user.lower() == data.target_user.lower():
         return {"status": "error", "msg": "Нельзя взаимодействовать с самим собой!"}
 
-    cursor.execute("SELECT 1 FROM users WHERE nickname=?", (data.target_user,))
-    if not cursor.fetchone():
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_user,))
+    target_row = cursor.fetchone()
+    if not target_row:
         return {"status": "error", "msg": f"Пользователь @{data.target_user} не найден!"}
+
+    canonical_target = target_row[0]
 
     if data.action == "request":
         cursor.execute("""
             SELECT id, status FROM friends 
-            WHERE (user1=? AND user2=?) OR (user1=? AND user2=?)
-        """, (data.from_user, data.target_user, data.target_user, data.from_user))
+            WHERE (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)) OR (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?))
+        """, (data.from_user, canonical_target, canonical_target, data.from_user))
         row = cursor.fetchone()
         if row:
             if row[1] == "accepted": return {"status": "error", "msg": "Вы уже друзья!"}
             return {"status": "error", "msg": "Заявка уже отправлена!"}
 
-        cursor.execute("INSERT INTO friends (user1, user2, status) VALUES (?, ?, 'pending')", (data.from_user, data.target_user))
+        cursor.execute("INSERT INTO friends (user1, user2, status) VALUES (?, ?, 'pending')", (data.from_user, canonical_target))
         conn.commit()
-        await manager.send_to_user(data.target_user, {"action": "friend_request", "from": data.from_user})
-        return {"status": "ok", "msg": f"Заявка в друзья отправлена @{data.target_user}!"}
+        await manager.send_to_user(canonical_target, {"action": "friend_request", "from": data.from_user})
+        return {"status": "ok", "msg": f"Заявка в друзья отправлена @{canonical_target}!"}
 
     elif data.action == "accept":
-        cursor.execute("UPDATE friends SET status='accepted' WHERE user1=? AND user2=?", (data.target_user, data.from_user))
+        cursor.execute("UPDATE friends SET status='accepted' WHERE LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)", (canonical_target, data.from_user))
         conn.commit()
-        await manager.send_to_user(data.target_user, {"action": "friend_accepted", "by": data.from_user})
-        return {"status": "ok", "msg": f"Заявка от @{data.target_user} принята!"}
+        await manager.send_to_user(canonical_target, {"action": "friend_accepted", "by": data.from_user})
+        return {"status": "ok", "msg": f"Заявка от @{canonical_target} принята!"}
 
     elif data.action in ("decline", "remove"):
-        cursor.execute("DELETE FROM friends WHERE (user1=? AND user2=?) OR (user1=? AND user2=?)",
-                       (data.from_user, data.target_user, data.target_user, data.from_user))
+        cursor.execute("DELETE FROM friends WHERE (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)) OR (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?))",
+                       (data.from_user, canonical_target, canonical_target, data.from_user))
         conn.commit()
         return {"status": "ok", "msg": "Удалено из друзей."}
 
@@ -746,8 +775,8 @@ async def manage_friend(data: FriendActionData):
 @app.get("/friends/{nickname}")
 def get_friends(nickname: str):
     cursor.execute("""
-        SELECT CASE WHEN user1=? THEN user2 ELSE user1 END as friend_nick
-        FROM friends WHERE (user1=? OR user2=?) AND status='accepted'
+        SELECT CASE WHEN LOWER(user1)=LOWER(?) THEN user2 ELSE user1 END as friend_nick
+        FROM friends WHERE (LOWER(user1)=LOWER(?) OR LOWER(user2)=LOWER(?)) AND status='accepted'
     """, (nickname, nickname, nickname))
     friend_nicks = [r[0] for r in cursor.fetchall()]
 
@@ -764,14 +793,14 @@ def get_friends(nickname: str):
     cursor.execute("""
         SELECT u.nickname, u.avatar_url, u.bio
         FROM friends f JOIN users u ON f.user1 = u.nickname
-        WHERE f.user2=? AND f.status='pending'
+        WHERE LOWER(f.user2)=LOWER(?) AND f.status='pending'
     """, (nickname,))
     incoming = [{"nickname": r[0], "avatar_url": r[1] or "", "bio": r[2] or ""} for r in cursor.fetchall()]
 
     cursor.execute("""
         SELECT u.nickname, u.avatar_url
         FROM friends f JOIN users u ON f.user2 = u.nickname
-        WHERE f.user1=? AND f.status='pending'
+        WHERE LOWER(f.user1)=LOWER(?) AND f.status='pending'
     """, (nickname,))
     outgoing = [{"nickname": r[0], "avatar_url": r[1] or ""} for r in cursor.fetchall()]
 
@@ -783,29 +812,35 @@ def get_friends(nickname: str):
 
 @app.post("/direct-chat")
 def get_or_create_direct_chat(data: DirectChatData):
-    if data.from_user == data.target_user:
+    if data.from_user.lower() == data.target_user.lower():
         return {"status": "error", "msg": "Нельзя писать самому себе!"}
+
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_user,))
+    target_row = cursor.fetchone()
+    if not target_row:
+        return {"status": "error", "msg": "Пользователь не найден в сети!"}
+    canonical_target = target_row[0]
 
     cursor.execute("""
         SELECT id FROM chats 
         WHERE is_direct=1 AND (
-            (direct_user1=? AND direct_user2=?) OR 
-            (direct_user1=? AND direct_user2=?)
+            (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?)) OR 
+            (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?))
         ) LIMIT 1
-    """, (data.from_user, data.target_user, data.target_user, data.from_user))
+    """, (data.from_user, canonical_target, canonical_target, data.from_user))
     row = cursor.fetchone()
 
     if row:
-        return {"status": "ok", "chat_id": row[0], "chat_name": f"💬 @{data.target_user}"}
+        return {"status": "ok", "chat_id": row[0], "chat_name": f"💬 @{canonical_target}"}
 
     cid = f"dm_{uuid.uuid4().hex[:12]}"
-    cname = f"💬 @{data.target_user}"
+    cname = f"💬 @{canonical_target}"
     cursor.execute(
         "INSERT INTO chats (id, name, created_by, is_direct, direct_user1, direct_user2) VALUES (?, ?, ?, 1, ?, ?)",
-        (cid, cname, data.from_user, data.from_user, data.target_user)
+        (cid, cname, data.from_user, data.from_user, canonical_target)
     )
     cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, data.from_user))
-    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, data.target_user))
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, canonical_target))
     conn.commit()
     return {"status": "ok", "chat_id": cid, "chat_name": cname}
 
@@ -814,13 +849,13 @@ def get_user_chats(nickname: str):
     cursor.execute("""
         SELECT DISTINCT c.id, c.name, c.is_direct, c.direct_user1, c.direct_user2
         FROM chats c LEFT JOIN members m ON c.id=m.chat_id
-        WHERE c.id='general' OR m.nickname=?
+        WHERE c.id='general' OR LOWER(m.nickname)=LOWER(?)
     """, (nickname,))
     chats = []
     for r in cursor.fetchall():
         cid, cname, is_dir, u1, u2 = r
         if is_dir:
-            partner = u2 if u1 == nickname else u1
+            partner = u2 if u1.lower() == nickname.lower() else u1
             cname = f"💬 @{partner}"
         chats.append({"id": cid, "name": cname})
     chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
@@ -870,7 +905,7 @@ async def upload_file(request: Request, filename: str = "file.bin"):
 
 @app.get("/user/info/{nickname}")
 def get_user_info(nickname: str):
-    cursor.execute("SELECT nickname, avatar_url, bio, last_login FROM users WHERE nickname=?", (nickname,))
+    cursor.execute("SELECT nickname, avatar_url, bio, last_login FROM users WHERE LOWER(nickname)=LOWER(?)", (nickname,))
     u = cursor.fetchone()
     if not u: return {"status": "error"}
     return {
@@ -879,12 +914,12 @@ def get_user_info(nickname: str):
     }
 
 # ═══════════════════════════════════════════════════════════
-#  АДМИНИСТРАТИВНАЯ ПАНЕЛЬ И СЕССИИ ПОЛЬЗОВАТЕЛЕЙ
+#  АДМИНИСТРАТИВНАЯ ПАНЕЛЬ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/admin/users")
 def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
@@ -923,14 +958,14 @@ def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
 
 @app.get("/admin/user-sessions")
 def admin_get_user_sessions(admin: str, target: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
 
     cursor.execute("""
         SELECT id, user_agent, ip_address, logged_in_at, last_active, is_active 
-        FROM user_sessions WHERE nickname=? AND is_active=1 ORDER BY last_active DESC LIMIT 15
+        FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND is_active=1 ORDER BY last_active DESC LIMIT 15
     """, (target,))
     return [{
         "id": r[0], "user_agent": r[1], "ip_address": r[2],
@@ -939,7 +974,7 @@ def admin_get_user_sessions(admin: str, target: str):
 
 @app.post("/admin/kill-session")
 async def admin_kill_session(data: TerminateSessionData):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (data.nickname,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(data.nickname)):
         raise HTTPException(status_code=403, detail="Отказано")
@@ -955,7 +990,7 @@ async def admin_kill_session(data: TerminateSessionData):
 
 @app.get("/admin/groups")
 def get_admin_groups(admin: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
@@ -989,7 +1024,7 @@ def unban_user(data: BanData):
 
 @app.get("/admin/bans")
 def get_bans(admin: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE nickname=?", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
@@ -1018,16 +1053,16 @@ async def kick_user(data: BanData):
 def delete_user_action(data: DeleteUserAction):
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Главного администратора удалить невозможно!"}
-    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE nickname=?", (data.admin_nick,))
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (data.admin_nick,))
     adm = cursor.fetchone()
     if not adm: raise HTTPException(status_code=403, detail="Отказано")
     perms = json.loads(adm[2] or '{}')
     is_sup = bool(adm[0]) or is_super(data.admin_nick)
 
     if is_sup or perms.get("can_delete_users_direct"):
-        cursor.execute("DELETE FROM users WHERE nickname=?", (data.target_nick,))
-        cursor.execute("DELETE FROM members WHERE nickname=?", (data.target_nick,))
-        cursor.execute("DELETE FROM friends WHERE user1=? OR user2=?", (data.target_nick, data.target_nick))
+        cursor.execute("DELETE FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
+        cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
+        cursor.execute("DELETE FROM friends WHERE LOWER(user1)=LOWER(?) OR LOWER(user2)=LOWER(?)", (data.target_nick, data.target_nick))
         cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
         conn.commit()
         return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} удалён!"}
@@ -1042,7 +1077,7 @@ def delete_user_action(data: DeleteUserAction):
 
 @app.get("/admin/delete-requests")
 def get_delete_requests(admin: str):
-    cursor.execute("SELECT is_superadmin FROM users WHERE nickname=?", (admin,))
+    cursor.execute("SELECT is_superadmin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
@@ -1060,8 +1095,8 @@ def decide_delete_request(data: ReqDecision):
     target, requester = req
     if data.action == "approve":
         cursor.execute("UPDATE delete_requests SET status='approved' WHERE id=?", (data.request_id,))
-        cursor.execute("DELETE FROM users WHERE nickname=?", (target,))
-        cursor.execute("DELETE FROM members WHERE nickname=?", (target,))
+        cursor.execute("DELETE FROM users WHERE LOWER(nickname)=LOWER(?)", (target,))
+        cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (target,))
         cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Главный администратор одобрил удаление @{target}."))
         conn.commit()
         return {"status": "ok", "msg": f"@{target} удалён!"}
@@ -1076,24 +1111,24 @@ async def set_admin_permissions(data: AdminPermsData):
     if is_super(data.target_nick): return {"status": "error", "msg": "Нельзя менять права Главного Администратора!"}
     has_any = any(data.perms.values())
     if has_any:
-        cursor.execute("UPDATE users SET is_admin=1, admin_perms=?, admin_notified=0, granted_by=?, revoked_by=NULL WHERE nickname=?",
+        cursor.execute("UPDATE users SET is_admin=1, admin_perms=?, admin_notified=0, granted_by=?, revoked_by=NULL WHERE LOWER(nickname)=LOWER(?)",
                        (json.dumps(data.perms), data.admin_nick, data.target_nick))
         conn.commit()
         return {"status": "ok", "msg": f"Права для @{data.target_nick} обновлены!"}
     else:
-        cursor.execute("UPDATE users SET is_admin=0, admin_perms='{}', admin_notified=1, granted_by=NULL, revoked_by=? WHERE nickname=?",
+        cursor.execute("UPDATE users SET is_admin=0, admin_perms='{}', admin_notified=1, granted_by=NULL, revoked_by=? WHERE LOWER(nickname)=LOWER(?)",
                        (data.admin_nick, data.target_nick))
         conn.commit()
         await manager.send_to_user(data.target_nick, {"action": "admin_revoked", "revoked_by": data.admin_nick})
         return {"status": "ok", "msg": f"Все права у @{data.target_nick} отозваны!"}
 
 # ═══════════════════════════════════════════════════════════
-#  ПОДДЕРЖКА (SUPPORT)
+#  ПОДДЕРЖКА: УДАЛЕНИЕ ТИКЕТОВ И ФИКС 4 ЧАСОВ
 # ═══════════════════════════════════════════════════════════
 
 def _is_support_staff(nick: str) -> bool:
     if is_super(nick): return True
-    cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE nickname=?", (nick,))
+    cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (nick,))
     r = cursor.fetchone()
     if not r: return False
     if r[0]: return True
@@ -1116,13 +1151,24 @@ async def create_support_ticket(data: SupportTicketData):
 
 @app.get("/support/tickets/my/{nickname}")
 def get_my_tickets(nickname: str):
-    cursor.execute("SELECT id, subject, message, status, created_at FROM support_tickets WHERE from_user=? ORDER BY id DESC LIMIT 30", (nickname,))
+    # Если есть отвеченные тикеты, засекаем 4 часа на удаление
+    cursor.execute("""
+        UPDATE support_tickets 
+        SET user_viewed_at = CURRENT_TIMESTAMP 
+        WHERE LOWER(from_user)=LOWER(?) AND status='answered' AND user_viewed_at IS NULL
+    """, (nickname,))
+    conn.commit()
+
+    cursor.execute("SELECT id, subject, message, status, created_at, user_viewed_at FROM support_tickets WHERE LOWER(from_user)=LOWER(?) ORDER BY id DESC LIMIT 30", (nickname,))
     tickets = []
     for row in cursor.fetchall():
         tid = row[0]
         cursor.execute("SELECT from_user, message, created_at FROM support_replies WHERE ticket_id=? ORDER BY id ASC", (tid,))
         replies = [{"from_user": r[0], "message": r[1], "created_at": r[2]} for r in cursor.fetchall()]
-        tickets.append({"id": tid, "subject": row[1], "message": row[2], "status": row[3], "created_at": row[4], "replies": replies})
+        tickets.append({
+            "id": tid, "subject": row[1], "message": row[2], "status": row[3],
+            "created_at": row[4], "user_viewed_at": row[5], "replies": replies
+        })
     return tickets
 
 @app.get("/support/tickets/all")
@@ -1146,7 +1192,7 @@ async def reply_to_ticket(data: SupportReplyData):
 
     cursor.execute("INSERT INTO support_replies (ticket_id, from_user, message) VALUES (?, ?, ?)",
                    (data.ticket_id, data.admin_nick, data.message))
-    cursor.execute("UPDATE support_tickets SET status='answered' WHERE id=?", (data.ticket_id,))
+    cursor.execute("UPDATE support_tickets SET status='answered', user_viewed_at=NULL WHERE id=?", (data.ticket_id,))
     conn.commit()
 
     await manager.send_to_user(ticket[0], {
@@ -1155,8 +1201,16 @@ async def reply_to_ticket(data: SupportReplyData):
     })
     return {"status": "ok", "msg": "Ответ отправлен!"}
 
+@app.post("/support/delete")
+def delete_support_ticket(data: SupportDeleteData):
+    if not _is_support_staff(data.admin_nick): return {"status": "error", "msg": "Нет прав саппорта!"}
+    cursor.execute("DELETE FROM support_replies WHERE ticket_id=?", (data.ticket_id,))
+    cursor.execute("DELETE FROM support_tickets WHERE id=?", (data.ticket_id,))
+    conn.commit()
+    return {"status": "ok", "msg": f"Тикет #{data.ticket_id} успешно удалён!"}
+
 @app.post("/support/close")
-def close_ticket(data: SupportReplyData):
+def close_ticket(data: SupportDeleteData):
     cursor.execute("UPDATE support_tickets SET status='closed' WHERE id=?", (data.ticket_id,))
     conn.commit()
     return {"status": "ok", "msg": "Обращение закрыто."}
@@ -1164,7 +1218,7 @@ def close_ticket(data: SupportReplyData):
 @app.post("/support/request-perm")
 def request_support_perm(data: SupportPermRequestData):
     today = datetime.utcnow().date().isoformat()
-    cursor.execute("SELECT 1 FROM support_perm_requests WHERE requested_by=? AND DATE(created_at)=? AND status='pending'",
+    cursor.execute("SELECT 1 FROM support_perm_requests WHERE LOWER(requested_by)=LOWER(?) AND DATE(created_at)=? AND status='pending'",
                    (data.nickname, today))
     if cursor.fetchone(): return {"status": "error", "msg": "Заявка уже подана сегодня! Лимит — 1 раз в сутки."}
 
@@ -1190,10 +1244,10 @@ async def decide_support_perm(data: SupportPermDecision):
                    (data.action, now_str(), data.admin_nick, data.request_id))
 
     if data.action == "approve":
-        cursor.execute("SELECT admin_perms FROM users WHERE nickname=?", (nick,))
+        cursor.execute("SELECT admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (nick,))
         perms = json.loads(cursor.fetchone()[0] or '{}')
         perms["can_handle_support"] = True
-        cursor.execute("UPDATE users SET is_admin=1, admin_perms=? WHERE nickname=?", (json.dumps(perms), nick))
+        cursor.execute("UPDATE users SET is_admin=1, admin_perms=? WHERE LOWER(nickname)=LOWER(?)", (json.dumps(perms), nick))
         conn.commit()
         await manager.send_to_user(nick, {"action": "support_perm_granted"})
         return {"status": "ok", "msg": f"Право на поддержку выдано @{nick}!"}
@@ -1202,7 +1256,7 @@ async def decide_support_perm(data: SupportPermDecision):
         return {"status": "ok", "msg": f"Запрос @{nick} отклонён."}
 
 # ═══════════════════════════════════════════════════════════
-#  WEBSOCKET ENDPOINT (СИГНАЛЫ ЗВОНКОВ)
+#  WEBSOCKET
 # ═══════════════════════════════════════════════════════════
 
 @app.websocket("/ws/{chat_id}/{nickname}")
@@ -1216,7 +1270,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
             if action == "ping":
                 token = data.get("session_token")
                 if token:
-                    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE nickname=? AND session_token=?",
+                    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE LOWER(nickname)=LOWER(?) AND session_token=?",
                                    (now_str(), nickname, token))
                     conn.commit()
                 await websocket.send_json({"action": "pong"})
