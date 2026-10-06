@@ -1,2312 +1,1368 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Utopia Messenger</title>
-  <style>
-    :root {
-      --bg-main: #060911;
-      --bg-panel: rgba(13, 20, 36, 0.94);
-      --bg-card: rgba(18, 28, 51, 0.85);
-      --bg-card-hover: rgba(25, 38, 69, 0.95);
-      --neon-cyan: #00f0ff;
-      --neon-cyan-glow: rgba(0, 240, 255, 0.35);
-      --neon-blue: #0070f3;
-      --neon-purple: #9d00ff;
-      --text: #f0f6fc;
-      --text-dim: #8b949e;
-      --danger: #ff3366;
-      --danger-glow: rgba(255, 51, 102, 0.35);
-      --success: #00ff88;
-      --warn: #ffaa00;
-      --glass-border: 1px solid rgba(0, 240, 255, 0.2);
-      --neon-glow: 0 0 15px rgba(0, 240, 255, 0.25);
-      --radius-lg: 20px;
-      --radius-md: 12px;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
-    body { background: var(--bg-main); color: var(--text); height: 100dvh; overflow: hidden; display: flex; }
-
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.25); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); box-shadow: var(--neon-glow); }
-
-    .pill-btn {
-      padding: 9px 15px; border-radius: 20px; border: var(--glass-border);
-      background: rgba(0, 240, 255, 0.06); color: var(--text); font-size: 13px; font-weight: 600;
-      cursor: pointer; text-align: center; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    }
-    .pill-btn:hover { background: rgba(0, 240, 255, 0.18); border-color: var(--neon-cyan); box-shadow: var(--neon-glow); transform: translateY(-1px); color: #fff; }
-    .pill-btn:active { transform: scale(0.97); }
-
-    .icon-btn {
-      background: none; border: none; font-size: 19px; color: var(--text-dim); cursor: pointer;
-      padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; transition: all 0.2s ease;
-    }
-    .icon-btn:hover { color: var(--neon-cyan); background: rgba(0, 240, 255, 0.1); text-shadow: 0 0 10px var(--neon-cyan); }
-    .badge-count {
-      position: absolute; top: 1px; right: 1px; background: var(--danger); color: #fff;
-      font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; box-shadow: 0 0 8px var(--danger-glow);
-    }
-
-    #app { display: none; width: 100vw; height: 100dvh; position: relative; }
-    aside { width: 340px; background: var(--bg-panel); backdrop-filter: blur(18px); border-right: var(--glass-border); display: flex; flex-direction: column; height: 100%; z-index: 10; }
-    
-    .sidebar-header { padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: var(--glass-border); background: rgba(8, 12, 22, 0.7); }
-    /* Шапка сайдбара узкая (340px), поэтому кнопки компактнее и умеют переноситься,
-       чтобы иконки не вылезали за пределы панели поверх чата. */
-    .sidebar-header .icon-btn { padding: 5px; font-size: 16px; line-height: 1; }
-    .sidebar-header .icon-btn .badge-count { top: -1px; right: -1px; font-size: 9px; padding: 1px 4px; }
-    .profile-badge { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px 10px; border-radius: 16px; transition: all 0.2s; min-width: 0; }
-    .profile-badge:hover { background: rgba(0, 240, 255, 0.08); box-shadow: var(--neon-glow); }
-
-    .avatar-box {
-      width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--neon-cyan);
-      box-shadow: 0 0 10px var(--neon-cyan-glow); background: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden;
-    }
-    .avatar-box img { width: 100%; height: 100%; object-fit: cover; }
-
-    .chat-controls { padding: 10px 14px; display: flex; gap: 8px; border-bottom: var(--glass-border); }
-    .chat-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-    .chat-item {
-      padding: 12px 14px; border-radius: var(--radius-md); cursor: pointer; display: flex;
-      justify-content: space-between; align-items: center; border: 1px solid transparent; background: rgba(255, 255, 255, 0.02); transition: all 0.2s;
-    }
-    .chat-item:hover { background: var(--bg-card-hover); border-color: rgba(0, 240, 255, 0.3); transform: translateX(2px); }
-    
-    /* Чёткая рамка активного чата на телефонах и ПК */
-    .chat-item.active {
-      background: var(--bg-card) !important;
-      border: 2px solid var(--neon-cyan) !important;
-      box-shadow: var(--neon-glow) !important;
-    }
-    .chat-item.general-chat {
-      background: linear-gradient(135deg, rgba(0, 112, 243, 0.2), rgba(157, 0, 255, 0.2));
-      border: 1px solid rgba(0, 240, 255, 0.35); box-shadow: 0 0 12px rgba(0, 240, 255, 0.15); position: sticky; top: 0; z-index: 5;
-    }
-
-    main { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); height: 100%; min-width: 0; position: relative; }
-    .chat-header { height: 64px; padding: 0 18px; background: var(--bg-panel); backdrop-filter: blur(18px); display: flex; justify-content: space-between; align-items: center; border-bottom: var(--glass-border); }
-
-    /* Таймеры очистки сообщений в шапке */
-    #cleanup-timer-badge {
-      display: flex; background: rgba(0, 240, 255, 0.08); border-bottom: 1px solid rgba(0, 240, 255, 0.2);
-      padding: 6px 18px; font-size: 12px; font-weight: 600; color: var(--neon-cyan); align-items: center; gap: 8px;
-    }
-
-    #net-warning-banner {
-      display: none; background: rgba(255, 51, 102, 0.15); border-bottom: 1px solid var(--danger);
-      padding: 8px 18px; font-size: 12px; font-weight: 600; color: var(--danger); align-items: center; gap: 8px;
-    }
-
-    .messages-box { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
-    .msg {
-      max-width: 78%; padding: 10px 14px 8px; border-radius: var(--radius-lg); position: relative;
-      display: flex; flex-direction: column; gap: 4px; word-break: break-word; cursor: pointer;
-    }
-    .msg.mine { align-self: flex-end; background: linear-gradient(135deg, #0070f3, #9d00ff); box-shadow: 0 0 16px rgba(157, 0, 255, 0.3); border-bottom-right-radius: 4px; }
-    .msg.other { align-self: flex-start; background: rgba(22, 33, 54, 0.85); border: 1px solid rgba(0, 240, 255, 0.12); border-bottom-left-radius: 4px; }
-    .msg-author { font-size: 11px; color: var(--neon-cyan); font-weight: 600; }
-    .msg.mine .msg-author { color: #bae6fd; }
-    .msg-time { font-size: 10px; color: var(--text-dim); align-self: flex-end; }
-    .msg.mine .msg-time { color: rgba(255, 255, 255, 0.75); }
-
-    /* Поле ввода + Telegram-микрофон (запрет выделения текста) */
-    .chat-input-wrapper {
-      background: var(--bg-panel); backdrop-filter: blur(18px); padding: 10px 16px; border-top: var(--glass-border);
-      display: flex; align-items: center; gap: 10px; position: relative;
-    }
-    .text-input {
-      flex: 1; padding: 12px 18px; border-radius: 24px; border: var(--glass-border); background: rgba(10, 14, 23, 0.85);
-      color: #fff; outline: none; font-size: 14px;
-    }
-    .text-input:focus { border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
-
-    #voice-btn {
-      width: 44px; height: 44px; border-radius: 50%; background: none; border: none; font-size: 22px; color: var(--text-dim);
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: all 0.2s;
-    }
-    #voice-btn.recording {
-      background: var(--danger); color: #fff; transform: scale(1.15); box-shadow: 0 0 15px var(--danger-glow);
-    }
-
-    /* Индикатор записи Telegram (смахивание влево/вверх) */
-    #voice-recording-overlay {
-      display: none; position: absolute; inset: 0; background: var(--bg-panel); backdrop-filter: blur(18px);
-      align-items: center; justify-content: space-between; padding: 0 18px; z-index: 25;
-      user-select: none; -webkit-user-select: none;
-    }
-    .rec-pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: recBlink 1s infinite; }
-    @keyframes recBlink { 50% { opacity: 0.2; } }
-
-    #locked-voice-bar {
-      display: none; position: absolute; inset: 0; background: var(--bg-panel); backdrop-filter: blur(18px);
-      padding: 8px 18px; align-items: center; justify-content: space-between; z-index: 30;
-    }
-
-    /* Модалки */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(4, 7, 14, 0.85); backdrop-filter: blur(12px);
-      z-index: 8000; align-items: center; justify-content: center; padding: 20px;
-    }
-    .modal-card {
-      background: var(--bg-panel); border: var(--glass-border); border-radius: var(--radius-lg);
-      padding: 24px; width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 14px;
-      box-shadow: 0 0 35px rgba(0, 240, 255, 0.18); max-height: 88vh; overflow-y: auto;
-    }
-    .modal-title { font-size: 1.25rem; color: var(--neon-cyan); font-weight: 700; text-shadow: 0 0 12px var(--neon-cyan-glow); }
-    .modal-input {
-      padding: 11px 14px; border-radius: 10px; border: var(--glass-border); background: #090d18; color: #fff; outline: none; width: 100%; font-size: 14px;
-    }
-    .modal-input:focus { border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
-
-    /* Табы (Неоновые подсветки для ВСЕХ вкладок) */
-    .discord-tabs, .admin-nav, .filter-nav { display: flex; gap: 6px; border-bottom: var(--glass-border); padding-bottom: 8px; flex-wrap: wrap; }
-    .discord-tab-btn, .admin-tab-btn, .filter-tab-btn {
-      flex: 1; padding: 8px 10px; border-radius: 12px; border: none; background: rgba(255, 255, 255, 0.04);
-      color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.2s;
-    }
-    .discord-tab-btn:hover, .admin-tab-btn:hover, .filter-tab-btn:hover { background: rgba(0, 240, 255, 0.1); color: #fff; }
-    .discord-tab-btn.active, .admin-tab-btn.active, .filter-tab-btn.active {
-      background: var(--neon-cyan) !important; color: #000 !important; font-weight: 700 !important; box-shadow: var(--neon-glow) !important;
-    }
-
-    .user-row { background: rgba(255, 255, 255, 0.03); border: var(--glass-border); border-radius: var(--radius-md); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .user-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
-    .user-status.online { background: rgba(0, 255, 136, 0.2); color: var(--success); }
-    .user-status.offline { background: rgba(148, 163, 184, 0.15); color: var(--text-dim); }
-
-    /* WebRTC Звонки: Гибкая Сетка 50/50 + Полноэкранный режим */
-    #call-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(4, 7, 14, 0.96); backdrop-filter: blur(22px);
-      z-index: 15000; flex-direction: column; align-items: center; justify-content: space-between; padding: 24px 16px;
-    }
-    .call-video-grid {
-      display: flex; gap: 14px; width: 100%; max-width: 900px; height: 65vh; align-items: center; justify-content: center;
-    }
-    .call-tile {
-      flex: 1; height: 100%; background: #000; border-radius: 18px; border: var(--glass-border);
-      position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);
-    }
-    .call-tile video { width: 100%; height: 100%; object-fit: contain; }
-    .tile-label {
-      position: absolute; bottom: 12px; left: 14px; background: rgba(0,0,0,0.65); padding: 4px 10px;
-      border-radius: 10px; font-size: 12px; color: #fff; z-index: 10;
-    }
-    .tile-fs-btn {
-      position: absolute; top: 12px; right: 14px; background: rgba(0,0,0,0.65); color: var(--neon-cyan);
-      border: var(--glass-border); border-radius: 8px; padding: 4px 8px; font-size: 13px; cursor: pointer; z-index: 10;
-    }
-
-    .call-avatar-placeholder { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-    .call-avatar-large {
-      width: 110px; height: 110px; border-radius: 50%; object-fit: cover; border: 2px solid var(--neon-cyan);
-      box-shadow: 0 0 25px rgba(0, 240, 255, 0.45); display: flex; align-items: center; justify-content: center; font-size: 55px; background: #0f172a; overflow: hidden;
-    }
-    .call-avatar-large img { width: 100%; height: 100%; object-fit: cover; }
-
-    .call-controls-bar {
-      display: flex; gap: 12px; padding: 14px 20px; border-radius: 35px; background: rgba(16, 24, 38, 0.92);
-      border: var(--glass-border); box-shadow: 0 0 25px rgba(0,0,0,0.8); flex-wrap: wrap; justify-content: center;
-    }
-    .call-ctrl-btn {
-      padding: 10px 18px; border-radius: 20px; border: 1px solid transparent; font-weight: 600; cursor: pointer;
-      display: flex; align-items: center; gap: 6px; font-size: 13px; background: rgba(255, 255, 255, 0.08); color: #fff;
-    }
-    .call-ctrl-btn.active { background: rgba(0, 240, 255, 0.2); border-color: var(--neon-cyan); box-shadow: var(--neon-glow); }
-    .call-ctrl-btn.danger { background: var(--danger); }
-
-    .emoji-avatar-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin-top: 6px; }
-    .emoji-avatar-opt {
-      font-size: 24px; padding: 6px; border-radius: 10px; text-align: center; cursor: pointer;
-      border: 1px solid transparent; transition: all 0.15s; background: rgba(255,255,255,0.03);
-    }
-    .emoji-avatar-opt:hover, .emoji-avatar-opt.selected {
-      border-color: var(--neon-cyan); background: rgba(0,240,255,0.15); box-shadow: var(--neon-glow); transform: scale(1.15);
-    }
-
-    .mon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .mon-card {
-      background: rgba(255,255,255,0.03); border: var(--glass-border); border-radius: var(--radius-md);
-      padding: 12px; text-align: center;
-    }
-    .mon-card .val { font-size: 1.2rem; font-weight: 700; color: var(--neon-cyan); }
-    .mon-card .lbl { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
-
-    #top-toast {
-      position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-120px);
-      background: rgba(16, 24, 38, 0.96); border: 1px solid var(--neon-cyan); box-shadow: var(--neon-glow);
-      color: #fff; padding: 10px 22px; border-radius: 30px; font-size: 13px; z-index: 20000;
-      transition: transform 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28); pointer-events: none;
-    }
-    #top-toast.show { transform: translateX(-50%) translateY(0); }
-
-    @media (max-width: 768px) {
-      aside { width: 100vw; position: absolute; inset: 0; }
-      main { width: 100vw; position: absolute; inset: 0; display: none; }
-      .call-video-grid { flex-direction: column; }
-    }
-  </style>
-</head>
-<body>
-
-<div id="top-toast"></div>
-<audio id="peer-audio" autoplay playsinline style="display:none;"></audio>
-
-<!-- Экран звонка: двойная сетка видео/экрана 50/50 -->
-<div id="call-overlay">
-  <div style="text-align: center;">
-    <h3 id="call-partner-header" style="font-size: 1.4rem; color: #fff;">@username</h3>
-    <div id="call-status-badge" style="font-size: 13px; color: var(--neon-cyan); margin-top: 4px;">Вызов...</div>
-    <div id="call-quality-warning" style="font-size: 11px; color: var(--warn); margin-top: 4px; display: none;"></div>
-  </div>
-
-  <div class="call-video-grid">
-    <!-- Стрим собеседника -->
-    <div class="call-tile" id="tile-remote">
-      <video id="remote-video" autoplay playsinline style="display:none;"></video>
-      <div class="call-avatar-placeholder" id="call-avatar-wrap">
-        <div id="call-remote-avatar" class="call-avatar-large">👤</div>
-        <div style="font-size: 12px; color: var(--text-dim);">Камера собеседника выключена</div>
-      </div>
-      <div class="tile-label" id="tile-remote-label">Собеседник</div>
-      <button class="tile-fs-btn" onclick="toggleFullScreen('tile-remote')">⛶</button>
-    </div>
-
-    <!-- Наш стрим (камера или демка экрана) -->
-    <div class="call-tile" id="tile-local">
-      <video id="local-video" autoplay playsinline muted style="display:none;"></video>
-      <div class="call-avatar-placeholder" id="local-avatar-wrap">
-        <div id="local-remote-avatar" class="call-avatar-large">👤</div>
-        <div style="font-size: 12px; color: var(--text-dim);">Ваше видео выключено</div>
-      </div>
-      <div class="tile-label">Вы</div>
-      <button class="tile-fs-btn" onclick="toggleFullScreen('tile-local')">⛶</button>
-    </div>
-  </div>
-
-  <div class="call-controls-bar" id="call-incoming-bar" style="display:none;">
-    <button class="call-ctrl-btn" id="btn-accept-call" style="background: var(--success); color:#000; font-weight:700;">📞 Принять вызов</button>
-    <button class="call-ctrl-btn danger" id="btn-decline-call">🔴 Отклонить</button>
-  </div>
-
-  <div class="call-controls-bar" id="call-active-bar" style="display:flex;">
-    <button class="call-ctrl-btn active" id="btn-toggle-mic">🎙️ Микрофон</button>
-    <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
-    <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
-    <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Завершить</button>
-  </div>
-</div>
-
-<!-- Модалка подтверждения -->
-<div class="modal-overlay" id="confirm-modal" style="z-index: 12000;">
-  <div class="modal-card" style="max-width: 350px; text-align: center;">
-    <h3 class="modal-title" id="confirm-title" style="font-size: 1.15rem;">Подтверждение</h3>
-    <p id="confirm-text" style="font-size: 13px; color: var(--text-dim);"></p>
-    <div style="display: flex; gap: 10px; margin-top: 8px;">
-      <button class="pill-btn" id="confirm-no-btn">Отмена</button>
-      <button class="pill-btn" id="confirm-yes-btn" style="background: var(--danger); color: #fff; flex: none; padding: 10px 22px;">Да</button>
-    </div>
-  </div>
-</div>
-
-<!-- Вход -->
-<div id="auth-screen" style="position: fixed; inset: 0; background: #060911; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
-  <div class="modal-card" style="max-width: 360px;">
-    <h2 style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger</h2>
-    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Кибер-неон · Полная версия 2026</p>
-    <input type="text" id="login-nick" placeholder="Ваш никнейм" class="modal-input" autocomplete="off">
-    <input type="password" id="login-pwd" placeholder="Пароль" class="modal-input">
-    <button class="pill-btn" id="auth-btn" style="background: var(--neon-cyan); color: #000; font-weight: 700;">Войти в сеть</button>
-    <div id="auth-error" style="color: var(--danger); font-size: 12px; text-align: center; font-weight: 600;"></div>
-  </div>
-</div>
-
-<div id="app">
-  <aside id="chat-aside">
-    <div class="sidebar-header">
-      <div class="profile-badge" id="open-my-profile-btn" title="Редактировать профиль">
-        <div class="avatar-box" id="my-avatar-box">👤</div>
-        <span id="my-nick" style="font-weight: 700; color: var(--neon-cyan);">@user</span>
-      </div>
-      <div style="display: flex; gap: 1px; flex-wrap: wrap; justify-content: flex-end; align-items: center; flex: 1 1 auto; min-width: 0;">
-        <button class="icon-btn" id="open-friends-btn" title="Друзья">🤝<span class="badge-count" id="friends-badge" style="display:none;">0</span></button>
-        <button class="icon-btn" id="open-invites-btn" title="Приглашения в чаты">📩<span class="badge-count" id="invites-badge" style="display:none;">0</span></button>
-        <button class="icon-btn" id="open-monitoring-btn" title="Мониторинг сервера">📊</button>
-        <button class="icon-btn" id="open-support-btn" title="Поддержка">🎧</button>
-        <button class="icon-btn" id="open-sessions-btn" title="Устройства и сессии">📱</button>
-        <button class="icon-btn" id="open-settings-btn" title="Настройки">⚙</button>
-      </div>
-    </div>
-    <div class="chat-controls">
-      <button class="pill-btn" id="new-chat-btn">+ Новый чат</button>
-    </div>
-    <div class="chat-list" id="chat-list"></div>
-  </aside>
-
-  <main id="chat-main">
-    <div class="chat-header">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <button class="icon-btn" id="back-btn" style="display: none;">←</button>
-        <div>
-          <h4 id="chat-title" style="font-size: 15px; font-weight: 600;">🌐 Общий чат</h4>
-          <div style="font-size: 10px; color: var(--neon-cyan); font-weight: 600;">🔒 E2EE ШИФРОВАНИЕ</div>
-        </div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="pill-btn" id="chat-rename-btn" style="padding: 5px 10px; font-size: 11px;">✏️ Название</button>
-        <button class="pill-btn" id="chat-invite-btn" style="padding: 5px 10px; font-size: 11px;">+ Пригласить</button>
-        <button class="icon-btn" id="call-header-btn" style="color: var(--success);" title="Позвонить">📞</button>
-        <button class="icon-btn" id="delete-chat-btn" style="color: var(--danger); display: none;" title="Удалить чат">🗑️</button>
-      </div>
-    </div>
-
-    <!-- Плашка автоочистки сообщений по времени -->
-    <div id="cleanup-timer-badge">
-      ⏱ Загрузка правил очистки...
-    </div>
-    <div id="net-warning-banner">⚠️ Сервер нестабилен или задержка превышена: возможны сбои связи!</div>
-
-    <div class="messages-box" id="messages-box"></div>
-
-    <!-- Поле ввода: СКРЕПКА 📎 + ТЕКСТ + ТЕЛЕГРАМ-МИКРОФОН 🎙️ -->
-    <div class="chat-input-wrapper">
-      <input type="file" id="file-input" style="display:none;">
-      <button class="icon-btn" id="attach-btn" title="Прикрепить файл (до 10 МБ)">📎</button>
-
-      <input type="text" class="text-input" id="msg-input" placeholder="Сообщение..." autocomplete="off">
-      <button class="icon-btn" id="send-btn" style="display: none; color: var(--neon-cyan);">➤</button>
-      <button id="voice-btn" title="Голосовое сообщение">🎙️</button>
-
-      <!-- Telegram индикатор записи (Свайп влево / Вверх) -->
-      <div id="voice-recording-overlay">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <div class="rec-pulse-dot"></div>
-          <span id="voice-rec-timer" style="font-size:13px; font-weight:700;">00:00 / 05:00</span>
-        </div>
-        <div id="voice-rec-hint" style="font-size:11px; color:var(--text-dim);">◄ Смахните влево для отмены | ▲ Вверх для фиксации</div>
-      </div>
-
-      <!-- Зафиксированная панель записи Telegram -->
-      <div id="locked-voice-bar">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <div class="rec-pulse-dot"></div>
-          <span id="locked-voice-timer" style="font-size:13px; font-weight:700;">00:00 / 05:00</span>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class="icon-btn" id="pause-voice-btn">⏸</button>
-          <button class="icon-btn" id="cancel-voice-btn" style="color:var(--danger);">🗑️</button>
-          <button class="icon-btn" id="send-locked-voice-btn" style="color:var(--neon-cyan);">➤</button>
-        </div>
-      </div>
-    </div>
-  </main>
-</div>
-
-<!-- Модалка создания нового чата (Внутри приложения) -->
-<div class="modal-overlay" id="new-chat-modal">
-  <div class="modal-card" style="max-width: 380px;">
-    <h3 class="modal-title">💬 Новый чат</h3>
-    <input type="text" id="new-chat-name-input" placeholder="Название комнаты..." class="modal-input">
-    <div style="display:flex; gap:8px; margin-top:4px;">
-      <button class="pill-btn" id="create-chat-submit-btn" style="background:var(--neon-cyan); color:#000;">Создать</button>
-      <button class="pill-btn" onclick="closeModal('new-chat-modal')">Отмена</button>
-    </div>
-  </div>
-</div>
-
-<!-- Модалка переименования чата -->
-<div class="modal-overlay" id="rename-chat-modal">
-  <div class="modal-card" style="max-width: 380px;">
-    <h3 class="modal-title">✏️ Переименовать чат</h3>
-    <p id="rename-limit-hint" style="font-size: 11px; color: var(--text-dim);"></p>
-    <input type="text" id="rename-chat-input" placeholder="Новое название..." class="modal-input">
-    <div style="display:flex; gap:8px; margin-top:4px;">
-      <button class="pill-btn" id="submit-rename-btn" style="background:var(--neon-cyan); color:#000;">Сохранить</button>
-      <button class="pill-btn" onclick="closeModal('rename-chat-modal')">Отмена</button>
-    </div>
-  </div>
-</div>
-
-<!-- Модалка приглашения участника в чат -->
-<div class="modal-overlay" id="invite-member-modal">
-  <div class="modal-card" style="max-width: 380px;">
-    <h3 class="modal-title">📩 Пригласить в чат</h3>
-    <input type="text" id="invite-username-input" placeholder="Точный никнейм друга..." class="modal-input">
-    <div style="display:flex; gap:8px; margin-top:4px;">
-      <button class="pill-btn" id="submit-invite-btn" style="background:var(--neon-cyan); color:#000;">Отправить</button>
-      <button class="pill-btn" onclick="closeModal('invite-member-modal')">Отмена</button>
-    </div>
-  </div>
-</div>
-
-<!-- Модалка списка приглашений (Инвайтов) -->
-<div class="modal-overlay" id="invites-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">📩 Входящие приглашения</h3>
-    <div id="invites-list-container" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
-    <button class="pill-btn" onclick="closeModal('invites-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка Мониторинга Сервера -->
-<div class="modal-overlay" id="mon-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">📊 Мониторинг сервера</h3>
-    <div class="mon-grid">
-      <div class="mon-card">
-        <div class="val" id="mon-status">🟢 В сети</div>
-        <div class="lbl">Статус</div>
-      </div>
-      <div class="mon-card">
-        <div class="val" id="mon-uptime">0ч 0м</div>
-        <div class="lbl">Время работы</div>
-      </div>
-      <div class="mon-card">
-        <div class="val" id="mon-online">0</div>
-        <div class="lbl">Онлайн</div>
-      </div>
-      <div class="mon-card">
-        <div class="val" id="mon-users">0</div>
-        <div class="lbl">Всего юзеров</div>
-      </div>
-      <div class="mon-card">
-        <div class="val" id="mon-chats">0</div>
-        <div class="lbl">Чатов</div>
-      </div>
-      <div class="mon-card">
-        <div class="val" id="mon-storage">0 МБ</div>
-        <div class="lbl">Файлы (4 дня)</div>
-      </div>
-    </div>
-    <button class="pill-btn" onclick="closeModal('mon-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка друзей Discord (Исправлены активные вкладки) -->
-<div class="modal-overlay" id="friends-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">🤝 Друзья</h3>
-    <div class="discord-tabs">
-      <button class="discord-tab-btn active" data-tab="online" onclick="showFriendsTab('online')">В сети</button>
-      <button class="discord-tab-btn" data-tab="all" onclick="showFriendsTab('all')">Все</button>
-      <button class="discord-tab-btn" data-tab="pending" onclick="showFriendsTab('pending')">Заявки</button>
-      <button class="discord-tab-btn" data-tab="add" onclick="showFriendsTab('add')">+ Добавить</button>
-    </div>
-
-    <div id="friends-list-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto;"></div>
-
-    <div id="friends-add-tab" style="display: none; flex-direction: column; gap: 10px;">
-      <p style="font-size: 12px; color: var(--text-dim);">Введите точный тег пользователя:</p>
-      <div style="display: flex; gap: 8px;">
-        <input type="text" id="friend-search-input" placeholder="Юзернейм..." class="modal-input">
-        <button class="pill-btn" id="send-friend-req-btn" style="flex: none; background: var(--neon-cyan); color: #000;">Запрос</button>
-      </div>
-    </div>
-
-    <button class="pill-btn" onclick="closeModal('friends-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка профиля -->
-<div class="modal-overlay" id="profile-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">👤 Мой профиль</h3>
-    <div>
-      <label style="font-size:12px; color:var(--text-dim);">Юзернейм:</label>
-      <input type="text" id="prof-nick-input" class="modal-input">
-      <div id="prof-nick-lock-msg" style="font-size:11px; color:var(--danger); display:none; margin-top:4px; font-weight:600;">
-        🔒 Смена юзернейма для Главного Администратора заблокирована ядром системы!
-      </div>
-    </div>
-    
-    <div>
-      <label style="font-size:12px; color:var(--text-dim);">Выберите аватарку из смайликов:</label>
-      <div class="emoji-avatar-grid" id="emoji-avatar-picker"></div>
-    </div>
-
-    <div>
-      <label style="font-size:12px; color:var(--text-dim);">Или ссылка на фото (URL картинки):</label>
-      <input type="text" id="prof-avatar-input" class="modal-input" placeholder="https://example.com/avatar.jpg">
-    </div>
-
-    <div>
-      <div style="display:flex; justify-content:space-between;">
-        <label style="font-size:12px; color:var(--text-dim);">О себе:</label>
-        <span id="bio-word-counter" style="font-size:11px; color:var(--neon-cyan);">0/45 слов</span>
-      </div>
-      <textarea id="prof-bio-input" class="modal-input" style="height:65px; resize:none;" placeholder="О себе (до 45 слов)..."></textarea>
-    </div>
-
-    <button class="pill-btn" id="save-profile-btn" style="background:var(--neon-cyan); color:#000; font-weight:700;">Сохранить изменения</button>
-    <button class="pill-btn" onclick="closeModal('profile-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Менеджер устройств и сессий -->
-<div class="modal-overlay" id="sessions-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">📱 Устройства и сессии</h3>
-    <p style="font-size:12px; color:var(--text-dim);">Выборочно или полностью управляйте входами с ваших устройств:</p>
-    <div id="my-sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
-    
-    <div style="display:flex; gap:8px; margin-top:6px;">
-      <button class="pill-btn" id="kill-other-sessions-btn" style="background:rgba(255,170,0,0.2); color:var(--warn);">Выкинуть другие устройства</button>
-      <button class="pill-btn" id="kill-all-sessions-btn" style="background:rgba(255,51,102,0.25); color:var(--danger);">Выйти со всех устройств</button>
-    </div>
-    <button class="pill-btn" onclick="closeModal('sessions-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка поддержки (Исправлены активные вкладки и 4-часовое удаление) -->
-<div class="modal-overlay" id="support-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">🎧 Служба поддержки</h3>
-    <div class="discord-tabs" id="support-tabs-wrap">
-      <button class="discord-tab-btn active" data-tab="new" id="supp-tab-new-btn" onclick="showSupportTab('new')">Написать обращение</button>
-      <button class="discord-tab-btn" data-tab="my" id="supp-tab-my-btn" onclick="showSupportTab('my')">Мои тикеты</button>
-    </div>
-    <div id="supp-tab-new" style="display:flex; flex-direction:column; gap:8px;">
-      <input type="text" id="supp-subject-input" placeholder="Тема вопроса" class="modal-input">
-      <textarea id="supp-msg-input" placeholder="Опишите проблему..." class="modal-input" style="height:90px; resize:none;"></textarea>
-      <button class="pill-btn" id="supp-send-btn" style="background:var(--neon-cyan); color:#000;">Отправить тикет</button>
-    </div>
-    <div id="supp-tab-my" style="display:none; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
-    <button class="pill-btn" onclick="closeModal('support-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Полная Админ-панель (Добавлено удаление тикетов) -->
-<div class="modal-overlay" id="admin-modal">
-  <div class="modal-card" style="max-width:540px;">
-    <h3 class="modal-title">⚡ Панель управления</h3>
-    <div class="admin-nav">
-      <button class="admin-tab-btn active" id="tab-users-btn">👥 Юзеры</button>
-      <button class="admin-tab-btn" id="tab-groups-btn">💬 Группы</button>
-      <button class="admin-tab-btn" id="tab-bans-btn">🚫 Баны</button>
-      <button class="admin-tab-btn" id="tab-support-btn">🎧 Саппорт</button>
-      <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
-    </div>
-
-    <!-- Вкладка Юзеры с фильтрами -->
-    <div id="admin-tab-users" style="display:flex; flex-direction:column; gap:8px;">
-      <div class="filter-nav">
-        <button class="filter-tab-btn active" onclick="setAdminFilter('all')">Все</button>
-        <button class="filter-tab-btn" onclick="setAdminFilter('online')">Онлайн</button>
-        <button class="filter-tab-btn" onclick="setAdminFilter('offline')">Офлайн</button>
-        <button class="filter-tab-btn" onclick="setAdminFilter('admins')">Админы</button>
-        <button class="filter-tab-btn" onclick="setAdminFilter('banned')">Баны</button>
-      </div>
-      <input type="text" id="admin-search-input" placeholder="🔍 Поиск по нику..." class="modal-input">
-      <div id="admin-users-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
-    </div>
-
-    <div id="admin-tab-groups" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
-    <div id="admin-tab-bans" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
-    <div id="admin-tab-support" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
-    <div id="admin-tab-requests" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
-
-    <button class="pill-btn" onclick="closeModal('admin-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка просмотра сессий юзера для Админа -->
-<div class="modal-overlay" id="admin-user-sessions-modal">
-  <div class="modal-card">
-    <h3 class="modal-title" id="admin-sessions-target-nick">Сессии пользователя</h3>
-    <div id="admin-user-sessions-list" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto;"></div>
-    <button class="pill-btn" onclick="closeModal('admin-user-sessions-modal')">Закрыть</button>
-  </div>
-</div>
-
-<!-- Модалка прав -->
-<div class="modal-overlay" id="grant-modal">
-  <div class="modal-card">
-    <h3 class="modal-title" id="grant-user-title">Права администратора</h3>
-    <div style="display:flex; flex-direction:column; gap:6px;">
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-msg"> Удаление сообщений</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-chat"> Удаление чатов</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-kick"> Кик пользователей</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-grant-adm"> Назначение админов</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-direct"> Прямое удаление аккаунтов</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-del-req"> Заявки на удаление</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-ban"> Блокировка (бан)</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-mute"> Заглушение (мьют)</label>
-      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-supp"> Ответы в саппорте</label>
-    </div>
-    <button class="pill-btn" id="save-perms-btn" style="background:var(--neon-cyan); color:#000;">Сохранить</button>
-    <button class="pill-btn" onclick="closeModal('grant-modal')">Отмена</button>
-  </div>
-</div>
-
-<!-- Модалка Бана -->
-<div class="modal-overlay" id="ban-modal">
-  <div class="modal-card" style="max-width:380px;">
-    <h3 class="modal-title">🚫 Блокировка пользователя</h3>
-    <div id="ban-modal-target" style="font-size:13px; color:var(--neon-cyan); font-weight:700;"></div>
-    <input type="text" id="ban-reason-input" placeholder="Причина..." class="modal-input">
-    <div style="display:flex; gap:16px;">
-      <label style="font-size:13px;"><input type="radio" name="ban-type" value="permanent" checked> Навсегда</label>
-      <label style="font-size:13px;"><input type="radio" name="ban-type" value="temporary"> На время (часы)</label>
-    </div>
-    <input type="number" id="ban-duration-input" placeholder="Часов" value="24" class="modal-input">
-    <button class="pill-btn" id="save-ban-btn" style="background:var(--danger); color:#fff;">Заблокировать</button>
-    <button class="pill-btn" onclick="closeModal('ban-modal')">Отмена</button>
-  </div>
-</div>
-
-<!-- Модалка настроек -->
-<div class="modal-overlay" id="settings-modal">
-  <div class="modal-card">
-    <h3 class="modal-title">⚙ Настройки</h3>
-    <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
-      <span style="font-size:13px; font-weight:600;">Смена пароля (раз в 3 часа):</span>
-      <input type="password" id="old-pwd" placeholder="Текущий пароль" class="modal-input">
-      <input type="password" id="new-pwd" placeholder="Новый пароль" class="modal-input">
-      <button class="pill-btn" id="change-pwd-btn">Сменить пароль</button>
-    </div>
-    <button class="pill-btn" id="admin-panel-btn" style="display:none; background:rgba(0,240,255,0.15); color:var(--neon-cyan); border-color:var(--neon-cyan);">⚡ Открыть Админ-панель</button>
-    <button class="pill-btn" onclick="logout()" style="background: rgba(255,51,102,0.2); color: var(--danger);">Выйти из аккаунта</button>
-    <button class="pill-btn" onclick="closeModal('settings-modal')">Закрыть</button>
-  </div>
-</div>
-
-<script>
-const BACKEND_URL = "https://utopia-messenger-api.onrender.com";
-
-let currentUser = null, currentSessionToken = null;
-let isSuperAdmin = false, isAdmin = false, myAdminPerms = {};
-let activeChatId = "general", activeWs = null;
-let currentAdminFilter = "all";
-let targetGrantUser = null, targetBanUser = null;
-
-// Голосовой ввод Telegram
-let mediaRecorder = null;
-let audioChunks = [];
-let isVoiceRecording = false;
-let isVoiceLocked = false;
-let isVoiceCancelled = false;
-let isVoicePaused = false;
-let voiceStartX = 0, voiceStartY = 0;
-let voiceTimerInt = null;
-let voiceSec = 0;
-
-// WebRTC Звонки
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
-let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
-let isCamOn = false, isScreenOn = false, isMicOn = true;
-let callTimeoutTimer = null;
-let pendingIncomingOffer = null;
-let iceCandidatesQueue = [];
-
-const EMOJI_AVATARS = ["🐱","🦊","🐺","🦁","🤖","👑","💀","👾","🐉","⚡","🔥","💎","🚀","🎭","🎮","🦄","🛸","🐧","🐼","🧙","🎃","🥋","🎯","🛰️"];
-
-function initEmojiPicker() {
-  const container = document.getElementById('emoji-avatar-picker');
-  container.innerHTML = '';
-  EMOJI_AVATARS.forEach(em => {
-    const d = document.createElement('div');
-    d.className = 'emoji-avatar-opt';
-    d.innerText = em;
-    d.onclick = () => {
-      document.querySelectorAll('.emoji-avatar-opt').forEach(el => el.classList.remove('selected'));
-      d.classList.add('selected');
-      document.getElementById('prof-avatar-input').value = `emoji:${em}`;
-    };
-    container.appendChild(d);
-  });
-}
-
-function renderAvatar(avatarStr, container) {
-  container.innerHTML = '';
-  if (!avatarStr) {
-    container.innerText = "👤";
-  } else if (avatarStr.startsWith("emoji:")) {
-    container.innerText = avatarStr.replace("emoji:", "");
-  } else if (avatarStr.startsWith("http")) {
-    const img = document.createElement('img');
-    img.src = avatarStr;
-    container.appendChild(img);
-  } else {
-    container.innerText = avatarStr;
-  }
-}
-
-function showToast(text) {
-  const t = document.getElementById('top-toast');
-  t.innerText = text;
-  t.className = 'show';
-  setTimeout(() => { t.className = ''; }, 3500);
-}
-
-function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-
-function confirmAction(title, text, onConfirm) {
-  document.getElementById('confirm-title').innerText = title;
-  document.getElementById('confirm-text').innerText = text;
-  openModal('confirm-modal');
-  const yBtn = document.getElementById('confirm-yes-btn');
-  const nBtn = document.getElementById('confirm-no-btn');
-  const cleanup = () => { closeModal('confirm-modal'); yBtn.onclick = null; nBtn.onclick = null; };
-  yBtn.onclick = () => { cleanup(); onConfirm(); };
-  nBtn.onclick = cleanup;
-}
-
-function parseDevice(ua) {
-  if (!ua) return "ПК";
-  let os = "ПК";
-  if (/android/i.test(ua)) os = "Android 📱";
-  else if (/iphone|ipad/i.test(ua)) os = "iOS 🍏";
-  else if (/windows/i.test(ua)) os = "Windows 💻";
-  else if (/macintosh/i.test(ua)) os = "macOS 🖥️";
-  else if (/linux/i.test(ua)) os = "Linux 🐧";
-
-  let browser = "Браузер";
-  if (/chrome|crios/i.test(ua) && !/edg/i.test(ua)) browser = "Chrome";
-  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = "Safari";
-  else if (/firefox/i.test(ua)) browser = "Firefox";
-  else if (/edg/i.test(ua)) browser = "Edge";
-  return `${os} · ${browser}`;
-}
-
-// ═══════════════════════════════════════════════════════════
-//  ВХОД И АВТОРИЗАЦИЯ
-// ═══════════════════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', () => {
-  if (window.innerWidth <= 768) document.getElementById('back-btn').style.display = 'block';
-  initEmojiPicker();
-  setupTelegramVoiceRecorder();
-
-  const saved = localStorage.getItem('utopia_saved_user');
-  if (saved) {
-    const u = JSON.parse(saved);
-    login(u.nickname, u.password);
-  }
-});
-
-async function login(nickname, password) {
-  const err = document.getElementById('auth-error');
-  try {
-    const res = await fetch(`${BACKEND_URL}/auth`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname, password, user_agent: navigator.userAgent })
-    });
-    const d = await res.json();
-    if (d.status === 'ok') {
-      currentUser = d.nickname || nickname;
-      currentSessionToken = d.session_token;
-      isSuperAdmin = d.is_superadmin;
-      isAdmin = d.is_admin;
-      myAdminPerms = d.admin_perms || {};
-
-      localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname: currentUser, password }));
-      document.getElementById('auth-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'flex';
-      document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
-
-      renderAvatar(d.avatar_url, document.getElementById('my-avatar-box'));
-      document.getElementById('admin-panel-btn').style.display = (isAdmin || isSuperAdmin) ? 'block' : 'none';
-
-      await loadChats();
-      switchChat('general', '🌐 Общий чат');
-      checkFriendRequests();
-      checkInvites();
-
-      setInterval(() => {
-        if (activeWs && activeWs.readyState === WebSocket.OPEN) {
-          activeWs.send(JSON.stringify({ action: 'ping', session_token: currentSessionToken }));
+import os
+import time
+import uuid
+import json
+import sqlite3
+import hashlib
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Set
+
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+SERVER_START_TIME = time.time()
+
+# Подключение к SQLite с защитой WAL
+#
+# ВАЖНО: соединение и курсор общие НЕЛЬЗЯ держать на весь процесс.
+# FastAPI гоняет sync-хендлеры (def) в пуле из ~40 потоков, а async-хендлеры
+# и WebSocket работают на главном потоке event-loop — и все они дергали
+# один и тот же cursor. Это роняло сервер с
+#   sqlite3.ProgrammingError: Recursive use of cursors not allowed
+# прямо в /friends/action, после чего процесс переставал отвечать вообще,
+# и помогал только перезапуск.
+#
+# Решение: каждый поток получает СВОЁ соединение и СВОЙ курсор.
+# Имена `conn` и `cursor` сохранены — ни один из 198 вызовов не менялся.
+import threading
+
+_DB_PATH = "messenger.db"
+_thread_local = threading.local()
+
+
+def _new_connection():
+    c = sqlite3.connect(_DB_PATH, check_same_thread=False, timeout=25.0, isolation_level=None)
+    c.execute("PRAGMA journal_mode=WAL;")
+    c.execute("PRAGMA busy_timeout=25000;")
+    c.execute("PRAGMA synchronous=NORMAL;")
+    return c
+
+
+def _get_conn():
+    c = getattr(_thread_local, "conn", None)
+    if c is None:
+        c = _new_connection()
+        _thread_local.conn = c
+    return c
+
+
+def _get_cursor():
+    cur = getattr(_thread_local, "cursor", None)
+    if cur is None:
+        cur = _get_conn().cursor()
+        _thread_local.cursor = cur
+    return cur
+
+
+class _ConnProxy:
+    """Подставляет соединение текущего потока вместо общего на процесс."""
+
+    def __getattr__(self, name):
+        return getattr(_get_conn(), name)
+
+    def cursor(self):
+        return _get_conn().cursor()
+
+
+class _CursorProxy:
+    """Подставляет курсор текущего потока вместо общего на процесс."""
+
+    def __getattr__(self, name):
+        return getattr(_get_cursor(), name)
+
+
+conn = _ConnProxy()
+cursor = _CursorProxy()
+
+# ═══════════════════════════════════════════════════════════
+#  ТАБЛИЦЫ
+# ═══════════════════════════════════════════════════════════
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    nickname TEXT PRIMARY KEY,
+    password TEXT NOT NULL,
+    avatar_url TEXT DEFAULT '',
+    bio TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_pwd_change TIMESTAMP,
+    last_username_change TIMESTAMP,
+    is_superadmin INTEGER DEFAULT 0,
+    is_admin INTEGER DEFAULT 0,
+    admin_perms TEXT DEFAULT '{}',
+    admin_notified INTEGER DEFAULT 0,
+    granted_by TEXT,
+    revoked_by TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS chats (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    is_direct INTEGER DEFAULT 0,
+    direct_user1 TEXT,
+    direct_user2 TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS members (
+    chat_id TEXT,
+    nickname TEXT,
+    UNIQUE(chat_id, nickname)
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS friends (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user1 TEXT NOT NULL,
+    user2 TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user1, user2)
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT,
+    chat_name TEXT,
+    from_user TEXT,
+    to_user TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT,
+    sender TEXT,
+    text TEXT,
+    file_url TEXT,
+    file_type TEXT,
+    reply_to_id INTEGER,
+    reply_to_text TEXT,
+    reply_to_sender TEXT,
+    is_edited INTEGER DEFAULT 0,
+    is_read INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS delete_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    status TEXT DEFAULT 'pending'
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_user TEXT NOT NULL,
+    text TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS bans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    banned_by TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    ban_type TEXT DEFAULT 'permanent',
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS mutes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    muted_by TEXT NOT NULL,
+    reason TEXT,
+    duration_minutes INTEGER DEFAULT 10,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nickname TEXT NOT NULL,
+    session_token TEXT UNIQUE,
+    user_agent TEXT,
+    ip_address TEXT,
+    logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active INTEGER DEFAULT 1
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_user TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'open',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    user_viewed_at TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS support_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    from_user TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS support_perm_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requested_by TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    decided_at TIMESTAMP,
+    decided_by TEXT
+)
+""")
+
+conn.commit()
+
+cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES ('general', '🌐 Общий чат', 'system', 0)")
+conn.commit()
+
+# Безопасное добавление колонок
+_safe_alters = [
+    ("users", "avatar_url", "TEXT DEFAULT ''"),
+    ("users", "bio", "TEXT DEFAULT ''"),
+    ("users", "last_username_change", "TIMESTAMP"),
+    ("chats", "is_direct", "INTEGER DEFAULT 0"),
+    ("chats", "direct_user1", "TEXT"),
+    ("chats", "direct_user2", "TEXT"),
+    ("messages", "is_read", "INTEGER DEFAULT 0"),
+    ("support_tickets", "user_viewed_at", "TIMESTAMP"),
+]
+for tbl, col, ctype in _safe_alters:
+    try:
+        cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype}")
+    except sqlite3.OperationalError:
+        pass
+conn.commit()
+
+cursor.execute("UPDATE users SET is_superadmin=1, is_admin=1 WHERE LOWER(nickname) IN ('jjlop55','gglo55')")
+conn.commit()
+
+def is_super(nick: str) -> bool:
+    return nick.lower() in ("jjlop55", "gglo55")
+
+def now_str() -> str:
+    return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+def hash_pwd(plain: str) -> str:
+    return hashlib.sha256(plain.encode('utf-8')).hexdigest()
+
+def verify_pwd(plain: str, stored: str) -> bool:
+    if stored == plain:
+        return True
+    return stored == hash_pwd(plain)
+
+# ═══════════════════════════════════════════════════════════
+#  АВТООЧИСТКА СООБЩЕНИЙ ПО ТАЙМЕРАМ:
+#  - Общий чат: 3 часа
+#  - Командные/групповые: 4 часа
+#  - Личные (ЛС): 10 часов
+# ═══════════════════════════════════════════════════════════
+def periodic_cleanup():
+    ns = now_str()
+
+    # 1. Общий чат (3 часа)
+    c3 = (datetime.utcnow() - timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("DELETE FROM messages WHERE chat_id='general' AND created_at < ?", (c3,))
+
+    # 2. Групповые/командные чаты (4 часа)
+    c4 = (datetime.utcnow() - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("""
+        DELETE FROM messages 
+        WHERE chat_id IN (SELECT id FROM chats WHERE is_direct=0 AND id!='general')
+          AND created_at < ?
+    """, (c4,))
+
+    # 3. Личные диалоги (10 часов)
+    c10 = (datetime.utcnow() - timedelta(hours=10)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("""
+        DELETE FROM messages 
+        WHERE chat_id IN (SELECT id FROM chats WHERE is_direct=1)
+          AND created_at < ?
+    """, (c10,))
+
+    # Файлы старше 4 дней
+    cutoff_files = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff_files,))
+    for msg_id, f_url in cursor.fetchall():
+        try:
+            rel = f_url.lstrip("/")
+            if os.path.exists(rel):
+                os.remove(rel)
+        except Exception:
+            pass
+        cursor.execute("UPDATE messages SET file_url=NULL, text='[Срок хранения файла (4 дня) истёк]' WHERE id=?", (msg_id,))
+
+    # Удаление тикетов поддержки через 4 часа после просмотра пользователем
+    cutoff_tickets = (datetime.utcnow() - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("SELECT id FROM support_tickets WHERE user_viewed_at IS NOT NULL AND user_viewed_at < ?", (cutoff_tickets,))
+    for (tid,) in cursor.fetchall():
+        cursor.execute("DELETE FROM support_replies WHERE ticket_id=?", (tid,))
+        cursor.execute("DELETE FROM support_tickets WHERE id=?", (tid,))
+
+    # Просроченные 7-дневные заявки на удаление
+    cursor.execute("SELECT id, target_nick, requested_by FROM delete_requests WHERE expires_at < ? AND status='pending'", (ns,))
+    for req_id, t_nick, r_by in cursor.fetchall():
+        cursor.execute("UPDATE delete_requests SET status='expired' WHERE id=?", (req_id,))
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
+                       (r_by, f"Главный администратор не принял заявку на удаление @{t_nick} (истёк срок 7 дней)."))
+
+    cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
+    cursor.execute("DELETE FROM bans WHERE ban_type='temporary' AND expires_at < ?", (ns,))
+    conn.commit()
+
+# ═══════════════════════════════════════════════════════════
+#  Pydantic МОДЕЛИ
+# ═══════════════════════════════════════════════════════════
+
+class AuthData(BaseModel):
+    nickname: str
+    password: str
+    user_agent: str = ""
+    ip_address: str = ""
+
+class PwdChangeData(BaseModel):
+    nickname: str
+    old_password: str
+    new_password: str
+
+class ProfileUpdateData(BaseModel):
+    current_nickname: str
+    new_nickname: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+
+class FriendActionData(BaseModel):
+    from_user: str
+    target_user: str
+    action: str
+
+class DirectChatData(BaseModel):
+    from_user: str
+    target_user: str
+
+class ChatCreateData(BaseModel):
+    id: str
+    name: str
+    created_by: str
+
+class ChatRenameData(BaseModel):
+    chat_id: str
+    new_name: str
+    user: str
+
+class InviteData(BaseModel):
+    chat_id: str
+    chat_name: str
+    from_user: str
+    to_user: str
+
+class InviteAction(BaseModel):
+    invite_id: int
+    nickname: str
+    action: str
+
+class TerminateSessionData(BaseModel):
+    nickname: str
+    session_token: str
+    target_session_id: int
+
+class TerminateAllSessionsData(BaseModel):
+    nickname: str
+    session_token: str
+    include_current: bool = False
+
+class HeartbeatData(BaseModel):
+    nickname: str
+    session_token: str
+
+class BanData(BaseModel):
+    admin_nick: str
+    target_nick: str
+    reason: str
+    ban_type: str = "permanent"
+    duration_hours: int = 0
+
+class MuteData(BaseModel):
+    admin_nick: str
+    target_nick: str
+    reason: str = ""
+    duration_minutes: int = 10
+
+class DeleteUserAction(BaseModel):
+    admin_nick: str
+    target_nick: str
+    reason: str = ""
+
+class ReqDecision(BaseModel):
+    admin_nick: str
+    request_id: int
+    action: str
+
+class AdminPermsData(BaseModel):
+    admin_nick: str
+    target_nick: str
+    perms: dict
+
+class SupportTicketData(BaseModel):
+    from_user: str
+    subject: str
+    message: str
+
+class SupportReplyData(BaseModel):
+    admin_nick: str
+    ticket_id: int
+    message: str
+
+class SupportDeleteData(BaseModel):
+    admin_nick: str
+    ticket_id: int
+
+class SupportPermRequestData(BaseModel):
+    nickname: str
+
+class SupportPermDecision(BaseModel):
+    admin_nick: str
+    request_id: int
+    action: str
+
+# ═══════════════════════════════════════════════════════════
+#  CONNECTION MANAGER
+# ═══════════════════════════════════════════════════════════
+
+class ConnectionManager:
+    def __init__(self):
+        self.user_sockets: Dict[str, Set[WebSocket]] = {}
+        self.chat_sockets: Dict[str, Set[WebSocket]] = {}
+
+    async def connect(self, chat_id: str, ws: WebSocket, nick: str):
+        await ws.accept()
+        canonical = nick.lower()
+        self.user_sockets.setdefault(canonical, set()).add(ws)
+        self.chat_sockets.setdefault(chat_id, set()).add(ws)
+
+    def disconnect(self, chat_id: str, ws: WebSocket, nick: str):
+        canonical = nick.lower()
+        if canonical in self.user_sockets:
+            self.user_sockets[canonical].discard(ws)
+            if not self.user_sockets[canonical]:
+                del self.user_sockets[canonical]
+        if chat_id in self.chat_sockets:
+            self.chat_sockets[chat_id].discard(ws)
+            if not self.chat_sockets[chat_id]:
+                del self.chat_sockets[chat_id]
+
+    def is_online(self, nick: str) -> bool:
+        canonical = nick.lower()
+        return canonical in self.user_sockets and bool(self.user_sockets[canonical])
+
+    def online_users(self) -> List[str]:
+        return list(self.user_sockets.keys())
+
+    async def send_to_user(self, nick: str, payload: dict):
+        canonical = nick.lower()
+        for ws in list(self.user_sockets.get(canonical, [])):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
+
+    async def broadcast_chat(self, chat_id: str, payload: dict):
+        for ws in list(self.chat_sockets.get(chat_id, [])):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
+
+    async def kick_user(self, nick: str, reason: str = "Вы были принудительно отключены."):
+        canonical = nick.lower()
+        for ws in list(self.user_sockets.get(canonical, [])):
+            try:
+                await ws.send_json({"action": "kicked", "msg": reason})
+                await ws.close()
+            except Exception:
+                pass
+
+    async def notify_support_staff(self, payload: dict):
+        cursor.execute("SELECT nickname, admin_perms, is_superadmin FROM users WHERE is_admin=1 OR is_superadmin=1")
+        for row in cursor.fetchall():
+            nick, perms_raw, is_sup = row
+            perms = json.loads(perms_raw or '{}')
+            if is_sup or is_super(nick) or perms.get("can_handle_support", False):
+                await self.send_to_user(nick, payload)
+
+manager = ConnectionManager()
+
+# ═══════════════════════════════════════════════════════════
+#  МАРШРУТЫ
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/ping")
+@app.get("/invites/ping")
+def ping_service():
+    return {"status": "ok"}
+
+@app.post("/auth")
+async def auth_user(data: AuthData, request: Request):
+    periodic_cleanup()
+    ns = now_str()
+    ip = data.ip_address or (request.client.host if request.client else "127.0.0.1")
+
+    cursor.execute("SELECT reason, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
+    ban = cursor.fetchone()
+    if ban:
+        reason, ban_type, expires_at = ban
+        if ban_type == "permanent" or (ban_type == "temporary" and expires_at and expires_at > ns):
+            return {"status": "banned", "msg": f"Аккаунт заблокирован! Причина: {reason}"}
+        else:
+            cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
+            conn.commit()
+
+    cursor.execute("""
+        SELECT password, is_superadmin, is_admin, admin_perms, avatar_url, bio, nickname 
+        FROM users WHERE LOWER(nickname)=LOWER(?)
+    """, (data.nickname,))
+    row = cursor.fetchone()
+    session_token = uuid.uuid4().hex
+
+    if row:
+        if not verify_pwd(data.password, row[0]):
+            return {"status": "error", "msg": "Неверный пароль!"}
+
+        canonical_nick = row[6]
+        hashed = hash_pwd(data.password)
+        cursor.execute("UPDATE users SET password=?, last_login=? WHERE nickname=?", (hashed, ns, canonical_nick))
+        cursor.execute(
+            "INSERT INTO user_sessions (nickname, session_token, user_agent, ip_address, logged_in_at, last_active, is_active) VALUES (?,?,?,?,?,?,1)",
+            (canonical_nick, session_token, data.user_agent, ip, ns, ns)
+        )
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES ('general', ?)", (canonical_nick,))
+        conn.commit()
+
+        perms = json.loads(row[3]) if row[3] else {}
+        return {
+            "status": "ok",
+            "nickname": canonical_nick,
+            "is_superadmin": bool(row[1]) or is_super(canonical_nick),
+            "is_admin": bool(row[2]) or bool(row[1]) or is_super(canonical_nick),
+            "admin_perms": perms,
+            "avatar_url": row[4] or "",
+            "bio": row[5] or "",
+            "session_token": session_token
         }
-      }, 12000);
-      setInterval(checkInvites, 12000);
-    } else {
-      err.innerText = d.msg;
-    }
-  } catch (e) { err.innerText = 'Сервер выходит из сна... Подождите 25 сек'; }
-}
+    else:
+        is_sup = 1 if is_super(data.nickname) else 0
+        perms = {
+            "can_delete_messages": True, "can_delete_chats": True, "can_kick_users": True,
+            "can_view_all_chats": True, "can_grant_admins": True, "can_delete_users_direct": True,
+            "can_request_delete_users": True, "can_ban_users": True, "can_mute_users": True,
+            "can_handle_support": True
+        } if is_sup else {}
 
-document.getElementById('auth-btn').onclick = () => {
-  login(document.getElementById('login-nick').value.trim(), document.getElementById('login-pwd').value);
-};
+        hashed = hash_pwd(data.password)
+        cursor.execute("""
+            INSERT INTO users (nickname, password, last_login, is_superadmin, is_admin, admin_perms, admin_notified)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+        """, (data.nickname, hashed, ns, is_sup, is_sup, json.dumps(perms)))
+        cursor.execute(
+            "INSERT INTO user_sessions (nickname, session_token, user_agent, ip_address, logged_in_at, last_active, is_active) VALUES (?,?,?,?,?,?,1)",
+            (data.nickname, session_token, data.user_agent, ip, ns, ns)
+        )
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES ('general', ?)", (data.nickname,))
+        conn.commit()
 
-function logout() {
-  localStorage.removeItem('utopia_saved_user');
-  location.reload();
-}
-
-// ═══════════════════════════════════════════════════════════
-//  МОНИТОРИНГ СЕРВЕРА (ИСПРАВЛЕН UNDEFINED)
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-monitoring-btn').onclick = async () => {
-  openModal('mon-modal');
-  try {
-    const res = await fetch(`${BACKEND_URL}/server/monitoring`);
-    const d = await res.json();
-    document.getElementById('mon-status').innerText = '🟢 В сети';
-    document.getElementById('mon-uptime').innerText = d.uptime || '0м';
-    document.getElementById('mon-online').innerText = d.online_count ?? 1;
-    document.getElementById('mon-users').innerText = d.total_users ?? 1;
-    document.getElementById('mon-chats').innerText = d.total_chats ?? 1;
-    document.getElementById('mon-storage').innerText = `${d.uploads_mb ?? 0} МБ`;
-  } catch (e) {
-    document.getElementById('mon-uptime').innerText = '1м';
-    document.getElementById('mon-online').innerText = 1;
-  }
-};
-
-// ═══════════════════════════════════════════════════════════
-//  МЕНЕДЖЕР СЕССИЙ (УСТРОЙСТВА)
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-sessions-btn').onclick = () => {
-  loadMySessions();
-  openModal('sessions-modal');
-};
-
-async function loadMySessions() {
-  const c = document.getElementById('my-sessions-list');
-  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка устройств...</div>';
-  const res = await fetch(`${BACKEND_URL}/sessions/my/${currentUser}?token=${currentSessionToken}`);
-  const sessions = await res.json();
-  c.innerHTML = '';
-
-  sessions.forEach(s => {
-    const isCur = s.is_current;
-    const dev = parseDevice(s.user_agent);
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-          <b style="color:${isCur ? 'var(--neon-cyan)' : '#fff'};">${isCur ? '🟢 Текущее устройство' : dev}</b>
-          <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">IP: ${s.ip_address || '—'} · Вход: ${s.logged_in_at}</div>
-        </div>
-        ${!isCur ? `<button class="pill-btn" style="background:rgba(255,51,102,0.2); color:var(--danger); padding:4px 10px; font-size:11px; flex:none;" onclick="killSession(${s.id})">Сбросить</button>` : '<span style="font-size:11px; color:var(--success);">Активен сейчас</span>'}
-      </div>
-    `;
-    c.appendChild(row);
-  });
-}
-
-async function killSession(sid) {
-  confirmAction('Сброс сеанса', 'Отключить это устройство от вашего аккаунта?', async () => {
-    const res = await fetch(`${BACKEND_URL}/sessions/terminate`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, target_session_id: sid })
-    });
-    const d = await res.json();
-    showToast(d.msg);
-    loadMySessions();
-  });
-}
-
-document.getElementById('kill-other-sessions-btn').onclick = () => {
-  confirmAction('Сброс сессий', 'Выкинуть все другие устройства, кроме этого?', async () => {
-    const res = await fetch(`${BACKEND_URL}/sessions/terminate-all`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, include_current: false })
-    });
-    const d = await res.json();
-    showToast(d.msg);
-    loadMySessions();
-  });
-};
-
-document.getElementById('kill-all-sessions-btn').onclick = () => {
-  confirmAction('Полный сброс', 'Завершить ВСЕ сеансы (включая это устройство)? Потребуется войти заново.', async () => {
-    await fetch(`${BACKEND_URL}/sessions/terminate-all`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, include_current: true })
-    });
-    logout();
-  });
-};
-
-// ═══════════════════════════════════════════════════════════
-//  ПРОФИЛЬ: БЛОКИРОВКА ДЛЯ Jjlop55 + 45 СЛОВ + АВАТАР
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-my-profile-btn').onclick = () => {
-  const nickInput = document.getElementById('prof-nick-input');
-  const lockMsg = document.getElementById('prof-nick-lock-msg');
-  nickInput.value = currentUser;
-
-  if (currentUser.toLowerCase() === 'jjlop55' || currentUser.toLowerCase() === 'gglo55') {
-    nickInput.disabled = true;
-    lockMsg.style.display = 'block';
-  } else {
-    nickInput.disabled = false;
-    lockMsg.style.display = 'none';
-  }
-  openModal('profile-modal');
-};
-
-const bioInput = document.getElementById('prof-bio-input');
-bioInput.oninput = () => {
-  const words = bioInput.value.trim().split(/\s+/).filter(Boolean);
-  document.getElementById('bio-word-counter').innerText = `${words.length}/45 слов`;
-  document.getElementById('bio-word-counter').style.color = (words.length > 45) ? 'var(--danger)' : 'var(--neon-cyan)';
-};
-
-document.getElementById('save-profile-btn').onclick = async () => {
-  const newNick = document.getElementById('prof-nick-input').value.trim();
-  const avatarVal = document.getElementById('prof-avatar-input').value.trim();
-  const bioVal = bioInput.value.trim();
-
-  const words = bioVal.split(/\s+/).filter(Boolean);
-  if (words.length > 45) return showToast('Описание превышает 45 слов!');
-
-  const res = await fetch(`${BACKEND_URL}/profile/update`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ current_nickname: currentUser, new_nickname: newNick, avatar_url: avatarVal, bio: bioVal })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  if (d.status === 'ok') {
-    if (d.new_nickname) {
-      currentUser = d.new_nickname;
-      document.getElementById('my-nick').innerText = `@${currentUser}`;
-      const saved = JSON.parse(localStorage.getItem('utopia_saved_user') || '{}');
-      saved.nickname = currentUser;
-      localStorage.setItem('utopia_saved_user', JSON.stringify(saved));
-    }
-    renderAvatar(avatarVal, document.getElementById('my-avatar-box'));
-    closeModal('profile-modal');
-  }
-};
-
-// ═══════════════════════════════════════════════════════════
-//  СИСТЕМА ДРУЗЕЙ (АКТИВНЫЕ ВКЛАДКИ)
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-friends-btn').onclick = () => {
-  openModal('friends-modal');
-  showFriendsTab('online');
-};
-
-function showFriendsTab(tab) {
-  document.querySelectorAll('#friends-modal .discord-tab-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === tab);
-  });
-  const c = document.getElementById('friends-list-container');
-  const addTab = document.getElementById('friends-add-tab');
-
-  if (tab === 'add') { c.style.display = 'none'; addTab.style.display = 'flex'; return; }
-  c.style.display = 'flex'; addTab.style.display = 'none';
-  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
-
-  fetch(`${BACKEND_URL}/friends/${currentUser}`)
-    .then(r => r.json())
-    .then(data => {
-      c.innerHTML = '';
-      let list = data.friends;
-      if (tab === 'online') list = data.friends.filter(f => f.is_online);
-
-      if (tab === 'pending') {
-        if (!data.incoming.length && !data.outgoing.length) {
-          c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Нет заявок</div>';
-          return;
+        return {
+            "status": "ok",
+            "nickname": data.nickname,
+            "is_superadmin": bool(is_sup),
+            "is_admin": bool(is_sup),
+            "admin_perms": perms,
+            "avatar_url": "",
+            "bio": "",
+            "session_token": session_token
         }
-        data.incoming.forEach(inc => {
-          const row = document.createElement('div');
-          row.className = 'user-row';
-          row.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <b>@${inc.nickname}</b>
-              <div style="display:flex; gap:6px;">
-                <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}','accept')">Принять</button>
-                <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}','decline')">Отклонить</button>
-              </div>
-            </div>`;
-          c.appendChild(row);
-        });
-        return;
-      }
 
-      if (!list.length) {
-        c.innerHTML = `<div style="text-align:center;color:var(--text-dim);">${tab === 'online' ? 'Никого нет в сети' : 'Список пуст'}</div>`;
-        return;
-      }
+@app.post("/change-password")
+def change_password(data: PwdChangeData):
+    cursor.execute("SELECT password, last_pwd_change FROM users WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
+    row = cursor.fetchone()
+    if not row or not verify_pwd(data.old_password, row[0]):
+        return {"status": "error", "msg": "Текущий пароль указан неверно!"}
+    if row[1]:
+        diff = datetime.utcnow() - datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S')
+        if diff < timedelta(hours=3):
+            mins = int((timedelta(hours=3) - diff).total_seconds() / 60)
+            return {"status": "error", "msg": f"Пароль можно менять раз в 3 часа! Подождите {mins} мин."}
 
-      list.forEach(f => {
-        const row = document.createElement('div');
-        row.className = 'user-row';
-        row.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <div class="avatar-box" id="fav-${f.nickname}"></div>
-              <div>
-                <b>@${f.nickname}</b>
-                <div style="font-size:11px; color:var(--text-dim);">${f.bio || 'Нет описания'}</div>
-              </div>
-            </div>
-            <span class="user-status ${f.is_online ? 'online' : 'offline'}">${f.is_online ? 'В сети' : 'Офлайн'}</span>
-          </div>
-          <div style="display:flex; gap:6px; margin-top:4px;">
-            <button class="pill-btn" style="background:var(--neon-cyan); color:#000;" onclick="openDirectChat('${f.nickname}')">💬 Написать</button>
-            <button class="pill-btn" style="background:rgba(0,255,136,0.15); color:var(--success);" onclick="closeModal('friends-modal'); startCall('${f.nickname}')">📞 Позвонить</button>
-          </div>`;
-        c.appendChild(row);
-        renderAvatar(f.avatar_url, row.querySelector(`#fav-${f.nickname}`));
-      });
-    });
-}
+    ns = now_str()
+    hashed = hash_pwd(data.new_password)
+    cursor.execute("UPDATE users SET password=?, last_pwd_change=? WHERE LOWER(nickname)=LOWER(?)", (hashed, ns, data.nickname))
+    conn.commit()
+    return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
-function friendAction(target, action) {
-  fetch(`${BACKEND_URL}/friends/action`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ from_user: currentUser, target_user: target, action: action })
-  }).then(r => r.json()).then(d => {
-    showToast(d.msg);
-    showFriendsTab('pending');
-    checkFriendRequests();
-    loadChats();
-  });
-}
+# ═══════════════════════════════════════════════════════════
+#  ПРОФИЛЬ: БЛОКИРОВКА Jjlop55 И СОХРАНЕНИЕ
+# ═══════════════════════════════════════════════════════════
 
-document.getElementById('send-friend-req-btn').onclick = () => {
-  const target = document.getElementById('friend-search-input').value.trim().replace('@','');
-  if (!target) return;
-  fetch(`${BACKEND_URL}/friends/action`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ from_user: currentUser, target_user: target, action: 'request' })
-  }).then(r => r.json()).then(d => {
-    showToast(d.msg);
-    document.getElementById('friend-search-input').value = '';
-  });
-};
+@app.post("/profile/update")
+def update_profile(data: ProfileUpdateData):
+    cursor.execute("SELECT nickname, last_username_change FROM users WHERE LOWER(nickname)=LOWER(?)", (data.current_nickname.strip(),))
+    user = cursor.fetchone()
+    if not user:
+        return {"status": "error", "msg": "Пользователь не найден!"}
 
-function checkFriendRequests() {
-  fetch(`${BACKEND_URL}/friends/${currentUser}`).then(r=>r.json()).then(d => {
-    const b = document.getElementById('friends-badge');
-    if (d.incoming && d.incoming.length) { b.innerText = d.incoming.length; b.style.display = 'block'; }
-    else b.style.display = 'none';
-  }).catch(()=>{});
-}
+    real_current = user[0]
+    new_nick = data.new_nickname.strip() if data.new_nickname else real_current
 
-async function openDirectChat(target) {
-  closeModal('friends-modal');
-  const res = await fetch(`${BACKEND_URL}/direct-chat`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ from_user: currentUser, target_user: target })
-  });
-  const d = await res.json();
-  if (d.status === 'ok') {
-    await loadChats();
-    switchChat(d.chat_id, d.chat_name);
-  }
-}
+    if new_nick != real_current:
+        if is_super(real_current):
+            return {"status": "error", "msg": "🔒 Смена юзернейма для Главного Администратора заблокирована ядром системы!"}
 
-// ═══════════════════════════════════════════════════════════
-//  ПРИГЛАШЕНИЯ В ЧАТЫ (ИНВАЙТЫ)
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-invites-btn').onclick = () => {
-  openModal('invites-modal');
-  loadInvites();
-};
+        last_change = user[1]
+        if last_change:
+            diff = datetime.utcnow() - datetime.strptime(last_change, '%Y-%m-%d %H:%M:%S')
+            if diff < timedelta(days=1):
+                hours_left = int(24 - (diff.total_seconds() / 3600))
+                return {"status": "error", "msg": f"Юзернейм можно менять только 1 раз в день! Ждать ещё {hours_left} ч."}
 
-async function checkInvites() {
-  try {
-    const res = await fetch(`${BACKEND_URL}/invites/${currentUser}`);
-    const list = await res.json();
-    const b = document.getElementById('invites-badge');
-    if (list.length) { b.innerText = list.length; b.style.display = 'block'; }
-    else b.style.display = 'none';
-  } catch (e) {}
-}
+        cursor.execute("SELECT 1 FROM users WHERE LOWER(nickname)=LOWER(?) AND LOWER(nickname)!=LOWER(?)", (new_nick, real_current))
+        if cursor.fetchone():
+            return {"status": "error", "msg": f"Юзернейм @{new_nick} уже занят!"}
 
-async function loadInvites() {
-  const c = document.getElementById('invites-list-container');
-  c.innerHTML = 'Загрузка...';
-  const res = await fetch(`${BACKEND_URL}/invites/${currentUser}`);
-  const list = await res.json();
-  c.innerHTML = '';
-  if (!list.length) { c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">Нет приглашений</div>'; return; }
+        cursor.execute("UPDATE users SET nickname=?, last_username_change=? WHERE nickname=?", (new_nick, now_str(), real_current))
+        cursor.execute("UPDATE members SET nickname=? WHERE nickname=?", (new_nick, real_current))
+        cursor.execute("UPDATE messages SET sender=? WHERE sender=?", (new_nick, real_current))
+        cursor.execute("UPDATE messages SET reply_to_sender=? WHERE reply_to_sender=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET created_by=? WHERE created_by=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET direct_user1=? WHERE direct_user1=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET direct_user2=? WHERE direct_user2=?", (new_nick, real_current))
+        cursor.execute("UPDATE friends SET user1=? WHERE user1=?", (new_nick, real_current))
+        cursor.execute("UPDATE friends SET user2=? WHERE user2=?", (new_nick, real_current))
+        cursor.execute("UPDATE invites SET from_user=? WHERE from_user=?", (new_nick, real_current))
+        cursor.execute("UPDATE invites SET to_user=? WHERE to_user=?", (new_nick, real_current))
+        cursor.execute("UPDATE user_sessions SET nickname=? WHERE nickname=?", (new_nick, real_current))
+        conn.commit()
 
-  list.forEach(inv => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div>@${inv.from_user} приглашает в чат <b>«${inv.chat_name}»</b></div>
-      <div style="display:flex; gap:6px; margin-top:4px;">
-        <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 10px;" onclick="respondInvite(${inv.id}, 'accept')">Принять</button>
-        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 10px;" onclick="respondInvite(${inv.id}, 'decline')">Отклонить</button>
-      </div>`;
-    c.appendChild(row);
-  });
-}
+    target_nick = new_nick if new_nick != real_current else real_current
+    if data.avatar_url is not None:
+        cursor.execute("UPDATE users SET avatar_url=? WHERE nickname=?", (data.avatar_url, target_nick))
+    if data.bio is not None:
+        words = data.bio.strip().split()
+        if len(words) > 45:
+            return {"status": "error", "msg": "Описание «О себе» не должно превышать 45 слов!"}
+        cursor.execute("UPDATE users SET bio=? WHERE nickname=?", (" ".join(words), target_nick))
+    conn.commit()
 
-async function respondInvite(id, action) {
-  await fetch(`${BACKEND_URL}/invite/respond`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ invite_id: id, nickname: currentUser, action })
-  });
-  loadInvites();
-  checkInvites();
-  loadChats();
-}
+    return {"status": "ok", "msg": "Профиль успешно сохранён!", "new_nickname": target_nick}
 
-// ═══════════════════════════════════════════════════════════
-//  ЧАТЫ, ПЕРЕИМЕНОВАНИЕ И ПРАВИЛА ОЧИСТКИ
-// ═══════════════════════════════════════════════════════════
-async function loadChats() {
-  const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
-  const chats = await res.json();
-  const cList = document.getElementById('chat-list');
-  cList.innerHTML = '';
+# ═══════════════════════════════════════════════════════════
+#  ДРУЗЬЯ (АВТОМАТИЧЕСКИЙ ДИАЛОГ ПРИ ПРИНЯТИИ ЗАЯВКИ)
+# ═══════════════════════════════════════════════════════════
 
-  chats.forEach(c => {
-    const isGen = c.id === 'general';
-    const d = document.createElement('div');
-    d.className = `chat-item ${c.id === activeChatId ? 'active' : ''} ${isGen ? 'general-chat' : ''}`;
-    d.dataset.chatId = c.id;
-    d.dataset.isDirect = c.is_direct ? "1" : "0";
-    d.innerHTML = `
-      <span style="font-weight:${isGen ? '700' : '500'};">${c.name}</span>
-      ${isGen ? '<span style="font-size:10px; color:var(--neon-cyan);">ГЛАВНЫЙ</span>' : ''}
-    `;
-    d.onclick = () => {
-      switchChat(c.id, c.name, c.is_direct);
-      if (window.innerWidth <= 768) {
-        document.getElementById('chat-aside').style.display = 'none';
-        document.getElementById('chat-main').style.display = 'flex';
-      }
-    };
-    cList.appendChild(d);
-  });
-}
+@app.post("/friends/action")
+async def manage_friend(data: FriendActionData):
+    if data.from_user.lower() == data.target_user.lower():
+        return {"status": "error", "msg": "Нельзя взаимодействовать с самим собой!"}
 
-async function switchChat(chatId, chatName, isDirect = null) {
-  activeChatId = chatId;
-  document.getElementById('chat-title').innerText = chatName;
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_user,))
+    target_row = cursor.fetchone()
+    if not target_row:
+        return {"status": "error", "msg": f"Пользователь @{data.target_user} не найден!"}
 
-  // Рамка активного чата
-  document.querySelectorAll('.chat-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.chatId === chatId);
-  });
+    canonical_target = target_row[0]
 
-  const isGen = chatId === 'general';
-  document.getElementById('delete-chat-btn').style.display = isGen ? 'none' : 'block';
-  document.getElementById('chat-rename-btn').style.display = isGen ? 'none' : 'block';
-  document.getElementById('chat-invite-btn').style.display = isGen ? 'none' : 'block';
+    if data.action == "request":
+        cursor.execute("""
+            SELECT id, status FROM friends 
+            WHERE (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)) OR (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?))
+        """, (data.from_user, canonical_target, canonical_target, data.from_user))
+        row = cursor.fetchone()
+        if row:
+            if row[1] == "accepted": return {"status": "error", "msg": "Вы уже друзья!"}
+            return {"status": "error", "msg": "Заявка уже отправлена!"}
 
-  // Определение таймера очистки
-  const badge = document.getElementById('cleanup-timer-badge');
-  if (isGen) {
-    badge.innerText = "⏱ Очистка сообщений: автоматически удаляются каждые 3 часа";
-  } else if (chatId.startsWith('dm_') || isDirect === 1 || isDirect === "1") {
-    badge.innerText = "⏱ Личные сообщения (ЛС): автоматически удаляются через 10 часов";
-  } else {
-    badge.innerText = "⏱ Групповой чат: сообщения автоматически удаляются через 4 часа";
-  }
+        cursor.execute("INSERT INTO friends (user1, user2, status) VALUES (?, ?, 'pending')", (data.from_user, canonical_target))
+        conn.commit()
+        await manager.send_to_user(canonical_target, {"action": "friend_request", "from": data.from_user})
+        return {"status": "ok", "msg": f"Заявка в друзья отправлена @{canonical_target}!"}
 
-  const box = document.getElementById('messages-box');
-  box.innerHTML = '';
-  const res = await fetch(`${BACKEND_URL}/messages/${chatId}`);
-  const list = await res.json();
-  list.forEach(renderMessage);
+    elif data.action == "accept":
+        cursor.execute("UPDATE friends SET status='accepted' WHERE LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)", (canonical_target, data.from_user))
+        conn.commit()
 
-  if (activeWs) activeWs.close();
-  activeWs = new WebSocket(BACKEND_URL.replace('https','wss').replace('http','ws') + `/ws/${chatId}/${currentUser}`);
+        # Автоматическое создание ЛС чата при принятии дружбы
+        cursor.execute("""
+            SELECT id FROM chats 
+            WHERE is_direct=1 AND (
+                (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?)) OR 
+                (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?))
+            ) LIMIT 1
+        """, (data.from_user, canonical_target, canonical_target, data.from_user))
+        if not cursor.fetchone():
+            dm_id = f"dm_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO chats (id, name, created_by, is_direct, direct_user1, direct_user2) VALUES (?, ?, ?, 1, ?, ?)",
+                (dm_id, f"💬 @{canonical_target}", data.from_user, data.from_user, canonical_target)
+            )
+            cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (dm_id, data.from_user))
+            cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (dm_id, canonical_target))
+            conn.commit()
 
-  activeWs.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-    if (data.action === 'call_offer') {
-      handleIncomingCall(data);
-    } else if (data.action === 'call_answer') {
-      handleCallAnswer(data);
-    } else if (data.action === 'call_ice') {
-      if (peerConnection && peerConnection.remoteDescription) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-      } else {
-        iceCandidatesQueue.push(data.candidate);
-      }
-    } else if (data.action === 'call_end' || data.action === 'call_reject' || data.action === 'call_timeout') {
-      showToast(data.action === 'call_timeout' ? 'Абонент не ответил на звонок' : 'Звонок завершён');
-      endCall();
-    } else if (data.action === 'new_message') {
-      renderMessage(data);
-    } else if (data.action === 'deleted') {
-      data.message_ids.forEach(mid => document.getElementById(`msg-${mid}`)?.remove());
-    } else if (data.action === 'new_invite') {
-      checkInvites();
-      showToast(`Новое приглашение в чат от @${data.from}!`);
+        await manager.send_to_user(canonical_target, {"action": "friend_accepted", "by": data.from_user})
+        return {"status": "ok", "msg": f"Заявка от @{canonical_target} принята! Чат создан."}
+
+    elif data.action in ("decline", "remove"):
+        cursor.execute("DELETE FROM friends WHERE (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)) OR (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?))",
+                       (data.from_user, canonical_target, canonical_target, data.from_user))
+        conn.commit()
+        return {"status": "ok", "msg": "Удалено из друзей."}
+
+    return {"status": "error", "msg": "Неизвестное действие"}
+
+@app.get("/friends/{nickname}")
+def get_friends(nickname: str):
+    cursor.execute("""
+        SELECT CASE WHEN LOWER(user1)=LOWER(?) THEN user2 ELSE user1 END as friend_nick
+        FROM friends WHERE (LOWER(user1)=LOWER(?) OR LOWER(user2)=LOWER(?)) AND status='accepted'
+    """, (nickname, nickname, nickname))
+    friend_nicks = [r[0] for r in cursor.fetchall()]
+
+    friends_list = []
+    for fn in friend_nicks:
+        cursor.execute("SELECT nickname, avatar_url, bio, last_login FROM users WHERE nickname=?", (fn,))
+        u = cursor.fetchone()
+        if u:
+            friends_list.append({
+                "nickname": u[0], "avatar_url": u[1] or "", "bio": u[2] or "",
+                "last_login": u[3], "is_online": manager.is_online(u[0])
+            })
+
+    cursor.execute("""
+        SELECT u.nickname, u.avatar_url, u.bio
+        FROM friends f JOIN users u ON f.user1 = u.nickname
+        WHERE LOWER(f.user2)=LOWER(?) AND f.status='pending'
+    """, (nickname,))
+    incoming = [{"nickname": r[0], "avatar_url": r[1] or "", "bio": r[2] or ""} for r in cursor.fetchall()]
+
+    cursor.execute("""
+        SELECT u.nickname, u.avatar_url
+        FROM friends f JOIN users u ON f.user2 = u.nickname
+        WHERE LOWER(f.user1)=LOWER(?) AND f.status='pending'
+    """, (nickname,))
+    outgoing = [{"nickname": r[0], "avatar_url": r[1] or ""} for r in cursor.fetchall()]
+
+    return {"friends": friends_list, "incoming": incoming, "outgoing": outgoing}
+
+# ═══════════════════════════════════════════════════════════
+#  ПЕРЕИМЕНОВАНИЕ ЧАТОВ (ЛИМИТ 50 СЛОВ / 25 СЛОВ)
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/chats/rename")
+def rename_chat(data: ChatRenameData):
+    if data.chat_id == "general":
+        return {"status": "error", "msg": "Общий чат переименовывать нельзя!"}
+
+    cursor.execute("SELECT is_direct FROM chats WHERE id=?", (data.chat_id,))
+    row = cursor.fetchone()
+    if not row:
+        return {"status": "error", "msg": "Чат не найден!"}
+
+    is_dir = row[0]
+    words = data.new_name.strip().split()
+    max_words = 25 if is_dir else 50
+
+    if len(words) == 0:
+        return {"status": "error", "msg": "Название не может быть пустым!"}
+    if len(words) > max_words:
+        return {"status": "error", "msg": f"Лимит названия: до {max_words} слов!"}
+
+    final_name = " ".join(words)
+    cursor.execute("UPDATE chats SET name=? WHERE id=?", (final_name, data.chat_id))
+    conn.commit()
+    return {"status": "ok", "msg": "Чат успешно переименован!", "name": final_name}
+
+# ═══════════════════════════════════════════════════════════
+#  СИСТЕМА ПРИГЛАШЕНИЙ В ЧАТЫ
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/invite")
+async def send_invite(data: InviteData):
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.to_user,))
+    target_row = cursor.fetchone()
+    if not target_row:
+        return {"status": "error", "msg": "Пользователь не найден!"}
+    canonical_target = target_row[0]
+
+    cursor.execute("SELECT 1 FROM members WHERE chat_id=? AND LOWER(nickname)=LOWER(?)", (data.chat_id, canonical_target))
+    if cursor.fetchone():
+        return {"status": "error", "msg": "Пользователь уже в этом чате!"}
+
+    cursor.execute("INSERT INTO invites (chat_id, chat_name, from_user, to_user) VALUES (?, ?, ?, ?)",
+                   (data.chat_id, data.chat_name, data.from_user, canonical_target))
+    conn.commit()
+    await manager.send_to_user(canonical_target, {"action": "new_invite", "from": data.from_user, "chat": data.chat_name})
+    return {"status": "ok", "msg": f"Приглашение отправлено @{canonical_target}!"}
+
+@app.get("/invites/{nickname}")
+def get_invites(nickname: str):
+    cursor.execute("SELECT id, chat_id, chat_name, from_user FROM invites WHERE LOWER(to_user)=LOWER(?)", (nickname,))
+    return [{"id": r[0], "chat_id": r[1], "chat_name": r[2], "from_user": r[3]} for r in cursor.fetchall()]
+
+@app.post("/invite/respond")
+def respond_invite(data: InviteAction):
+    cursor.execute("SELECT chat_id, to_user FROM invites WHERE id=?", (data.invite_id,))
+    row = cursor.fetchone()
+    if not row or row[1].lower() != data.nickname.lower():
+        return {"status": "error", "msg": "Приглашение не найдено!"}
+
+    chat_id = row[0]
+    if data.action == "accept":
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (chat_id, data.nickname))
+    cursor.execute("DELETE FROM invites WHERE id=?", (data.invite_id,))
+    conn.commit()
+    return {"status": "ok"}
+
+# ═══════════════════════════════════════════════════════════
+#  ДИАЛОГИ И ЧАТЫ
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/direct-chat")
+def get_or_create_direct_chat(data: DirectChatData):
+    if data.from_user.lower() == data.target_user.lower():
+        return {"status": "error", "msg": "Нельзя писать самому себе!"}
+
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_user,))
+    target_row = cursor.fetchone()
+    if not target_row:
+        return {"status": "error", "msg": "Пользователь не найден в сети!"}
+    canonical_target = target_row[0]
+
+    cursor.execute("""
+        SELECT id FROM chats 
+        WHERE is_direct=1 AND (
+            (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?)) OR 
+            (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?))
+        ) LIMIT 1
+    """, (data.from_user, canonical_target, canonical_target, data.from_user))
+    row = cursor.fetchone()
+
+    if row:
+        return {"status": "ok", "chat_id": row[0], "chat_name": f"💬 @{canonical_target}"}
+
+    cid = f"dm_{uuid.uuid4().hex[:12]}"
+    cname = f"💬 @{canonical_target}"
+    cursor.execute(
+        "INSERT INTO chats (id, name, created_by, is_direct, direct_user1, direct_user2) VALUES (?, ?, ?, 1, ?, ?)",
+        (cid, cname, data.from_user, data.from_user, canonical_target)
+    )
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, data.from_user))
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, canonical_target))
+    conn.commit()
+    return {"status": "ok", "chat_id": cid, "chat_name": cname}
+
+@app.get("/chats/{nickname}")
+def get_user_chats(nickname: str):
+    cursor.execute("""
+        SELECT DISTINCT c.id, c.name, c.is_direct, c.direct_user1, c.direct_user2
+        FROM chats c LEFT JOIN members m ON c.id=m.chat_id
+        WHERE c.id='general' OR LOWER(m.nickname)=LOWER(?)
+    """, (nickname,))
+    chats = []
+    for r in cursor.fetchall():
+        cid, cname, is_dir, u1, u2 = r
+        if is_dir:
+            partner = u2 if u1.lower() == nickname.lower() else u1
+            cname = f"💬 @{partner}"
+        chats.append({"id": cid, "name": cname, "is_direct": is_dir})
+    chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
+    return chats
+
+@app.post("/chats")
+def create_custom_chat(data: ChatCreateData):
+    cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES (?, ?, ?, 0)", (data.id, data.name, data.created_by))
+    cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (data.id, data.created_by))
+    conn.commit()
+    return {"status": "ok"}
+
+@app.delete("/chats/{chat_id}")
+def delete_chat(chat_id: str, user: str):
+    if chat_id == "general":
+        return {"status": "error", "msg": "Общий чат защищён от удаления!"}
+    cursor.execute("DELETE FROM chats WHERE id=?", (chat_id,))
+    cursor.execute("DELETE FROM members WHERE chat_id=?", (chat_id,))
+    cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    conn.commit()
+    return {"status": "ok"}
+
+@app.get("/messages/{chat_id}")
+def get_messages(chat_id: str):
+    periodic_cleanup()
+    cursor.execute("""
+        SELECT id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender,
+               strftime('%H:%M', created_at)
+        FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 150
+    """, (chat_id,))
+    return [{
+        "id": r[0], "sender": r[1], "text": r[2], "file_url": r[3], "file_type": r[4],
+        "reply_to_id": r[5], "reply_to_text": r[6], "reply_to_sender": r[7], "time": r[8]
+    } for r in cursor.fetchall()]
+
+@app.post("/upload")
+async def upload_file(request: Request, filename: str = "file.bin"):
+    periodic_cleanup()
+    body = await request.body()
+    if len(body) > 10485760:
+        raise HTTPException(status_code=413, detail="Файл превышает 10 МБ!")
+    _, ext = os.path.splitext(filename)
+    unique_name = f"{uuid.uuid4().hex}{ext or '.bin'}"
+    with open(os.path.join(UPLOAD_DIR, unique_name), "wb") as f:
+        f.write(body)
+    return {"status": "ok", "url": f"/uploads/{unique_name}"}
+
+@app.get("/user/info/{nickname}")
+def get_user_info(nickname: str):
+    cursor.execute("SELECT nickname, avatar_url, bio, last_login FROM users WHERE LOWER(nickname)=LOWER(?)", (nickname,))
+    u = cursor.fetchone()
+    if not u: return {"status": "error"}
+    return {
+        "status": "ok", "nickname": u[0], "avatar_url": u[1] or "",
+        "bio": u[2] or "", "last_login": u[3], "is_online": manager.is_online(u[0])
     }
-  };
-}
 
-// Переименование чата
-document.getElementById('chat-rename-btn').onclick = () => {
-  const isDirect = activeChatId.startsWith('dm_');
-  document.getElementById('rename-limit-hint').innerText = isDirect ? "Лимит для личных диалогов: до 25 слов" : "Лимит для групп: до 50 слов";
-  document.getElementById('rename-chat-input').value = document.getElementById('chat-title').innerText.replace('💬 @', '');
-  openModal('rename-chat-modal');
-};
+# ═══════════════════════════════════════════════════════════
+#  АДМИНИСТРАТИВНАЯ ПАНЕЛЬ
+# ═══════════════════════════════════════════════════════════
 
-document.getElementById('submit-rename-btn').onclick = async () => {
-  const val = document.getElementById('rename-chat-input').value.trim();
-  if (!val) return;
-  const res = await fetch(`${BACKEND_URL}/chats/rename`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ chat_id: activeChatId, new_name: val, user: currentUser })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  if (d.status === 'ok') {
-    closeModal('rename-chat-modal');
-    document.getElementById('chat-title').innerText = d.name;
-    loadChats();
-  }
-};
+@app.get("/admin/users")
+def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
 
-// Приглашение в чат
-document.getElementById('chat-invite-btn').onclick = () => {
-  document.getElementById('invite-username-input').value = '';
-  openModal('invite-member-modal');
-};
+    ns = now_str()
+    cursor.execute("""
+        SELECT nickname, created_at, last_login, is_superadmin, is_admin, admin_perms, avatar_url, bio
+        FROM users WHERE LOWER(nickname) LIKE ? ORDER BY last_login DESC LIMIT 100
+    """, (f"%{query.lower()}%",))
 
-document.getElementById('submit-invite-btn').onclick = async () => {
-  const target = document.getElementById('invite-username-input').value.trim().replace('@','');
-  if (!target) return;
-  const res = await fetch(`${BACKEND_URL}/invite`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      chat_id: activeChatId,
-      chat_name: document.getElementById('chat-title').innerText,
-      from_user: currentUser,
-      to_user: target
+    users_list = []
+    for r in cursor.fetchall():
+        nick = r[0]
+        cursor.execute("SELECT 1 FROM bans WHERE LOWER(target_nick)=LOWER(?) AND (ban_type='permanent' OR expires_at>?)", (nick, ns))
+        is_banned = cursor.fetchone() is not None
+        cursor.execute("SELECT 1 FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>?", (nick, ns))
+        is_muted = cursor.fetchone() is not None
+        online = manager.is_online(nick)
+        is_adm = bool(r[4]) or bool(r[3]) or is_super(nick)
+
+        if filter_type == "online" and not online: continue
+        if filter_type == "offline" and online: continue
+        if filter_type == "banned" and not is_banned: continue
+        if filter_type == "admins" and not is_adm: continue
+
+        users_list.append({
+            "nickname": nick, "created_at": r[1], "last_login": r[2],
+            "is_superadmin": bool(r[3]) or is_super(nick), "is_admin": is_adm,
+            "perms": json.loads(r[5] or '{}'), "avatar_url": r[6] or "", "bio": r[7] or "",
+            "is_online": online, "is_banned": is_banned, "is_muted": is_muted
+        })
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total = cursor.fetchone()[0]
+    return {"total_users": total, "online_count": len(manager.user_sockets), "users": users_list}
+
+@app.get("/admin/user-sessions")
+def admin_get_user_sessions(admin: str, target: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+
+    cursor.execute("""
+        SELECT id, user_agent, ip_address, logged_in_at, last_active, is_active 
+        FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND is_active=1 ORDER BY last_active DESC LIMIT 15
+    """, (target,))
+    return [{
+        "id": r[0], "user_agent": r[1], "ip_address": r[2],
+        "logged_in_at": r[3], "last_active": r[4], "is_active": bool(r[5])
+    } for r in cursor.fetchall()]
+
+@app.post("/admin/kill-session")
+async def admin_kill_session(data: TerminateSessionData):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(data.nickname)):
+        raise HTTPException(status_code=403, detail="Отказано")
+
+    cursor.execute("SELECT nickname FROM user_sessions WHERE id=?", (data.target_session_id,))
+    target = cursor.fetchone()
+    if target:
+        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE id=?", (data.target_session_id,))
+        conn.commit()
+        await manager.kick_user(target[0], "Ваш сеанс был завершён администратором.")
+        return {"status": "ok", "msg": f"Сессия юзера @{target[0]} отключена!"}
+    return {"status": "error", "msg": "Сессия не найдена"}
+
+@app.get("/admin/groups")
+def get_admin_groups(admin: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+
+    cursor.execute("SELECT id, name, created_by, created_at FROM chats")
+    res = []
+    for cid, cname, cc, cca in cursor.fetchall():
+        cursor.execute("SELECT nickname FROM members WHERE chat_id=?", (cid,))
+        res.append({"id": cid, "name": cname, "created_by": cc, "created_at": cca,
+                    "members": [m[0] for m in cursor.fetchall()]})
+    return res
+
+@app.post("/admin/ban")
+def ban_user(data: BanData):
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Главного администратора заблокировать невозможно!"}
+    expires_at = None
+    if data.ban_type == "temporary" and data.duration_hours > 0:
+        expires_at = (datetime.utcnow() + timedelta(hours=data.duration_hours)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    cursor.execute("INSERT INTO bans (target_nick, banned_by, reason, ban_type, expires_at) VALUES (?,?,?,?,?)",
+                   (data.target_nick, data.admin_nick, data.reason, data.ban_type, expires_at))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} заблокирован!"}
+
+@app.post("/admin/unban")
+def unban_user(data: BanData):
+    cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} разблокирован."}
+
+@app.get("/admin/bans")
+def get_bans(admin: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    periodic_cleanup()
+    cursor.execute("SELECT id, target_nick, banned_by, reason, ban_type, expires_at, created_at FROM bans ORDER BY id DESC")
+    return [{"id": r[0], "target_nick": r[1], "banned_by": r[2], "reason": r[3],
+             "ban_type": r[4], "expires_at": r[5], "created_at": r[6]} for r in cursor.fetchall()]
+
+@app.post("/admin/mute")
+def mute_user(data: MuteData):
+    exp = (datetime.utcnow() + timedelta(minutes=data.duration_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    cursor.execute("INSERT INTO mutes (target_nick, muted_by, reason, duration_minutes, expires_at) VALUES (?,?,?,?,?)",
+                   (data.target_nick, data.admin_nick, data.reason, data.duration_minutes, exp))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} замьючен на {data.duration_minutes} мин."}
+
+@app.post("/admin/kick")
+async def kick_user(data: BanData):
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Нельзя кикнуть Главного Администратора!"}
+    await manager.kick_user(data.target_nick)
+    return {"status": "ok", "msg": f"@{data.target_nick} кикнут."}
+
+@app.post("/admin/delete-user")
+def delete_user_action(data: DeleteUserAction):
+    if is_super(data.target_nick):
+        return {"status": "error", "msg": "Главного администратора удалить невозможно!"}
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (data.admin_nick,))
+    adm = cursor.fetchone()
+    if not adm: raise HTTPException(status_code=403, detail="Отказано")
+    perms = json.loads(adm[2] or '{}')
+    is_sup = bool(adm[0]) or is_super(data.admin_nick)
+
+    if is_sup or perms.get("can_delete_users_direct"):
+        cursor.execute("DELETE FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
+        cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
+        cursor.execute("DELETE FROM friends WHERE LOWER(user1)=LOWER(?) OR LOWER(user2)=LOWER(?)", (data.target_nick, data.target_nick))
+        cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+        conn.commit()
+        return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} удалён!"}
+    elif perms.get("can_request_delete_users"):
+        if not data.reason.strip(): return {"status": "error", "msg": "Укажите причину для заявки!"}
+        exp = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("INSERT INTO delete_requests (target_nick, requested_by, reason, expires_at) VALUES (?,?,?,?)",
+                       (data.target_nick, data.admin_nick, data.reason.strip(), exp))
+        conn.commit()
+        return {"status": "ok", "msg": f"Заявка на удаление @{data.target_nick} отправлена (срок 7 дней)."}
+    return {"status": "error", "msg": "Нет прав на удаление аккаунтов!"}
+
+@app.get("/admin/delete-requests")
+def get_delete_requests(admin: str):
+    cursor.execute("SELECT is_superadmin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    periodic_cleanup()
+    cursor.execute("SELECT id, target_nick, requested_by, reason, created_at, expires_at FROM delete_requests WHERE status='pending' ORDER BY id DESC")
+    return [{"id": r[0], "target_nick": r[1], "requested_by": r[2], "reason": r[3],
+             "created_at": r[4], "expires_at": r[5]} for r in cursor.fetchall()]
+
+@app.post("/admin/delete-requests/decision")
+def decide_delete_request(data: ReqDecision):
+    if not is_super(data.admin_nick): return {"status": "error", "msg": "Только Главный Администратор!"}
+    cursor.execute("SELECT target_nick, requested_by FROM delete_requests WHERE id=? AND status='pending'", (data.request_id,))
+    req = cursor.fetchone()
+    if not req: return {"status": "error", "msg": "Заявка не найдена!"}
+    target, requester = req
+    if data.action == "approve":
+        cursor.execute("UPDATE delete_requests SET status='approved' WHERE id=?", (data.request_id,))
+        cursor.execute("DELETE FROM users WHERE LOWER(nickname)=LOWER(?)", (target,))
+        cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (target,))
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Главный администратор одобрил удаление @{target}."))
+        conn.commit()
+        return {"status": "ok", "msg": f"@{target} удалён!"}
+    else:
+        cursor.execute("UPDATE delete_requests SET status='rejected' WHERE id=?", (data.request_id,))
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Заявка на удаление @{target} отклонена."))
+        conn.commit()
+        return {"status": "ok", "msg": "Заявка отклонена."}
+
+@app.post("/admin/set-perms")
+async def set_admin_permissions(data: AdminPermsData):
+    if is_super(data.target_nick): return {"status": "error", "msg": "Нельзя менять права Главного Администратора!"}
+    has_any = any(data.perms.values())
+    if has_any:
+        cursor.execute("UPDATE users SET is_admin=1, admin_perms=?, admin_notified=0, granted_by=?, revoked_by=NULL WHERE LOWER(nickname)=LOWER(?)",
+                       (json.dumps(data.perms), data.admin_nick, data.target_nick))
+        conn.commit()
+        return {"status": "ok", "msg": f"Права для @{data.target_nick} обновлены!"}
+    else:
+        cursor.execute("UPDATE users SET is_admin=0, admin_perms='{}', admin_notified=1, granted_by=NULL, revoked_by=? WHERE LOWER(nickname)=LOWER(?)",
+                       (data.admin_nick, data.target_nick))
+        conn.commit()
+        await manager.send_to_user(data.target_nick, {"action": "admin_revoked", "revoked_by": data.admin_nick})
+        return {"status": "ok", "msg": f"Все права у @{data.target_nick} отозваны!"}
+
+# ═══════════════════════════════════════════════════════════
+#  ПОДДЕРЖКА (SUPPORT)
+# ═══════════════════════════════════════════════════════════
+
+def _is_support_staff(nick: str) -> bool:
+    if is_super(nick): return True
+    cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (nick,))
+    r = cursor.fetchone()
+    if not r: return False
+    if r[0]: return True
+    perms = json.loads(r[1] or '{}')
+    return perms.get("can_handle_support", False)
+
+@app.post("/support/ticket")
+async def create_support_ticket(data: SupportTicketData):
+    if not data.subject.strip() or not data.message.strip():
+        return {"status": "error", "msg": "Заполните тему и текст обращения!"}
+    cursor.execute("INSERT INTO support_tickets (from_user, subject, message) VALUES (?, ?, ?)",
+                   (data.from_user, data.subject.strip(), data.message.strip()))
+    ticket_id = cursor.lastrowid
+    conn.commit()
+    await manager.notify_support_staff({
+        "action": "new_support_ticket", "ticket_id": ticket_id,
+        "from_user": data.from_user, "subject": data.subject
     })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  if (d.status === 'ok') closeModal('invite-member-modal');
-};
-
-function renderMessage(msg) {
-  const box = document.getElementById('messages-box');
-  const isMine = msg.sender === currentUser;
-  const el = document.createElement('div');
-  el.id = `msg-${msg.id}`;
-  el.className = `msg ${isMine ? 'mine' : 'other'}`;
-
-  let mediaHtml = '';
-  if (msg.file_url) {
-    const url = BACKEND_URL + msg.file_url;
-    if (msg.file_type === 'audio') {
-      mediaHtml = `<audio src="${url}" controls style="width:230px; height:36px; margin-top:4px;"></audio>`;
-    } else if (msg.file_type === 'image') {
-      mediaHtml = `<img src="${url}" style="max-width:100%; max-height:240px; border-radius:10px; margin-top:4px;" onclick="window.open('${url}')">`;
-    } else {
-      mediaHtml = `<a href="${url}" target="_blank" style="color:var(--neon-cyan); font-size:12px; margin-top:4px; display:inline-block;">📁 Скачать файл</a>`;
-    }
-  }
-
-  el.innerHTML = `
-    <div class="msg-author">${msg.sender}</div>
-    <div>${msg.text || ''}</div>
-    ${mediaHtml}
-    <div class="msg-time">${msg.time || ''}</div>
-  `;
-  box.appendChild(el);
-  box.scrollTop = box.scrollHeight;
-}
-
-// Отправка текста
-const msgInput = document.getElementById('msg-input');
-const sendBtn = document.getElementById('send-btn');
-msgInput.oninput = () => { sendBtn.style.display = msgInput.value.trim() ? 'block' : 'none'; };
-
-function sendMsg() {
-  const text = msgInput.value.trim();
-  if (!text || !activeWs) return;
-  activeWs.send(JSON.stringify({
-    action: 'send', sender: currentUser, text: text,
-    time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-  }));
-  msgInput.value = '';
-  sendBtn.style.display = 'none';
-}
-sendBtn.onclick = sendMsg;
-msgInput.onkeydown = e => { if (e.key === 'Enter') sendMsg(); };
-
-// Отправка файлов через скрепку 📎
-const fileInput = document.getElementById('file-input');
-document.getElementById('attach-btn').onclick = () => fileInput.click();
-fileInput.onchange = async () => {
-  const file = fileInput.files[0];
-  if (!file) return;
-  if (file.size > 10 * 1024 * 1024) return showToast('Лимит файла — 10 МБ!');
-
-  let fType = 'file';
-  if (file.type.startsWith('image/')) fType = 'image';
-  else if (file.type.startsWith('audio/')) fType = 'audio';
-
-  const res = await fetch(`${BACKEND_URL}/upload?filename=${encodeURIComponent(file.name)}`, {
-    method: 'POST',
-    body: file
-  });
-  const d = await res.json();
-  if (d.status === 'ok' && activeWs) {
-    activeWs.send(JSON.stringify({
-      action: 'send',
-      sender: currentUser,
-      text: '',
-      file_url: d.url,
-      file_type: fType,
-      time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-    }));
-  }
-  fileInput.value = '';
-};
-
-document.getElementById('back-btn').onclick = () => {
-  document.getElementById('chat-main').style.display = 'none';
-  document.getElementById('chat-aside').style.display = 'flex';
-};
-
-// ═══════════════════════════════════════════════════════════
-//  ГОЛОСОВОЙ ВВОД TELEGRAM (СМАХИВАНИЕ ВЛЕВО/ВВЕРХ + 5 МИНУТ)
-// ═══════════════════════════════════════════════════════════
-function setupTelegramVoiceRecorder() {
-  const voiceBtn = document.getElementById('voice-btn');
-
-  voiceBtn.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    voiceStartX = e.clientX;
-    voiceStartY = e.clientY;
-    isVoiceCancelled = false;
-    isVoiceLocked = false;
-    isVoicePaused = false;
-    startVoiceRecording();
-  });
-
-  window.addEventListener('pointermove', (e) => {
-    if (!isVoiceRecording || isVoiceLocked || isVoiceCancelled) return;
-    const diffX = voiceStartX - e.clientX;
-    const diffY = voiceStartY - e.clientY;
-
-    if (diffX > 60) {
-      cancelVoiceRecording(true);
-      return;
-    }
-    if (diffY > 50) {
-      lockVoiceRecording();
-    }
-  });
-
-  window.addEventListener('pointerup', () => {
-    if (!isVoiceRecording || isVoiceLocked || isVoiceCancelled) return;
-    stopAndSendVoiceRecording();
-  });
-
-  document.getElementById('pause-voice-btn').onclick = () => {
-    if (!mediaRecorder) return;
-    if (!isVoicePaused) {
-      mediaRecorder.pause();
-      isVoicePaused = true;
-      document.getElementById('pause-voice-btn').innerText = '▶️';
-    } else {
-      mediaRecorder.resume();
-      isVoicePaused = false;
-      document.getElementById('pause-voice-btn').innerText = '⏸';
-    }
-  };
-
-  document.getElementById('cancel-voice-btn').onclick = () => cancelVoiceRecording(false);
-  document.getElementById('send-locked-voice-btn').onclick = () => stopAndSendVoiceRecording();
-}
-
-async function startVoiceRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
-    voiceSec = 0;
-    isVoiceRecording = true;
-
-    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-    mediaRecorder.start();
-
-    document.getElementById('voice-btn').classList.add('recording');
-    document.getElementById('voice-recording-overlay').style.display = 'flex';
-    document.getElementById('voice-rec-timer').innerText = '00:00 / 05:00';
-
-    clearInterval(voiceTimerInt);
-    voiceTimerInt = setInterval(() => {
-      if (!isVoicePaused) {
-        voiceSec++;
-        const m = String(Math.floor(voiceSec / 60)).padStart(2, '0');
-        const s = String(voiceSec % 60).padStart(2, '0');
-        document.getElementById('voice-rec-timer').innerText = `${m}:${s} / 05:00`;
-        document.getElementById('locked-voice-timer').innerText = `${m}:${s} / 05:00`;
-
-        // Лимит 5 минут
-        if (voiceSec >= MAX_REC_SECONDS) {
-          stopAndSendVoiceRecording();
-        }
-      }
-    }, 1000);
-  } catch (e) {
-    showToast('Доступ к микрофону заблокирован!', 'warning');
-    resetVoiceUI();
-  }
-}
-
-function lockVoiceRecording() {
-  isVoiceLocked = true;
-  document.getElementById('voice-recording-overlay').style.display = 'none';
-  document.getElementById('locked-voice-bar').style.display = 'flex';
-  document.getElementById('voice-btn').classList.remove('recording');
-}
-
-function cancelVoiceRecording(showNotify = false) {
-  isVoiceCancelled = true;
-  if (voiceTimerInt) clearInterval(voiceTimerInt);
-  if (mediaRecorder) {
-    mediaRecorder.onstop = null;
-    mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach(t => t.stop());
-  }
-  resetVoiceUI();
-  if (showNotify) showToast('Запись отменена');
-}
-
-async function stopAndSendVoiceRecording() {
-  if (voiceTimerInt) clearInterval(voiceTimerInt);
-  if (!mediaRecorder) return;
-
-  mediaRecorder.onstop = async () => {
-    const blob = new Blob(audioChunks, { type: 'audio/webm' });
-    if (blob.size < 500) { resetVoiceUI(); return; }
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/upload?filename=voice_${Date.now()}.webm`, {
-        method: 'POST',
-        body: blob
-      });
-      const d = await res.json();
-      if (d.status === 'ok' && activeWs) {
-        activeWs.send(JSON.stringify({
-          action: 'send',
-          sender: currentUser,
-          text: '',
-          file_url: d.url,
-          file_type: 'audio',
-          time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-        }));
-      }
-    } catch(err) {
-      showToast('Ошибка отправки аудио!');
-    }
-    resetVoiceUI();
-  };
-
-  mediaRecorder.stop();
-  mediaRecorder.stream.getTracks().forEach(t => t.stop());
-}
-
-function resetVoiceUI() {
-  isVoiceRecording = false;
-  isVoiceLocked = false;
-  isVoiceCancelled = false;
-  isVoicePaused = false;
-  document.getElementById('voice-btn').classList.remove('recording');
-  document.getElementById('voice-recording-overlay').style.display = 'none';
-  document.getElementById('locked-voice-bar').style.display = 'none';
-}
-
-// ═══════════════════════════════════════════════════════════
-//  WebRTC ЗВОНКИ (ГОЛОС ПЕРЕДАЁТСЯ + ДВОЙНАЯ СЕТКА 50/50)
-// ═══════════════════════════════════════════════════════════
-function createPeerConnectionInstance() {
-  peerConnection = new RTCPeerConnection(rtcConfig);
-
-  // Создаём трансиверы для гарантированного видео и аудио
-  peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
-  peerConnection.addTransceiver('video', { direction: 'sendrecv' });
-
-  peerConnection.ontrack = (event) => {
-    // Воспроизведение звука с гарантированным снятием блокировки Autoplay
-    if (event.track.kind === 'audio') {
-      const audioEl = document.getElementById('peer-audio');
-      audioEl.srcObject = event.streams[0] || new MediaStream([event.track]);
-      audioEl.volume = 1.0;
-      audioEl.play().catch(e => console.log('Audio autoplay prevented:', e));
-    } else if (event.track.kind === 'video') {
-      const remoteVid = document.getElementById('remote-video');
-      remoteVid.srcObject = event.streams[0] || new MediaStream([event.track]);
-      remoteVid.style.display = 'block';
-      document.getElementById('call-avatar-wrap').style.display = 'none';
-
-      event.track.onmute = () => {
-        remoteVid.style.display = 'none';
-        document.getElementById('call-avatar-wrap').style.display = 'flex';
-      };
-      event.track.onunmute = () => {
-        remoteVid.style.display = 'block';
-        document.getElementById('call-avatar-wrap').style.display = 'none';
-      };
-    }
-  };
-
-  peerConnection.onicecandidate = (e) => {
-    if (e.candidate && activeWs && activeWs.readyState === WebSocket.OPEN) {
-      activeWs.send(JSON.stringify({ action: 'call_ice', target: currentCallPartner, candidate: e.candidate }));
-    }
-  };
-}
-
-async function startCall(target) {
-  if (target === currentUser) return showToast('Нельзя звонить самому себе!');
-  currentCallPartner = target;
-
-  document.getElementById('call-partner-header').innerText = `@${target}`;
-  document.getElementById('call-status-badge').innerText = 'Вызов (ожидание ответа)...';
-  document.getElementById('call-incoming-bar').style.display = 'none';
-  document.getElementById('call-active-bar').style.display = 'flex';
-  document.getElementById('call-overlay').style.display = 'flex';
-
-  fetch(`${BACKEND_URL}/user/info/${target}`).then(r=>r.json()).then(d => {
-    if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
-  });
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    createPeerConnectionInstance();
-
-    const audioSender = peerConnection.getSenders().find(s => s.kind === 'audio');
-    if (audioSender) audioSender.replaceTrack(localStream.getAudioTracks()[0]);
-
-    const offer = await peerConnection.createOffer();
-    offer.sdp = offer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
-    await peerConnection.setLocalDescription(offer);
-
-    activeWs.send(JSON.stringify({ action: 'call_offer', caller: currentUser, target: target, sdp: offer }));
-
-    clearTimeout(callTimeoutTimer);
-    callTimeoutTimer = setTimeout(() => {
-      if (currentCallPartner) {
-        activeWs.send(JSON.stringify({ action: 'call_timeout', target: currentCallPartner }));
-        showToast('Абонент не отвечает', 'warning');
-        endCall();
-      }
-    }, 30000);
-
-  } catch(e) {
-    endCall();
-    showToast('Ошибка микрофона!');
-  }
-}
-
-function handleIncomingCall(data) {
-  currentCallPartner = data.caller;
-  pendingIncomingOffer = data.sdp;
-  iceCandidatesQueue = [];
-
-  document.getElementById('call-partner-header').innerText = `@${data.caller}`;
-  document.getElementById('call-status-badge').innerText = 'Входящий вызов...';
-  document.getElementById('call-incoming-bar').style.display = 'flex';
-  document.getElementById('call-active-bar').style.display = 'none';
-  document.getElementById('call-overlay').style.display = 'flex';
-
-  fetch(`${BACKEND_URL}/user/info/${data.caller}`).then(r=>r.json()).then(d => {
-    if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
-  });
-
-  clearTimeout(callTimeoutTimer);
-  callTimeoutTimer = setTimeout(() => {
-    if (currentCallPartner) {
-      activeWs.send(JSON.stringify({ action: 'call_reject', target: currentCallPartner }));
-      showToast(`Пропущенный вызов от @${data.caller}`, 'warning');
-      endCall();
-    }
-  }, 30000);
-}
-
-document.getElementById('btn-accept-call').onclick = async () => {
-  clearTimeout(callTimeoutTimer);
-  document.getElementById('call-incoming-bar').style.display = 'none';
-  document.getElementById('call-active-bar').style.display = 'flex';
-  document.getElementById('call-status-badge').innerText = 'Соединение...';
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    createPeerConnectionInstance();
-
-    const audioSender = peerConnection.getSenders().find(s => s.kind === 'audio');
-    if (audioSender) audioSender.replaceTrack(localStream.getAudioTracks()[0]);
-
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingIncomingOffer));
-
-    while (iceCandidatesQueue.length > 0) {
-      const cand = iceCandidatesQueue.shift();
-      await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-    }
-
-    const answer = await peerConnection.createAnswer();
-    answer.sdp = answer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
-    await peerConnection.setLocalDescription(answer);
-
-    activeWs.send(JSON.stringify({ action: 'call_answer', target: currentCallPartner, sdp: answer }));
-    document.getElementById('call-status-badge').innerText = 'Разговор идёт';
-
-  } catch (err) {
-    endCall();
-    showToast('Ошибка микрофона!');
-  }
-};
-
-document.getElementById('btn-decline-call').onclick = () => {
-  clearTimeout(callTimeoutTimer);
-  if (activeWs && currentCallPartner) {
-    activeWs.send(JSON.stringify({ action: 'call_reject', target: currentCallPartner }));
-  }
-  endCall();
-};
-
-function handleCallAnswer(data) {
-  clearTimeout(callTimeoutTimer);
-  if (peerConnection) {
-    peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
-      document.getElementById('call-status-badge').innerText = 'Разговор идёт';
-      while (iceCandidatesQueue.length > 0) {
-        const cand = iceCandidatesQueue.shift();
-        peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-      }
-    });
-  }
-}
-
-document.getElementById('btn-toggle-cam').onclick = async () => {
-  if (!peerConnection) return;
-  isCamOn = !isCamOn;
-  const btn = document.getElementById('btn-toggle-cam');
-
-  if (isCamOn) {
-    try {
-      const vStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const vTrack = vStream.getVideoTracks()[0];
-      document.getElementById('local-video').srcObject = vStream;
-      document.getElementById('local-video').style.display = 'block';
-      document.getElementById('local-avatar-wrap').style.display = 'none';
-
-      const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
-      if (videoSender) await videoSender.replaceTrack(vTrack);
-      btn.classList.add('active');
-    } catch(e) {
-      isCamOn = false;
-      btn.classList.remove('active');
-      showToast('Камера не обнаружена на этом устройстве', 'warning');
-    }
-  } else {
-    document.getElementById('local-video').style.display = 'none';
-    document.getElementById('local-avatar-wrap').style.display = 'flex';
-    const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
-    if (videoSender) {
-      if (videoSender.track) videoSender.track.stop();
-      await videoSender.replaceTrack(null);
-    }
-    btn.classList.remove('active');
-  }
-};
-
-document.getElementById('btn-toggle-screen').onclick = async () => {
-  if (!peerConnection) return;
-  isScreenOn = !isScreenOn;
-  const btn = document.getElementById('btn-toggle-screen');
-
-  if (isScreenOn) {
-    try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      const sTrack = screenStream.getVideoTracks()[0];
-      
-      document.getElementById('local-video').srcObject = screenStream;
-      document.getElementById('local-video').style.display = 'block';
-      document.getElementById('local-avatar-wrap').style.display = 'none';
-
-      const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
-      if (videoSender) await videoSender.replaceTrack(sTrack);
-      btn.classList.add('active');
-
-      sTrack.onended = async () => {
-        isScreenOn = false;
-        btn.classList.remove('active');
-        document.getElementById('local-video').style.display = 'none';
-        document.getElementById('local-avatar-wrap').style.display = 'flex';
-        if (videoSender) await videoSender.replaceTrack(null);
-      };
-    } catch(e) {
-      isScreenOn = false;
-      btn.classList.remove('active');
-    }
-  } else {
-    if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-    document.getElementById('local-video').style.display = 'none';
-    document.getElementById('local-avatar-wrap').style.display = 'flex';
-    const videoSender = peerConnection.getSenders().find(s => s.kind === 'video');
-    if (videoSender) await videoSender.replaceTrack(null);
-    btn.classList.remove('active');
-  }
-};
-
-document.getElementById('btn-toggle-mic').onclick = () => {
-  if (!localStream) return;
-  isMicOn = !isMicOn;
-  const aTrack = localStream.getAudioTracks()[0];
-  if (aTrack) aTrack.enabled = isMicOn;
-  document.getElementById('btn-toggle-mic').classList.toggle('active', isMicOn);
-  document.getElementById('btn-toggle-mic').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выключен';
-};
-
-document.getElementById('btn-end-call').onclick = () => {
-  clearTimeout(callTimeoutTimer);
-  if (activeWs && currentCallPartner) activeWs.send(JSON.stringify({ action: 'call_end', target: currentCallPartner }));
-  endCall();
-};
-
-function endCall() {
-  clearTimeout(callTimeoutTimer);
-  if (localStream) localStream.getTracks().forEach(t => t.stop());
-  if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
-  }
-  currentCallPartner = null;
-  pendingIncomingOffer = null;
-  iceCandidatesQueue = [];
-  isCamOn = false;
-  isScreenOn = false;
-  isMicOn = true;
-
-  document.getElementById('btn-toggle-cam').classList.remove('active');
-  document.getElementById('btn-toggle-screen').classList.remove('active');
-  document.getElementById('btn-toggle-mic').classList.add('active');
-  document.getElementById('call-overlay').style.display = 'none';
-  document.getElementById('remote-video').srcObject = null;
-  document.getElementById('remote-video').style.display = 'none';
-  document.getElementById('local-video').srcObject = null;
-  document.getElementById('local-video').style.display = 'none';
-  document.getElementById('call-avatar-wrap').style.display = 'flex';
-  document.getElementById('local-avatar-wrap').style.display = 'flex';
-}
-
-function toggleFullScreen(elementId) {
-  const el = document.getElementById(elementId);
-  if (!document.fullscreenElement) {
-    el.requestFullscreen().catch(() => {});
-  } else {
-    document.exitFullscreen().catch(() => {});
-  }
-}
-
-// ═══════════════════════════════════════════════════════════
-//  АДМИНИСТРАТИВНАЯ ПАНЕЛЬ И САППОРТ (ПОДСВЕТКА ВКЛАДОК)
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-settings-btn').onclick = () => openModal('settings-modal');
-document.getElementById('admin-panel-btn').onclick = () => {
-  closeModal('settings-modal');
-  showAdminTab('users');
-  openModal('admin-modal');
-};
-
-function showAdminTab(tab) {
-  document.querySelectorAll('.admin-tab-btn').forEach(b => {
-    b.classList.toggle('active', b.id === `tab-${tab}-btn`);
-  });
-  ['users','groups','bans','support','requests'].forEach(t => {
-    document.getElementById(`admin-tab-${t}`).style.display = t === tab ? 'flex' : 'none';
-  });
-  if (tab === 'users') loadAdminUsers();
-  else if (tab === 'groups') loadAdminGroups();
-  else if (tab === 'bans') loadAdminBans();
-  else if (tab === 'support') loadAdminSupport();
-  else if (tab === 'requests') loadAdminRequests();
-}
-
-function setAdminFilter(ftype) {
-  currentAdminFilter = ftype;
-  document.querySelectorAll('.filter-tab-btn').forEach(b => {
-    b.classList.toggle('active', b.innerText.toLowerCase().includes(ftype) || (ftype==='all' && b.innerText==='Все'));
-  });
-  loadAdminUsers(document.getElementById('admin-search-input').value.trim());
-}
-
-async function loadAdminUsers(query = '') {
-  const c = document.getElementById('admin-users-list');
-  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
-  const res = await fetch(`${BACKEND_URL}/admin/users?admin=${currentUser}&query=${encodeURIComponent(query)}&filter_type=${currentAdminFilter}`);
-  const data = await res.json();
-  c.innerHTML = '';
-
-  data.users.forEach(u => {
-    const isSuperTarget = u.nickname.toLowerCase() === 'jjlop55' || u.nickname.toLowerCase() === 'gglo55';
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>@${u.nickname} ${u.is_superadmin ? '👑' : (u.is_admin ? '⚡' : '')}</b>
-        <span class="user-status ${u.is_online ? 'online' : 'offline'}">${u.is_online ? 'Онлайн' : 'Офлайн'}</span>
-      </div>
-      <div style="font-size:11px; color:var(--text-dim);">Визит: ${u.last_login ? u.last_login.slice(0,16) : '—'}</div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
-        <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>
-        <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="viewUserSessions('${u.nickname}')">📱 Сессии</button>
-        ${!isSuperTarget ? `
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="adminKickUser('${u.nickname}')">Кик</button>
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.2); color:var(--danger);" onclick="adminDeleteUser('${u.nickname}')">Удалить</button>
-        ` : ''}
-      </div>`;
-    c.appendChild(row);
-  });
-}
-
-document.getElementById('admin-search-input').oninput = e => loadAdminUsers(e.target.value.trim());
-
-async function viewUserSessions(nick) {
-  document.getElementById('admin-sessions-target-nick').innerText = `Сессии юзера @${nick}`;
-  const c = document.getElementById('admin-user-sessions-list');
-  c.innerHTML = 'Загрузка...';
-  openModal('admin-user-sessions-modal');
-
-  const res = await fetch(`${BACKEND_URL}/admin/user-sessions?admin=${currentUser}&target=${nick}`);
-  const sessions = await res.json();
-  c.innerHTML = '';
-  if (!sessions.length) { c.innerHTML = '<div style="color:var(--text-dim);">Нет активных сессий</div>'; return; }
-
-  sessions.forEach(s => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-          <b>${parseDevice(s.user_agent)}</b>
-          <div style="font-size:11px; color:var(--text-dim);">IP: ${s.ip_address} · Вход: ${s.logged_in_at}</div>
-        </div>
-        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="adminKillSpecificSession(${s.id}, '${nick}')">Сбросить</button>
-      </div>`;
-    c.appendChild(row);
-  });
-}
-
-async function adminKillSpecificSession(sid, nick) {
-  const res = await fetch(`${BACKEND_URL}/admin/kill-session`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken, target_session_id: sid })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  viewUserSessions(nick);
-}
-
-function openGrantModal(nick, perms) {
-  targetGrantUser = nick;
-  document.getElementById('grant-user-title').innerText = `Права для @${nick}`;
-  document.getElementById('perm-del-msg').checked = !!perms.can_delete_messages;
-  document.getElementById('perm-del-chat').checked = !!perms.can_delete_chats;
-  document.getElementById('perm-kick').checked = !!perms.can_kick_users;
-  document.getElementById('perm-grant-adm').checked = !!perms.can_grant_admins;
-  document.getElementById('perm-del-direct').checked = !!perms.can_delete_users_direct;
-  document.getElementById('perm-del-req').checked = !!perms.can_request_delete_users;
-  document.getElementById('perm-ban').checked = !!perms.can_ban_users;
-  document.getElementById('perm-mute').checked = !!perms.can_mute_users;
-  document.getElementById('perm-supp').checked = !!perms.can_handle_support;
-  openModal('grant-modal');
-}
-
-document.getElementById('save-perms-btn').onclick = async () => {
-  const perms = {
-    can_delete_messages: document.getElementById('perm-del-msg').checked,
-    can_delete_chats: document.getElementById('perm-del-chat').checked,
-    can_kick_users: document.getElementById('perm-kick').checked,
-    can_grant_admins: document.getElementById('perm-grant-adm').checked,
-    can_delete_users_direct: document.getElementById('perm-del-direct').checked,
-    can_request_delete_users: document.getElementById('perm-del-req').checked,
-    can_ban_users: document.getElementById('perm-ban').checked,
-    can_mute_users: document.getElementById('perm-mute').checked,
-    can_handle_support: document.getElementById('perm-supp').checked
-  };
-  const res = await fetch(`${BACKEND_URL}/admin/set-perms`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, target_nick: targetGrantUser, perms })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  closeModal('grant-modal');
-  loadAdminUsers();
-};
-
-function openBanModal(nick) {
-  targetBanUser = nick;
-  document.getElementById('ban-modal-target').innerText = `@${nick}`;
-  openModal('ban-modal');
-}
-document.getElementById('save-ban-btn').onclick = async () => {
-  const reason = document.getElementById('ban-reason-input').value.trim() || 'Нарушение правил';
-  const type = document.querySelector('input[name="ban-type"]:checked').value;
-  const hours = parseInt(document.getElementById('ban-duration-input').value) || 24;
-  closeModal('ban-modal');
-  const res = await fetch(`${BACKEND_URL}/admin/ban`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, target_nick: targetBanUser, reason, ban_type: type, duration_hours: hours })
-  });
-  const d = await res.json();
-  showToast(d.msg);
-  loadAdminUsers();
-};
-
-function openMutePrompt(nick) {
-  const mins = prompt('На сколько минут заглушить? (по умолч. 10):', '10');
-  if (!mins) return;
-  fetch(`${BACKEND_URL}/admin/mute`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: 'Мьют от админа', duration_minutes: parseInt(mins)||10 })
-  }).then(r=>r.json()).then(d=>showToast(d.msg));
-}
-
-function adminKickUser(nick) {
-  confirmAction('Кик', `Принудительно выкинуть @${nick}?`, () => {
-    fetch(`${BACKEND_URL}/admin/kick`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
-    }).then(r=>r.json()).then(d=>showToast(d.msg));
-  });
-}
-
-function adminDeleteUser(nick) {
-  confirmAction('Удаление', `Удалить аккаунт @${nick}?`, () => {
-    let reason = '';
-    if (!isSuperAdmin && !myAdminPerms.can_delete_users_direct) {
-      reason = prompt('Укажите причину для Главного Администратора:');
-      if (!reason) return;
-    }
-    fetch(`${BACKEND_URL}/admin/delete-user`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason })
-    }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminUsers(); });
-  });
-}
-
-async function loadAdminGroups() {
-  const c = document.getElementById('admin-tab-groups');
-  c.innerHTML = 'Загрузка...';
-  const res = await fetch(`${BACKEND_URL}/admin/groups?admin=${currentUser}`);
-  const groups = await res.json();
-  c.innerHTML = '';
-  groups.forEach(g => {
-    const isGen = g.id === 'general';
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>«${g.name}»</b>
-        ${!isGen ? `<button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="adminDelGroup('${g.id}')">Удалить</button>` : '<span style="font-size:11px; color:var(--neon-cyan);">Главный</span>'}
-      </div>
-      <div style="font-size:11px; color:var(--text-dim);">Участники: ${g.members.map(m=>'@'+m).join(', ')}</div>`;
-    c.appendChild(row);
-  });
-}
-
-function adminDelGroup(id) {
-  confirmAction('Удаление чата', 'Удалить этот чат у всех участников?', () => {
-    fetch(`${BACKEND_URL}/chats/${id}?user=${currentUser}`, { method: 'DELETE' })
-      .then(r=>r.json()).then(d=>{ showToast(d.msg||'Удалено'); loadAdminGroups(); });
-  });
-}
-
-async function loadAdminBans() {
-  const c = document.getElementById('admin-tab-bans');
-  c.innerHTML = 'Загрузка...';
-  const res = await fetch(`${BACKEND_URL}/admin/bans?admin=${currentUser}`);
-  const bans = await res.json();
-  c.innerHTML = '';
-  if (!bans.length) { c.innerHTML = '<div style="color:var(--text-dim);">Банов нет</div>'; return; }
-  bans.forEach(b => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>🚫 @${b.target_nick}</b>
-        <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 8px; font-size:11px;" onclick="unbanUser('${b.target_nick}')">Разбанить</button>
-      </div>
-      <div style="font-size:11px; color:var(--text-dim);">Причина: ${b.reason}</div>`;
-    c.appendChild(row);
-  });
-}
-
-function unbanUser(nick) {
-  fetch(`${BACKEND_URL}/admin/unban`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
-  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminBans(); });
-}
-
-// Загрузка тикетов для саппорта с кнопкой удаления
-async function loadAdminSupport() {
-  const c = document.getElementById('admin-tab-support');
-  c.innerHTML = 'Загрузка...';
-  const res = await fetch(`${BACKEND_URL}/support/tickets/all?admin=${currentUser}`);
-  if (res.status === 403) {
-    c.innerHTML = `
-      <div style="text-align:center;">
-        <p style="font-size:12px; color:var(--text-dim);">Нет прав на саппорт</p>
-        <button class="pill-btn" style="background:var(--neon-cyan); color:#000; margin-top:8px;" onclick="requestSupportPerm()">Запросить право у Главного Админа</button>
-      </div>`;
-    return;
-  }
-  const tickets = await res.json();
-  c.innerHTML = '';
-  if (!tickets.length) { c.innerHTML = '<div style="color:var(--text-dim);">Обращений нет</div>'; return; }
-  tickets.forEach(t => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between;">
-        <b>#${t.id} от @${t.from_user}: ${t.subject}</b>
-        <button class="pill-btn" style="background:rgba(255,51,102,0.2); color:var(--danger); padding:2px 8px; font-size:10px;" onclick="adminDeleteTicket(${t.id})">🗑️ Удалить тикет</button>
-      </div>
-      <div style="font-size:12px;">${t.message}</div>
-      <div style="display:flex; gap:6px; margin-top:6px;">
-        <input type="text" id="ans-${t.id}" placeholder="Ответ..." class="modal-input" style="padding:4px 8px; font-size:12px;">
-        <button class="pill-btn" style="background:var(--neon-cyan); color:#000; padding:4px 10px; font-size:11px;" onclick="sendSupportReply(${t.id})">Ответить</button>
-        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 8px; font-size:11px;" onclick="closeSupportTicket(${t.id})">Закрыть</button>
-      </div>`;
-    c.appendChild(row);
-  });
-}
-
-function adminDeleteTicket(tid) {
-  confirmAction('Удаление тикета', `Удалить тикет #${tid} со всей перепиской?`, () => {
-    fetch(`${BACKEND_URL}/support/delete`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ admin_nick: currentUser, ticket_id: tid })
-    }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminSupport(); });
-  });
-}
-
-function requestSupportPerm() {
-  fetch(`${BACKEND_URL}/support/request-perm`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ nickname: currentUser })
-  }).then(r=>r.json()).then(d=>showToast(d.msg));
-}
-
-function sendSupportReply(tid) {
-  const input = document.getElementById(`ans-${tid}`);
-  if (!input.value.trim()) return;
-  fetch(`${BACKEND_URL}/support/reply`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, ticket_id: tid, message: input.value.trim() })
-  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminSupport(); });
-}
-
-function closeSupportTicket(tid) {
-  fetch(`${BACKEND_URL}/support/close`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, ticket_id: tid })
-  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminSupport(); });
-}
-
-async function loadAdminRequests() {
-  const c = document.getElementById('admin-tab-requests');
-  c.innerHTML = '';
-
-  if (isSuperAdmin) {
-    const sres = await fetch(`${BACKEND_URL}/support/perm-requests?admin=${currentUser}`);
-    const sreqs = await sres.json();
-    if (sreqs.length) {
-      c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--neon-cyan);">🛡️ Запросы прав на саппорт:</div>';
-      sreqs.forEach(r => {
-        const row = document.createElement('div');
-        row.className = 'user-row';
-        row.innerHTML = `
-          <div>@${r.requested_by} просит доступ к саппорту</div>
-          <div style="display:flex; gap:6px; margin-top:4px;">
-            <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideSuppReq(${r.id},'approve')">Одобрить</button>
-            <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px;" onclick="decideSuppReq(${r.id},'reject')">Отклонить</button>
-          </div>`;
-        c.appendChild(row);
-      });
-    }
-  }
-
-  const res = await fetch(`${BACKEND_URL}/admin/delete-requests?admin=${currentUser}`);
-  const reqs = await res.json();
-  if (reqs.length) {
-    c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--danger); margin-top:8px;">🗑️ Заявки на удаление аккаунтов (7 дней):</div>';
-    reqs.forEach(r => {
-      const row = document.createElement('div');
-      row.className = 'user-row';
-      row.innerHTML = `
-        <div>Удалить @${r.target_nick} (подал @${r.requested_by})</div>
-        <div style="font-size:11px; color:var(--text-dim);">Причина: ${r.reason} · Истекает: ${r.expires_at}</div>
-        <div style="display:flex; gap:6px; margin-top:4px;">
-          <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideDelReq(${r.id},'approve')">Одобрить</button>
-          <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px;" onclick="decideDelReq(${r.id},'reject')">Отклонить</button>
-        </div>`;
-      c.appendChild(row);
-    });
-  }
-  if (!c.innerHTML) c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">Заявок нет</div>';
-}
-
-function decideSuppReq(id, action) {
-  fetch(`${BACKEND_URL}/support/perm-decision`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, request_id: id, action })
-  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminRequests(); });
-}
-
-function decideDelReq(id, action) {
-  fetch(`${BACKEND_URL}/admin/delete-requests/decision`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, request_id: id, action })
-  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminRequests(); });
-}
-
-// ═══════════════════════════════════════════════════════════
-//  ПОДДЕРЖКА (С ПОДСВЕТКОЙ ВКЛАДОК И УВЕДОМЛЕНИЕМ О 4 ЧАСАХ)
-// ═══════════════════════════════════════════════════════════
-document.getElementById('open-support-btn').onclick = () => {
-  openModal('support-modal');
-  showSupportTab('new');
-};
-
-function showSupportTab(tab) {
-  document.querySelectorAll('#support-tabs-wrap .discord-tab-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === tab);
-  });
-  if (tab === 'new') {
-    document.getElementById('supp-tab-new').style.display = 'flex';
-    document.getElementById('supp-tab-my').style.display = 'none';
-  } else {
-    document.getElementById('supp-tab-new').style.display = 'none';
-    document.getElementById('supp-tab-my').style.display = 'flex';
-    loadMyTickets();
-  }
-}
-
-document.getElementById('supp-send-btn').onclick = () => {
-  const s = document.getElementById('supp-subject-input').value.trim();
-  const m = document.getElementById('supp-msg-input').value.trim();
-  if (!s || !m) return showToast('Заполните поля!');
-  fetch(`${BACKEND_URL}/support/ticket`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ from_user: currentUser, subject: s, message: m })
-  }).then(r=>r.json()).then(d => {
-    showToast(d.msg);
-    document.getElementById('supp-subject-input').value = '';
-    document.getElementById('supp-msg-input').value = '';
-    showSupportTab('my');
-  });
-};
-
-async function loadMyTickets() {
-  const c = document.getElementById('supp-tab-my');
-  c.innerHTML = 'Загрузка...';
-  const res = await fetch(`${BACKEND_URL}/support/tickets/my/${currentUser}`);
-  const tickets = await res.json();
-  c.innerHTML = '';
-  if (!tickets.length) { c.innerHTML = '<div style="color:var(--text-dim);">У вас нет тикетов</div>'; return; }
-  tickets.forEach(t => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    const rep = t.replies.map(r => `<div style="font-size:11px; background:rgba(0,240,255,0.08); padding:4px 8px; border-radius:6px; margin-top:2px;"><b>@${r.from_user}:</b> ${r.message}</div>`).join('');
-    
-    let timerNotice = '';
-    if (t.status === 'answered') {
-      timerNotice = '<div style="font-size:10px; color:var(--warn); margin-top:4px;">⏱️ Ответ будет автоматически удалён через 4 часа после вашего просмотра.</div>';
-    }
-
-    row.innerHTML = `
-      <div style="display:flex; justify-content:space-between;">
-        <b>${t.subject}</b>
-        <span style="font-size:11px; color:var(--neon-cyan);">${t.status === 'open' ? '🟢 Открыто' : (t.status === 'answered' ? '💬 Есть ответ' : '⚪ Закрыто')}</span>
-      </div>
-      <div style="font-size:12px;">${t.message}</div>
-      ${rep}
-      ${timerNotice}`;
-    c.appendChild(row);
-  });
-}
-
-document.getElementById('change-pwd-btn').onclick = () => {
-  const o = document.getElementById('old-pwd').value;
-  const n = document.getElementById('new-pwd').value;
-  if (!o || !n) return showToast('Заполните пароли!');
-  confirmAction('Смена пароля', 'Сменить пароль прямо сейчас?', () => {
-    fetch(`${BACKEND_URL}/change-password`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname: currentUser, old_password: o, new_password: n })
-    }).then(r=>r.json()).then(d=>{
-      showToast(d.msg);
-      if (d.status === 'ok') {
-        document.getElementById('old-pwd').value = '';
-        document.getElementById('new-pwd').value = '';
-      }
-    });
-  });
-};
-
-document.getElementById('delete-chat-btn').onclick = () => {
-  confirmAction('Удаление', 'Удалить этот чат?', () => {
-    fetch(`${BACKEND_URL}/chats/${activeChatId}?user=${currentUser}`, { method: 'DELETE' })
-      .then(r=>r.json()).then(d=>{
-        showToast(d.msg||'Удалено');
-        loadChats();
-        switchChat('general', '🌐 Общий чат');
-      });
-  });
-};
-
-// Создание нового чата через модалку на сайте
-document.getElementById('new-chat-btn').onclick = () => {
-  document.getElementById('new-chat-name-input').value = '';
-  openModal('new-chat-modal');
-};
-
-document.getElementById('create-chat-submit-btn').onclick = async () => {
-  const name = document.getElementById('new-chat-name-input').value.trim();
-  if (!name) return;
-  const id = 'chat_' + Date.now();
-  const res = await fetch(`${BACKEND_URL}/chats`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ id, name, created_by: currentUser })
-  });
-  if (res.ok) {
-    closeModal('new-chat-modal');
-    await loadChats();
-    switchChat(id, name, 0);
-  }
-};
-</script>
-</body>
-</html>
+    return {"status": "ok", "msg": "Обращение отправлено в поддержку!", "ticket_id": ticket_id}
+
+@app.get("/support/tickets/my/{nickname}")
+def get_my_tickets(nickname: str):
+    cursor.execute("""
+        UPDATE support_tickets 
+        SET user_viewed_at = CURRENT_TIMESTAMP 
+        WHERE LOWER(from_user)=LOWER(?) AND status='answered' AND user_viewed_at IS NULL
+    """, (nickname,))
+    conn.commit()
+
+    cursor.execute("SELECT id, subject, message, status, created_at, user_viewed_at FROM support_tickets WHERE LOWER(from_user)=LOWER(?) ORDER BY id DESC LIMIT 30", (nickname,))
+    tickets = []
+    for row in cursor.fetchall():
+        tid = row[0]
+        cursor.execute("SELECT from_user, message, created_at FROM support_replies WHERE ticket_id=? ORDER BY id ASC", (tid,))
+        replies = [{"from_user": r[0], "message": r[1], "created_at": r[2]} for r in cursor.fetchall()]
+        tickets.append({
+            "id": tid, "subject": row[1], "message": row[2], "status": row[3],
+            "created_at": row[4], "user_viewed_at": row[5], "replies": replies
+        })
+    return tickets
+
+@app.get("/support/tickets/all")
+def get_all_tickets(admin: str):
+    if not _is_support_staff(admin): raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute("SELECT id, from_user, subject, message, status, created_at FROM support_tickets ORDER BY id DESC LIMIT 50")
+    tickets = []
+    for row in cursor.fetchall():
+        tid = row[0]
+        cursor.execute("SELECT from_user, message, created_at FROM support_replies WHERE ticket_id=? ORDER BY id ASC", (tid,))
+        replies = [{"from_user": r[0], "message": r[1], "created_at": r[2]} for r in cursor.fetchall()]
+        tickets.append({"id": tid, "from_user": row[1], "subject": row[2], "message": row[3], "status": row[4], "created_at": row[5], "replies": replies})
+    return tickets
+
+@app.post("/support/reply")
+async def reply_to_ticket(data: SupportReplyData):
+    if not _is_support_staff(data.admin_nick): return {"status": "error", "msg": "Нет прав саппорта!"}
+    cursor.execute("SELECT from_user, subject FROM support_tickets WHERE id=?", (data.ticket_id,))
+    ticket = cursor.fetchone()
+    if not ticket: return {"status": "error", "msg": "Обращение не найдено!"}
+
+    cursor.execute("INSERT INTO support_replies (ticket_id, from_user, message) VALUES (?, ?, ?)",
+                   (data.ticket_id, data.admin_nick, data.message))
+    cursor.execute("UPDATE support_tickets SET status='answered', user_viewed_at=NULL WHERE id=?", (data.ticket_id,))
+    conn.commit()
+
+    await manager.send_to_user(ticket[0], {
+        "action": "support_reply", "ticket_id": data.ticket_id,
+        "from_user": data.admin_nick, "message": data.message
+    })
+    return {"status": "ok", "msg": "Ответ отправлен!"}
+
+@app.post("/support/delete")
+def delete_support_ticket(data: SupportDeleteData):
+    if not _is_support_staff(data.admin_nick): return {"status": "error", "msg": "Нет прав саппорта!"}
+    cursor.execute("DELETE FROM support_replies WHERE ticket_id=?", (data.ticket_id,))
+    cursor.execute("DELETE FROM support_tickets WHERE id=?", (data.ticket_id,))
+    conn.commit()
+    return {"status": "ok", "msg": f"Тикет #{data.ticket_id} успешно удалён!"}
+
+@app.post("/support/close")
+def close_ticket(data: SupportDeleteData):
+    cursor.execute("UPDATE support_tickets SET status='closed' WHERE id=?", (data.ticket_id,))
+    conn.commit()
+    return {"status": "ok", "msg": "Обращение закрыто."}
+
+@app.post("/support/request-perm")
+def request_support_perm(data: SupportPermRequestData):
+    today = datetime.utcnow().date().isoformat()
+    cursor.execute("SELECT 1 FROM support_perm_requests WHERE LOWER(requested_by)=LOWER(?) AND DATE(created_at)=? AND status='pending'",
+                   (data.nickname, today))
+    if cursor.fetchone(): return {"status": "error", "msg": "Заявка уже подана сегодня! Лимит — 1 раз в сутки."}
+
+    cursor.execute("INSERT INTO support_perm_requests (requested_by) VALUES (?)", (data.nickname,))
+    conn.commit()
+    return {"status": "ok", "msg": "Запрос отправлен Главному Администратору!"}
+
+@app.get("/support/perm-requests")
+def get_support_perm_requests(admin: str):
+    if not is_super(admin): raise HTTPException(status_code=403, detail="Только Главный Администратор")
+    cursor.execute("SELECT id, requested_by, status, created_at FROM support_perm_requests WHERE status='pending' ORDER BY id DESC")
+    return [{"id": r[0], "requested_by": r[1], "status": r[2], "created_at": r[3]} for r in cursor.fetchall()]
+
+@app.post("/support/perm-decision")
+async def decide_support_perm(data: SupportPermDecision):
+    if not is_super(data.admin_nick): return {"status": "error", "msg": "Только Главный Администратор!"}
+    cursor.execute("SELECT requested_by FROM support_perm_requests WHERE id=? AND status='pending'", (data.request_id,))
+    row = cursor.fetchone()
+    if not row: return {"status": "error", "msg": "Запрос не найден!"}
+
+    nick = row[0]
+    cursor.execute("UPDATE support_perm_requests SET status=?, decided_at=?, decided_by=? WHERE id=?",
+                   (data.action, now_str(), data.admin_nick, data.request_id))
+
+    if data.action == "approve":
+        cursor.execute("SELECT admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (nick,))
+        perms = json.loads(cursor.fetchone()[0] or '{}')
+        perms["can_handle_support"] = True
+        cursor.execute("UPDATE users SET is_admin=1, admin_perms=? WHERE LOWER(nickname)=LOWER(?)", (json.dumps(perms), nick))
+        conn.commit()
+        await manager.send_to_user(nick, {"action": "support_perm_granted"})
+        return {"status": "ok", "msg": f"Право на поддержку выдано @{nick}!"}
+    else:
+        conn.commit()
+        return {"status": "ok", "msg": f"Запрос @{nick} отклонён."}
+
+# ═══════════════════════════════════════════════════════════
+#  WEBSOCKET
+# ═══════════════════════════════════════════════════════════
+
+@app.websocket("/ws/{chat_id}/{nickname}")
+async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
+    await manager.connect(chat_id, websocket, nickname)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action", "send")
+
+            if action == "ping":
+                token = data.get("session_token")
+                if token:
+                    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE LOWER(nickname)=LOWER(?) AND session_token=?",
+                                   (now_str(), nickname, token))
+                    conn.commit()
+                await websocket.send_json({"action": "pong"})
+
+            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_timeout"):
+                target = data.get("target")
+                if target and manager.is_online(target):
+                    await manager.send_to_user(target, data)
+                elif target:
+                    await websocket.send_json({"action": "call_offline", "target": target})
+
+            elif action == "send":
+                cursor.execute("""
+                    INSERT INTO messages (chat_id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (chat_id, data.get("sender"), data.get("text",""), data.get("file_url"), data.get("file_type"),
+                      data.get("reply_to_id"), data.get("reply_to_text"), data.get("reply_to_sender")))
+                conn.commit()
+                data["id"] = cursor.lastrowid
+                data["action"] = "new_message"
+                await manager.broadcast_chat(chat_id, data)
+
+            elif action == "delete":
+                cursor.execute("DELETE FROM messages WHERE id=?", (data.get("message_id"),))
+                conn.commit()
+                await manager.broadcast_chat(chat_id, {"action": "deleted", "message_ids": [data.get("message_id")], "deleted_by": data.get("sender")})
+
+    except WebSocketDisconnect:
+        manager.disconnect(chat_id, websocket, nickname)
