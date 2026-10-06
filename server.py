@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS friends (
 """)
 
 cursor.execute("""
+CREATE TABLE IF NOT EXISTS invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT,
+    chat_name TEXT,
+    from_user TEXT,
+    to_user TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id TEXT,
@@ -237,13 +248,36 @@ def verify_pwd(plain: str, stored: str) -> bool:
         return True
     return stored == hash_pwd(plain)
 
+# ═══════════════════════════════════════════════════════════
+#  АВТООЧИСТКА СООБЩЕНИЙ ПО ТАЙМЕРАМ:
+#  - Общий чат: 3 часа
+#  - Командные/групповые: 4 часа
+#  - Личные (ЛС): 10 часов
+# ═══════════════════════════════════════════════════════════
 def periodic_cleanup():
     ns = now_str()
-    # Автоочистка сообщений общего чата (старше 15 минут)
-    gen_cutoff = (datetime.utcnow() - timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute("DELETE FROM messages WHERE chat_id='general' AND created_at < ?", (gen_cutoff,))
 
-    # Очистка файлов старше 4 дней
+    # 1. Общий чат (3 часа)
+    c3 = (datetime.utcnow() - timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("DELETE FROM messages WHERE chat_id='general' AND created_at < ?", (c3,))
+
+    # 2. Групповые/командные чаты (4 часа)
+    c4 = (datetime.utcnow() - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("""
+        DELETE FROM messages 
+        WHERE chat_id IN (SELECT id FROM chats WHERE is_direct=0 AND id!='general')
+          AND created_at < ?
+    """, (c4,))
+
+    # 3. Личные диалоги (10 часов)
+    c10 = (datetime.utcnow() - timedelta(hours=10)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("""
+        DELETE FROM messages 
+        WHERE chat_id IN (SELECT id FROM chats WHERE is_direct=1)
+          AND created_at < ?
+    """, (c10,))
+
+    # Файлы старше 4 дней
     cutoff_files = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff_files,))
     for msg_id, f_url in cursor.fetchall():
@@ -255,14 +289,14 @@ def periodic_cleanup():
             pass
         cursor.execute("UPDATE messages SET file_url=NULL, text='[Срок хранения файла (4 дня) истёк]' WHERE id=?", (msg_id,))
 
-    # Автоудаление тикетов, просмотренных пользователем более 4 часов назад
+    # Удаление тикетов поддержки через 4 часа после просмотра пользователем
     cutoff_tickets = (datetime.utcnow() - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("SELECT id FROM support_tickets WHERE user_viewed_at IS NOT NULL AND user_viewed_at < ?", (cutoff_tickets,))
     for (tid,) in cursor.fetchall():
         cursor.execute("DELETE FROM support_replies WHERE ticket_id=?", (tid,))
         cursor.execute("DELETE FROM support_tickets WHERE id=?", (tid,))
 
-    # Удаление просроченных заявок (7 дней)
+    # Просроченные 7-дневные заявки на удаление
     cursor.execute("SELECT id, target_nick, requested_by FROM delete_requests WHERE expires_at < ? AND status='pending'", (ns,))
     for req_id, t_nick, r_by in cursor.fetchall():
         cursor.execute("UPDATE delete_requests SET status='expired' WHERE id=?", (req_id,))
@@ -307,6 +341,22 @@ class ChatCreateData(BaseModel):
     id: str
     name: str
     created_by: str
+
+class ChatRenameData(BaseModel):
+    chat_id: str
+    new_name: str
+    user: str
+
+class InviteData(BaseModel):
+    chat_id: str
+    chat_name: str
+    from_user: str
+    to_user: str
+
+class InviteAction(BaseModel):
+    invite_id: int
+    nickname: str
+    action: str
 
 class TerminateSessionData(BaseModel):
     nickname: str
@@ -383,27 +433,31 @@ class ConnectionManager:
 
     async def connect(self, chat_id: str, ws: WebSocket, nick: str):
         await ws.accept()
-        self.user_sockets.setdefault(nick, set()).add(ws)
+        canonical = nick.lower()
+        self.user_sockets.setdefault(canonical, set()).add(ws)
         self.chat_sockets.setdefault(chat_id, set()).add(ws)
 
     def disconnect(self, chat_id: str, ws: WebSocket, nick: str):
-        if nick in self.user_sockets:
-            self.user_sockets[nick].discard(ws)
-            if not self.user_sockets[nick]:
-                del self.user_sockets[nick]
+        canonical = nick.lower()
+        if canonical in self.user_sockets:
+            self.user_sockets[canonical].discard(ws)
+            if not self.user_sockets[canonical]:
+                del self.user_sockets[canonical]
         if chat_id in self.chat_sockets:
             self.chat_sockets[chat_id].discard(ws)
             if not self.chat_sockets[chat_id]:
                 del self.chat_sockets[chat_id]
 
     def is_online(self, nick: str) -> bool:
-        return nick in self.user_sockets and bool(self.user_sockets[nick])
+        canonical = nick.lower()
+        return canonical in self.user_sockets and bool(self.user_sockets[canonical])
 
     def online_users(self) -> List[str]:
         return list(self.user_sockets.keys())
 
     async def send_to_user(self, nick: str, payload: dict):
-        for ws in list(self.user_sockets.get(nick, [])):
+        canonical = nick.lower()
+        for ws in list(self.user_sockets.get(canonical, [])):
             try:
                 await ws.send_json(payload)
             except Exception:
@@ -417,7 +471,8 @@ class ConnectionManager:
                 pass
 
     async def kick_user(self, nick: str, reason: str = "Вы были принудительно отключены."):
-        for ws in list(self.user_sockets.get(nick, [])):
+        canonical = nick.lower()
+        for ws in list(self.user_sockets.get(canonical, [])):
             try:
                 await ws.send_json({"action": "kicked", "msg": reason})
                 await ws.close()
@@ -435,7 +490,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # ═══════════════════════════════════════════════════════════
-#  МАРШРУТЫ АВТОРИЗАЦИИ И СЕРВЕРА
+#  МАРШРУТЫ
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/ping")
@@ -542,7 +597,7 @@ def change_password(data: PwdChangeData):
     return {"status": "ok", "msg": "Пароль успешно обновлён!"}
 
 # ═══════════════════════════════════════════════════════════
-#  ПРОФИЛЬ: ИСПРАВЛЕН ПОИСК ПОЛЬЗОВАТЕЛЯ И БЛОКИРОВКА Jjlop55
+#  ПРОФИЛЬ: БЛОКИРОВКА Jjlop55 И СОХРАНЕНИЕ
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/profile/update")
@@ -579,6 +634,8 @@ def update_profile(data: ProfileUpdateData):
         cursor.execute("UPDATE chats SET direct_user2=? WHERE direct_user2=?", (new_nick, real_current))
         cursor.execute("UPDATE friends SET user1=? WHERE user1=?", (new_nick, real_current))
         cursor.execute("UPDATE friends SET user2=? WHERE user2=?", (new_nick, real_current))
+        cursor.execute("UPDATE invites SET from_user=? WHERE from_user=?", (new_nick, real_current))
+        cursor.execute("UPDATE invites SET to_user=? WHERE to_user=?", (new_nick, real_current))
         cursor.execute("UPDATE user_sessions SET nickname=? WHERE nickname=?", (new_nick, real_current))
         conn.commit()
 
@@ -595,140 +652,7 @@ def update_profile(data: ProfileUpdateData):
     return {"status": "ok", "msg": "Профиль успешно сохранён!", "new_nickname": target_nick}
 
 # ═══════════════════════════════════════════════════════════
-#  МОНИТОРИНГ СЕРВЕРА
-# ═══════════════════════════════════════════════════════════
-
-def _calc_storage():
-    ub = 0
-    try:
-        for root, _, files in os.walk(UPLOAD_DIR):
-            for f in files:
-                ub += os.path.getsize(os.path.join(root, f))
-    except Exception:
-        pass
-    uploads_mb = round(ub / (1024 * 1024), 2)
-    db_kb = round(os.path.getsize("messenger.db") / 1024, 1) if os.path.exists("messenger.db") else 0
-    total_mb = round(uploads_mb + db_kb / 1024, 2)
-    return uploads_mb, total_mb
-
-@app.get("/server/monitoring")
-def server_monitoring():
-    try:
-        uptime_sec = int(time.time() - SERVER_START_TIME)
-        h, rem = divmod(uptime_sec, 3600)
-        m, s = divmod(rem, 60)
-        uptime_fmt = f"{h}ч {m}м {s}с"
-
-        uploads_mb, total_mb = _calc_storage()
-
-        cursor.execute("SELECT COUNT(*) FROM users")
-        tu = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM chats")
-        tc = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM messages")
-        tm = cursor.fetchone()[0]
-
-        return {
-            "status": "online",
-            "uptime": uptime_fmt,
-            "online_count": len(manager.user_sockets),
-            "online_users": manager.online_users(),
-            "total_users": tu,
-            "total_chats": tc,
-            "total_messages": tm,
-            "uploads_mb": uploads_mb,
-            "total_storage_mb": total_mb
-        }
-    except Exception:
-        return {
-            "status": "online",
-            "uptime": "1м",
-            "online_count": len(manager.user_sockets),
-            "online_users": manager.online_users(),
-            "total_users": 1,
-            "total_chats": 1,
-            "total_messages": 0,
-            "uploads_mb": 0.1,
-            "total_storage_mb": 0.1
-        }
-
-@app.get("/storage-status")
-def storage_status():
-    uploads_mb, total_mb = _calc_storage()
-    level = "critical" if total_mb >= 450 else "warning" if total_mb >= 300 else "ok"
-    return {"level": level, "uploads_mb": uploads_mb, "total_mb": total_mb, "messages_until_cleanup": 50000}
-
-# ═══════════════════════════════════════════════════════════
-#  СЕССИИ (УСТРОЙСТВА)
-# ═══════════════════════════════════════════════════════════
-
-@app.get("/sessions/my/{nickname}")
-def get_my_sessions(nickname: str, token: str):
-    cursor.execute("SELECT 1 FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND session_token=? AND is_active=1", (nickname, token))
-    if not cursor.fetchone():
-        raise HTTPException(status_code=403, detail="Недействительный токен")
-
-    cursor.execute("""
-        SELECT id, user_agent, ip_address, logged_in_at, last_active, is_active,
-               CASE WHEN session_token=? THEN 1 ELSE 0 END as is_current
-        FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND is_active=1
-        ORDER BY last_active DESC LIMIT 25
-    """, (token, nickname))
-    return [{
-        "id": r[0], "user_agent": r[1], "ip_address": r[2],
-        "logged_in_at": r[3], "last_active": r[4],
-        "is_active": bool(r[5]), "is_current": bool(r[6])
-    } for r in cursor.fetchall()]
-
-@app.post("/sessions/heartbeat")
-def session_heartbeat(data: HeartbeatData):
-    ns = now_str()
-    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE LOWER(nickname)=LOWER(?) AND session_token=?",
-                   (ns, data.nickname, data.session_token))
-    cursor.execute("UPDATE users SET last_login=? WHERE LOWER(nickname)=LOWER(?)", (ns, data.nickname))
-    conn.commit()
-    return {"status": "ok"}
-
-@app.post("/sessions/terminate")
-async def terminate_specific_session(data: TerminateSessionData):
-    cursor.execute("SELECT 1 FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND session_token=? AND is_active=1",
-                   (data.nickname, data.session_token))
-    if not cursor.fetchone():
-        raise HTTPException(status_code=403, detail="Недействительный токен")
-
-    cursor.execute("SELECT session_token FROM user_sessions WHERE id=?", (data.target_session_id,))
-    target = cursor.fetchone()
-    if not target:
-        return {"status": "error", "msg": "Сессия не найдена!"}
-
-    cursor.execute("UPDATE user_sessions SET is_active=0 WHERE id=?", (data.target_session_id,))
-    conn.commit()
-
-    if target[0] != data.session_token:
-        await manager.kick_user(data.nickname, "Сессия была завершена с другого устройства.")
-    return {"status": "ok", "msg": "Сессия успешно отключена."}
-
-@app.post("/sessions/terminate-all")
-async def terminate_all_sessions(data: TerminateAllSessionsData):
-    cursor.execute("SELECT 1 FROM user_sessions WHERE LOWER(nickname)=LOWER(?) AND session_token=? AND is_active=1",
-                   (data.nickname, data.session_token))
-    if not cursor.fetchone():
-        raise HTTPException(status_code=403, detail="Недействительный токен")
-
-    if data.include_current:
-        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
-        conn.commit()
-        await manager.kick_user(data.nickname, "Все сеансы были принудительно сброшены.")
-        return {"status": "ok", "msg": "Все сессии завершены, включая текущую."}
-    else:
-        cursor.execute("UPDATE user_sessions SET is_active=0 WHERE LOWER(nickname)=LOWER(?) AND session_token!=?",
-                       (data.nickname, data.session_token))
-        conn.commit()
-        await manager.kick_user(data.nickname, "Все другие сессии были завершены с основного устройства.")
-        return {"status": "ok", "msg": "Все другие сеансы завершены."}
-
-# ═══════════════════════════════════════════════════════════
-#  ДРУЗЬЯ (DISCORD STYLE)
+#  ДРУЗЬЯ (АВТОМАТИЧЕСКИЙ ДИАЛОГ ПРИ ПРИНЯТИИ ЗАЯВКИ)
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/friends/action")
@@ -761,8 +685,27 @@ async def manage_friend(data: FriendActionData):
     elif data.action == "accept":
         cursor.execute("UPDATE friends SET status='accepted' WHERE LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)", (canonical_target, data.from_user))
         conn.commit()
+
+        # Автоматическое создание ЛС чата при принятии дружбы
+        cursor.execute("""
+            SELECT id FROM chats 
+            WHERE is_direct=1 AND (
+                (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?)) OR 
+                (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?))
+            ) LIMIT 1
+        """, (data.from_user, canonical_target, canonical_target, data.from_user))
+        if not cursor.fetchone():
+            dm_id = f"dm_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO chats (id, name, created_by, is_direct, direct_user1, direct_user2) VALUES (?, ?, ?, 1, ?, ?)",
+                (dm_id, f"💬 @{canonical_target}", data.from_user, data.from_user, canonical_target)
+            )
+            cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (dm_id, data.from_user))
+            cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (dm_id, canonical_target))
+            conn.commit()
+
         await manager.send_to_user(canonical_target, {"action": "friend_accepted", "by": data.from_user})
-        return {"status": "ok", "msg": f"Заявка от @{canonical_target} принята!"}
+        return {"status": "ok", "msg": f"Заявка от @{canonical_target} принята! Чат создан."}
 
     elif data.action in ("decline", "remove"):
         cursor.execute("DELETE FROM friends WHERE (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)) OR (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?))",
@@ -805,6 +748,75 @@ def get_friends(nickname: str):
     outgoing = [{"nickname": r[0], "avatar_url": r[1] or ""} for r in cursor.fetchall()]
 
     return {"friends": friends_list, "incoming": incoming, "outgoing": outgoing}
+
+# ═══════════════════════════════════════════════════════════
+#  ПЕРЕИМЕНОВАНИЕ ЧАТОВ (ЛИМИТ 50 СЛОВ / 25 СЛОВ)
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/chats/rename")
+def rename_chat(data: ChatRenameData):
+    if data.chat_id == "general":
+        return {"status": "error", "msg": "Общий чат переименовывать нельзя!"}
+
+    cursor.execute("SELECT is_direct FROM chats WHERE id=?", (data.chat_id,))
+    row = cursor.fetchone()
+    if not row:
+        return {"status": "error", "msg": "Чат не найден!"}
+
+    is_dir = row[0]
+    words = data.new_name.strip().split()
+    max_words = 25 if is_dir else 50
+
+    if len(words) == 0:
+        return {"status": "error", "msg": "Название не может быть пустым!"}
+    if len(words) > max_words:
+        return {"status": "error", "msg": f"Лимит названия: до {max_words} слов!"}
+
+    final_name = " ".join(words)
+    cursor.execute("UPDATE chats SET name=? WHERE id=?", (final_name, data.chat_id))
+    conn.commit()
+    return {"status": "ok", "msg": "Чат успешно переименован!", "name": final_name}
+
+# ═══════════════════════════════════════════════════════════
+#  СИСТЕМА ПРИГЛАШЕНИЙ В ЧАТЫ
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/invite")
+async def send_invite(data: InviteData):
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.to_user,))
+    target_row = cursor.fetchone()
+    if not target_row:
+        return {"status": "error", "msg": "Пользователь не найден!"}
+    canonical_target = target_row[0]
+
+    cursor.execute("SELECT 1 FROM members WHERE chat_id=? AND LOWER(nickname)=LOWER(?)", (data.chat_id, canonical_target))
+    if cursor.fetchone():
+        return {"status": "error", "msg": "Пользователь уже в этом чате!"}
+
+    cursor.execute("INSERT INTO invites (chat_id, chat_name, from_user, to_user) VALUES (?, ?, ?, ?)",
+                   (data.chat_id, data.chat_name, data.from_user, canonical_target))
+    conn.commit()
+    await manager.send_to_user(canonical_target, {"action": "new_invite", "from": data.from_user, "chat": data.chat_name})
+    return {"status": "ok", "msg": f"Приглашение отправлено @{canonical_target}!"}
+
+@app.get("/invites/{nickname}")
+def get_invites(nickname: str):
+    cursor.execute("SELECT id, chat_id, chat_name, from_user FROM invites WHERE LOWER(to_user)=LOWER(?)", (nickname,))
+    return [{"id": r[0], "chat_id": r[1], "chat_name": r[2], "from_user": r[3]} for r in cursor.fetchall()]
+
+@app.post("/invite/respond")
+def respond_invite(data: InviteAction):
+    cursor.execute("SELECT chat_id, to_user FROM invites WHERE id=?", (data.invite_id,))
+    row = cursor.fetchone()
+    if not row or row[1].lower() != data.nickname.lower():
+        return {"status": "error", "msg": "Приглашение не найдено!"}
+
+    chat_id = row[0]
+    if data.action == "accept":
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (chat_id, data.nickname))
+    cursor.execute("DELETE FROM invites WHERE id=?", (data.invite_id,))
+    conn.commit()
+    return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════
 #  ДИАЛОГИ И ЧАТЫ
@@ -857,7 +869,7 @@ def get_user_chats(nickname: str):
         if is_dir:
             partner = u2 if u1.lower() == nickname.lower() else u1
             cname = f"💬 @{partner}"
-        chats.append({"id": cid, "name": cname})
+        chats.append({"id": cid, "name": cname, "is_direct": is_dir})
     chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
     return chats
 
@@ -1123,7 +1135,7 @@ async def set_admin_permissions(data: AdminPermsData):
         return {"status": "ok", "msg": f"Все права у @{data.target_nick} отозваны!"}
 
 # ═══════════════════════════════════════════════════════════
-#  ПОДДЕРЖКА: УДАЛЕНИЕ ТИКЕТОВ И ФИКС 4 ЧАСОВ
+#  ПОДДЕРЖКА (SUPPORT)
 # ═══════════════════════════════════════════════════════════
 
 def _is_support_staff(nick: str) -> bool:
@@ -1151,7 +1163,6 @@ async def create_support_ticket(data: SupportTicketData):
 
 @app.get("/support/tickets/my/{nickname}")
 def get_my_tickets(nickname: str):
-    # Если есть отвеченные тикеты, засекаем 4 часа на удаление
     cursor.execute("""
         UPDATE support_tickets 
         SET user_viewed_at = CURRENT_TIMESTAMP 
@@ -1275,7 +1286,6 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     conn.commit()
                 await websocket.send_json({"action": "pong"})
 
-            # Сигналы звонков WebRTC (оффер, ответ, кандидаты, отказ, таймаут, завершение)
             elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_timeout"):
                 target = data.get("target")
                 if target and manager.is_online(target):
