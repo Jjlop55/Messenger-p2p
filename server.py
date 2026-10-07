@@ -2,8 +2,12 @@ import os
 import time
 import uuid
 import json
+import random
+import asyncio
 import sqlite3
 import hashlib
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
@@ -24,6 +28,25 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+def delete_upload_file(file_url: str) -> bool:
+    """Файл больше никому не нужен (сообщение/чат удалены) — убираем его с диска."""
+    if not file_url:
+        return False
+    try:
+        rel = str(file_url).strip().lstrip("/").replace("\\", "/")
+        if not rel.startswith(UPLOAD_DIR + "/"):
+            return False
+        path = os.path.normpath(rel)
+        if not os.path.abspath(path).startswith(os.path.abspath(UPLOAD_DIR) + os.sep):
+            return False
+        if os.path.isfile(path):
+            os.remove(path)
+            return True
+    except Exception:
+        pass
+    return False
 
 SERVER_START_TIME = time.time()
 
@@ -273,6 +296,31 @@ CREATE TABLE IF NOT EXISTS support_perm_requests (
 )
 """)
 
+# Игровой зал: статистика игрока по играм и история 1х1-матчей (для таблиц лидеров)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS game_stats (
+    nickname TEXT NOT NULL,
+    game TEXT NOT NULL,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    draws INTEGER DEFAULT 0,
+    matches INTEGER DEFAULT 0,
+    PRIMARY KEY (nickname, game)
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS game_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game TEXT NOT NULL,
+    player1 TEXT NOT NULL,
+    player2 TEXT NOT NULL,
+    winner TEXT DEFAULT '',
+    score TEXT DEFAULT '',
+    played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
 conn.commit()
 
 cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES ('general', '🌐 Общий чат', 'system', 0)")
@@ -490,6 +538,211 @@ SESSION_TTL_DAYS = float(os.environ.get("SESSION_TTL_DAYS", "7"))
 SESSION_ARTIFACT_DAYS = float(os.environ.get("SESSION_ARTIFACT_DAYS", "30"))
 
 
+# ── Бот-помощник: живёт в личном чате bot_<ник> ─────────────────────
+# Ник бота, внешний ИИ (бесплатный, без ключа) для свободных вопросов.
+BOT_NICK = os.environ.get("BOT_NICK", "🤖 Utopia")
+AI_API_URL = os.environ.get("AI_API_URL", "https://text.pollinations.ai/")
+AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
+AI_MODEL = os.environ.get("AI_MODEL", "").strip()
+AI_TIMEOUT = int(os.environ.get("AI_TIMEOUT", "45"))
+AI_HISTORY = 8          # сколько последних сообщений чата отдаём ИИ как контекст
+AI_MAX_QUESTION = 1000  # длина вопроса
+AI_MAX_ANSWER = 3000    # длина ответа
+
+BOT_INTRO = (
+    "Привет! Я Utopia — бот-помощник, я живу прямо в этом чате.\n"
+    "Знаю все функции мессенджера и объясню, как ими пользоваться.\n"
+    "Спроси меня, например: «как позвонить?», «как создать группу?», «почему фото удаляются?»\n"
+    "Или напиши «функции» — покажу весь список."
+)
+
+# Справочник функций: desc — это описание, которое бот выдаёт пользователю,
+# short — однострочник для списка, keys — слова-триггеры для подбора темы.
+FEATURES = [
+    {"id": "calls", "emoji": "📞", "title": "Звонки", "short": "аудиозвонки с экраном ожидания",
+     "desc": "Кнопка 📞 в шапке чата зовёт собеседника. Звонящий видит «Идёт вызов — ждём ответа», "
+             "у того, кто принимает, — экран входящего с анимацией и звуком. После соединения идёт "
+             "таймер разговора. В разговоре есть выключение микрофона, камера и показ экрана. "
+             "Нужен микрофон и открытый сайт по https.",
+     "keys": ["звонок", "звонки", "позвон", "аудиозвонок", "микрофон", "камер", "видеозвонок", "дозвон"]},
+    {"id": "groups", "emoji": "👥", "title": "Группы и роли", "short": "своя группа, роли и права",
+     "desc": "«+ Новый чат» создаёт группу — её создатель сразу владелец. Владелец и админы с правом "
+             "«promote» назначают админов, дают права (переименование, приглашение, кик, удаление "
+             "сообщений), ставят титулы и передают владение. В шапке — кнопка 👥 со списком участников, "
+             "по клику на участника откроется меню действий.",
+     "keys": ["групп", "роль", "роли", "админ", "владел", "права", "титул", "приглас", "участник", "кик"]},
+    {"id": "friends", "emoji": "🤝", "title": "Друзья и личные сообщения", "short": "заявки и лимит ЛС",
+     "desc": "Кнопка 🤝 — друзья: заявки входящие/исходящие и список. Пока собеседник не принял "
+             "заявку, ему можно отправить ровно одно сообщение — дальше чат закрывается до "
+             "подтверждения дружбы. Как приняли — лимит снимается.",
+     "keys": ["друз", "друг", "заявк", "лс", "личн", "собеседник", "лимит"]},
+    {"id": "files", "emoji": "📎", "title": "Файлы, фото и голос", "short": "вложения до 10 МБ",
+     "desc": "Скрепка 🎎 (📎) прикрепляет файл, фото или документ до 10 МБ, а микрофон 🎙 записывает "
+             "голосовое. Удаление сообщения удаляет и сам файл с сервера — в чате его больше нет, "
+             "хранить незачем. Файлы старше 4 дней сервер чистит сам.",
+     "keys": ["файл", "фото", "картинк", "скрепк", "прикреп", "голос", "удален", "удалить", "вложен"]},
+    {"id": "reactions", "emoji": "😀", "title": "Реакции и ответы", "short": "смайлы на сообщениях",
+     "desc": "Наведи на сообщение — появится меню: можно поставить реакцию (смайл-счётчик, как в "
+             "Telegram), ответить цитатой или удалить (своё — всегда, чужое — если есть права).",
+     "keys": ["реакц", "смайл", "ответ", "цитат", "эмодзи"]},
+    {"id": "sessions", "emoji": "📱", "title": "Устройства и сессии", "short": "где и когда вы входили",
+     "desc": "Кнопка 📱 показывает, с каких устройств идёт вход: активные и заброшенные сессии, IP и "
+             "время. Оттуда можно завершить чужую сессию, а админ — кикнуть пользователя (30 секунд "
+             "блок входа). Сессия без активности 7 дней считается заброшенной.",
+     "keys": ["сесси", "устройств", "вход", "ip", "кикнуть", "разлогин"]},
+    {"id": "notifications", "emoji": "🔔", "title": "Уведомления", "short": "системные пуш-уведомления",
+     "desc": "В настройках ⚙ есть два тумблера: уведомлять о новых сообщениях и играть звук, если окно "
+             "свёрнуто. Кнопка «Разрешить системные уведомления» включает пуш от браузера — клик по "
+             "уведомлению сразу открывает чат.",
+     "keys": ["уведомлен", "пуш", "звук", "настройк", "оповещен", "notifications"]},
+    {"id": "support", "emoji": "🎧", "title": "Поддержка", "short": "тикеты и ответы саппорта",
+     "desc": "Кнопка 🎧 открывает службу поддержки: можно написать обращение даже до входа (укажи "
+             "никнейм — ответ будет ждать тебя после входа). Тикеты видны во вкладке «Мои тикеты», "
+             "ответ саппорта хранится 4 часа после просмотра.",
+     "keys": ["поддержк", "тикет", "обращен", "жалоб", "проблем", "help"]},
+    {"id": "admin", "emoji": "⚡", "title": "Админ-панель", "short": "баны, мьюты, права",
+     "desc": "Кнопка ⚡ (видна админам): пользователи (бан/мьют/кик/удаление), группы (в том числе "
+             "выдача владельца чата кнопкой 👑), баны, саппорт и заявки. У каждого раздела свои права — "
+             "их выдаёт главный администратор.",
+     "keys": ["админ", "панел", "бан", "мьют", "заглушить", "права админа"]},
+    {"id": "cleanup", "emoji": "🧹", "title": "Автоочистка", "short": "сообщения живут недолго",
+     "desc": "Сообщения хранятся недолго: общий чат — 3 часа, группы — 4 часа, личные диалоги — 10 часов. "
+             "Файлы при этом удаляются вместе с сообщениями, а не висят на сервере.",
+     "keys": ["очистк", "удаляется", "истек", "срок", "хранятся", "истори"]},
+    {"id": "monitoring", "emoji": "📊", "title": "Мониторинг сервера", "short": "пинг и статус",
+     "desc": "Кнопка 📊 показывает состояние сервера: задержку ответа, количество онлайн-пользователей "
+             "и статус сервиса.",
+     "keys": ["мониторинг", "сервер", "пинг", "статус", "задержк", "онлайн"]},
+    {"id": "games", "emoji": "🎮", "title": "Игровой зал", "short": "три игры, поиск соперника, лидеры",
+     "desc": "Кнопка 🎮 открывает игровой зал. Три игры: ✊ камень-ножницы-бумага (матч до 3 побед), "
+             "❌ крестики-нолики и 🚢 морской бой (случайная расстановка). Жми «Играть» — сервер сам "
+             "найдёт соперника: видно, сколько игроков онлайн, сколько ищут игру и сколько играют "
+             "прямо сейчас. После матча результат попадает в таблицу лидеров — там топ по числу "
+             "сыгранных 1х1 игр и побед.",
+     "keys": ["игр", "игров", "игра", "соперник", "поиск", "лидер", "таблиц", "кости", "крестик", "морской"]},
+    {"id": "bot", "emoji": "🤖", "title": "Бот-помощник (это я)", "short": "справки по всем функциям",
+     "desc": "Этот чат. Напиши вопрос словами — я подберу нужную функцию и объясню по шагам. "
+             "Команда /ai больше не нужна: просто пиши сюда.",
+     "keys": ["бот", "помощник", "кто ты", "что умеешь", "функции", "список"]},
+]
+
+
+def _ai_http(payload: dict) -> str:
+    """Синхронный POST к текстовому API. Выполняется в отдельном потоке."""
+    headers = {"Content-Type": "application/json", "Accept": "text/plain, application/json"}
+    if AI_API_KEY:
+        headers["Authorization"] = "Bearer " + AI_API_KEY
+    req = urllib.request.Request(AI_API_URL, data=json.dumps(payload).encode("utf-8"),
+                                 headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=AI_TIMEOUT) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+
+    # Ответ может быть и простым текстом, и openai-совместимым JSON
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
+        choices = parsed.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            msg = choices[0].get("message")
+            if isinstance(msg, dict) and msg.get("content"):
+                return str(msg["content"])
+        for key in ("text", "content", "response", "message"):
+            val = parsed.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+    return raw
+
+
+async def ask_ai(question: str, history: List[tuple]) -> str:
+    """Свободный вопрос во внешний ИИ. history — (sender, text) по возрастанию."""
+    messages = [{"role": "system", "content":
+                 "Ты — дружелюбный помощник внутри мессенджера Utopia Messenger. "
+                 "Отвечай коротко, по-русски, без использования разметки markdown."}]
+    for sender, text in history:
+        if sender == BOT_NICK:
+            messages.append({"role": "assistant", "content": text})
+        else:
+            messages.append({"role": "user", "content": f"{sender}: {text}"})
+    messages.append({"role": "user", "content": question})
+
+    payload: dict = {"messages": messages}
+    if AI_MODEL:
+        payload["model"] = AI_MODEL
+    try:
+        answer = await asyncio.wait_for(
+            asyncio.to_thread(_ai_http, payload), timeout=AI_TIMEOUT + 10)
+    except Exception:
+        return ""
+
+    answer = (answer or "").strip()
+    if len(answer) > AI_MAX_ANSWER:
+        answer = answer[:AI_MAX_ANSWER] + "…"
+    return answer
+
+
+def _bot_history(chat_id: str) -> List[tuple]:
+    cursor.execute("SELECT sender, text FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT ?",
+                   (chat_id, AI_HISTORY))
+    rows = cursor.fetchall()[::-1]
+    return [(r[0] or "", (r[1] or "")[:400]) for r in rows]
+
+
+async def post_bot_message(chat_id: str, text: str):
+    cursor.execute("INSERT INTO messages (chat_id, sender, text) VALUES (?, ?, ?)",
+                   (chat_id, BOT_NICK, text))
+    conn.commit()
+    mid = cursor.lastrowid
+    await manager.broadcast_chat(chat_id, {
+        "action": "new_message", "id": mid, "chat_id": chat_id,
+        "sender": BOT_NICK, "text": text,
+        "time": datetime.now().strftime("%H:%M"),
+    })
+
+
+def bot_features_list() -> str:
+    lines = [f"{f['emoji']} {f['title']} — {f['short']}." for f in FEATURES]
+    return ("Вот всё, что умеет Utopia:\n" + "\n".join(lines) +
+            f"\n\nВсего функций: {len(FEATURES)}. Напиши тему — расскажу подробно.")
+
+
+def bot_match(text: str):
+    """Подбирает функцию по словам из вопроса. Возвращает dict или None."""
+    low = (text or "").lower()
+    best, best_hits = None, 0
+    for f in FEATURES:
+        hits = sum(1 for k in f["keys"] if k in low)
+        if hits > best_hits:
+            best, best_hits = f, hits
+    return best
+
+
+async def bot_reply(chat_id: str, nickname: str, text: str):
+    """Ответ бота в личном чате bot_<ник>."""
+    q = (text or "").strip()
+    low = q.lower()
+    if not q:
+        answer = BOT_INTRO
+    elif len(low) <= 40 and any(w in low for w in ("привет", "здравств", "хай", "hello", "добр")):
+        answer = f"Привет, @{nickname}!\n\n" + BOT_INTRO
+    elif len(low) <= 60 and any(w in low for w in ("что умеешь", "что ты умеешь", "функции", "список",
+                                                   "помощь", "справка", "help", "возможности")):
+        answer = bot_features_list()
+    else:
+        feature = bot_match(q)
+        if feature:
+            answer = f"{feature['emoji']} {feature['title']}\n\n{feature['desc']}"
+        else:
+            ai = await ask_ai(q[:AI_MAX_QUESTION], _bot_history(chat_id))
+            if not ai:
+                answer = ("Не нашёл такой темы в справочнике, а внешний ИИ сейчас недоступен.\n\n"
+                          + bot_features_list())
+            else:
+                answer = ai
+    await post_bot_message(chat_id, answer)
+
+
 _EXPIRE_LAST = 0.0
 
 
@@ -624,6 +877,13 @@ def periodic_cleanup(force: bool = False):
         _cleanup_lock.release()
 
 
+def _purge_files_for(where: str, args: tuple):
+    """Удаляет с диска файлы сообщений, которые сейчас будут вычищены из чата."""
+    cursor.execute(f"SELECT file_url FROM messages WHERE ({where}) AND file_url IS NOT NULL", args)
+    for (f_url,) in cursor.fetchall():
+        delete_upload_file(f_url)
+
+
 def _cleanup_body():
     ns = now_str()
 
@@ -632,34 +892,33 @@ def _cleanup_body():
 
     # 1. Общий чат (3 часа)
     c3 = (datetime.utcnow() - timedelta(hours=3)).strftime('%Y-%m-%d %H:%M:%S')
+    _purge_files_for("chat_id='general' AND created_at < ?", (c3,))
     cursor.execute("DELETE FROM messages WHERE chat_id='general' AND created_at < ?", (c3,))
 
     # 2. Групповые/командные чаты (4 часа)
     c4 = (datetime.utcnow() - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+    _purge_files_for("chat_id IN (SELECT id FROM chats WHERE is_direct=0 AND id!='general') AND created_at < ?", (c4,))
     cursor.execute("""
         DELETE FROM messages 
         WHERE chat_id IN (SELECT id FROM chats WHERE is_direct=0 AND id!='general')
           AND created_at < ?
     """, (c4,))
 
-    # 3. Личные диалоги (10 часов)
+    # 3. Личные диалоги и чат с ботом-помощником (10 часов)
     c10 = (datetime.utcnow() - timedelta(hours=10)).strftime('%Y-%m-%d %H:%M:%S')
-    cursor.execute("""
+    bot_cond = "(chat_id IN (SELECT id FROM chats WHERE is_direct=1) OR chat_id LIKE 'bot!_%' ESCAPE '!')"
+    _purge_files_for(f"{bot_cond} AND created_at < ?", (c10,))
+    cursor.execute(f"""
         DELETE FROM messages 
-        WHERE chat_id IN (SELECT id FROM chats WHERE is_direct=1)
+        WHERE {bot_cond}
           AND created_at < ?
     """, (c10,))
 
-    # Файлы старше 4 дней
+    # Файлы старше 4 дней (сообщение остаётся, файл уходит)
     cutoff_files = (datetime.utcnow() - timedelta(days=4)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("SELECT id, file_url FROM messages WHERE created_at < ? AND file_url IS NOT NULL", (cutoff_files,))
     for msg_id, f_url in cursor.fetchall():
-        try:
-            rel = f_url.lstrip("/")
-            if os.path.exists(rel):
-                os.remove(rel)
-        except Exception:
-            pass
+        delete_upload_file(f_url)
         cursor.execute("UPDATE messages SET file_url=NULL, text='[Срок хранения файла (4 дня) истёк]' WHERE id=?", (msg_id,))
 
     # Удаление тикетов поддержки через 4 часа после просмотра пользователем
@@ -1341,7 +1600,20 @@ def get_user_chats(nickname: str):
             "members_count": mcount,
         })
     chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
+    # Личный чат с ботом-помощником — виртуальная запись, сообщения лежат в bot_<ник>
+    bot_id = f"bot_{nickname}"
+    chats.insert(1 if chats and chats[0]["id"] == "general" else 0, {
+        "id": bot_id, "name": "🤖 Бот-помощник", "is_direct": 1,
+        "chat_type": "bot", "owner": "", "my_role": "member", "my_title": "",
+        "members_count": 1,
+    })
     return chats
+
+@app.get("/features")
+def list_features():
+    """Справка по функциям — тот же источник, что отвечает бот-помощник."""
+    return [{"id": f["id"], "emoji": f["emoji"], "title": f["title"],
+             "short": f["short"], "desc": f["desc"]} for f in FEATURES]
 
 @app.post("/chats")
 async def create_custom_chat(data: ChatCreateData):
@@ -1369,6 +1641,8 @@ async def delete_chat(chat_id: str, user: str):
     # Удалять чат может только его владелец (или владелец/супер всего сайта)
     if not can_delete_chat(chat_id, user):
         return {"status": "error", "msg": "Удалять чат может только владелец группы!"}
+    # Файлы всех сообщений чата больше никому не нужны — убираем с диска
+    _purge_files_for("chat_id=?", (chat_id,))
     cursor.execute("DELETE FROM chats WHERE id=?", (chat_id,))
     cursor.execute("DELETE FROM members WHERE chat_id=?", (chat_id,))
     cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
@@ -1843,9 +2117,11 @@ def get_admin_groups(admin: str):
     cursor.execute("SELECT id, name, created_by, created_at FROM chats")
     res = []
     for cid, cname, cc, cca in cursor.fetchall():
-        cursor.execute("SELECT nickname FROM members WHERE chat_id=?", (cid,))
+        cursor.execute("SELECT nickname, role FROM members WHERE chat_id=?", (cid,))
+        roles = {r[0]: (r[1] or "member") for r in cursor.fetchall()}
+        owner = next((n for n, rl in roles.items() if rl == "owner"), None)
         res.append({"id": cid, "name": cname, "created_by": cc, "created_at": cca,
-                    "members": [m[0] for m in cursor.fetchall()]})
+                    "members": list(roles.keys()), "roles": roles, "owner": owner})
     return res
 
 @app.post("/admin/ban")
@@ -1996,13 +2272,18 @@ def _is_support_staff(nick: str) -> bool:
 async def create_support_ticket(data: SupportTicketData):
     if not data.subject.strip() or not data.message.strip():
         return {"status": "error", "msg": "Заполните тему и текст обращения!"}
+    nick = (data.from_user or "").strip()
+    if not nick:
+        return {"status": "error", "msg": "Укажите никнейм — на него придёт ответ!"}
+    if len(nick) > 32:
+        return {"status": "error", "msg": "Слишком длинный никнейм!"}
     cursor.execute("INSERT INTO support_tickets (from_user, subject, message) VALUES (?, ?, ?)",
-                   (data.from_user, data.subject.strip(), data.message.strip()))
+                   (nick, data.subject.strip(), data.message.strip()))
     ticket_id = cursor.lastrowid
     conn.commit()
     await manager.notify_support_staff({
         "action": "new_support_ticket", "ticket_id": ticket_id,
-        "from_user": data.from_user, "subject": data.subject
+        "from_user": nick, "subject": data.subject
     })
     return {"status": "ok", "msg": "Обращение отправлено в поддержку!", "ticket_id": ticket_id}
 
@@ -2138,6 +2419,429 @@ def can_delete_messages(nick: str) -> bool:
     return bool(perms.get("can_delete_messages")) or bool(is_admin and perms.get("can_delete_messages", True))
 
 
+# ══════════════════════════════════════════════════════════════
+#  ИГРОВОЙ ЗАЛ: поиск соперника, три игры, статистика и лидеры
+# ══════════════════════════════════════════════════════════════
+GAMES = {
+    "rps": "✊ Камень-ножницы-бумага",
+    "ttt": "❌ Крестики-нолики",
+    "sea": "🚢 Морской бой",
+}
+RPS_TARGET = 3  # до скольких побед идёт матч
+
+_queues: Dict[str, List[str]] = {g: [] for g in GAMES}
+_queue_game: Dict[str, str] = {}       # ник -> игра, в которой он ищет соперника
+_matches: Dict[int, dict] = {}         # match_id -> состояние матча
+_match_seq = 0
+_game_sockets: Dict[str, WebSocket] = {}
+
+
+async def _gsend(nick: str, payload: dict):
+    ws = _game_sockets.get(nick)
+    if not ws:
+        return
+    try:
+        await ws.send_json(payload)
+    except Exception:
+        pass
+
+
+def _lobby_state() -> dict:
+    playing = {g: 0 for g in GAMES}
+    for m in _matches.values():
+        if m.get("game") in playing:
+            playing[m["game"]] += 1
+    return {
+        "action": "lobby_state",
+        "online": len(manager.online_users()),
+        "queue": {g: len(_queues[g]) for g in GAMES},
+        "playing": playing,
+    }
+
+
+async def _lobby_broadcast():
+    state = _lobby_state()
+    for nick in list(_game_sockets):
+        await _gsend(nick, state)
+
+
+def _sea_place() -> List[List[int]]:
+    """Случайная расстановка 10 кораблей (4/3/3/2/2/2/1/1/1/1) на поле 10×10."""
+    while True:
+        board = [[False] * 10 for _ in range(10)]
+        ships: List[List[int]] = []
+        ok = True
+        for size in (4, 3, 3, 2, 2, 2, 1, 1, 1, 1):
+            for _try in range(500):
+                horiz = random.random() < 0.5
+                r, c = random.randrange(10), random.randrange(10)
+                cells, good = [], True
+                for i in range(size):
+                    rr = r if horiz else r + i
+                    cc = c + i if horiz else c
+                    if rr > 9 or cc > 9 or board[rr][cc]:
+                        good = False
+                        break
+                    cells.append(rr * 10 + cc)
+                if good:
+                    for cell in cells:
+                        board[cell // 10][cell % 10] = True
+                    ships.append(cells)
+                    break
+            else:
+                ok = False
+                break
+        if ok and len(ships) == 10:
+            return ships
+
+
+def _init_match(game: str, p1: str, p2: str) -> dict:
+    state: dict = {}
+    if game == "rps":
+        state = {"scores": {p1: 0, p2: 0}, "choices": {}, "round": 1, "log": []}
+    elif game == "ttt":
+        state = {"board": [""] * 9, "marks": {p1: "X", p2: "O"}, "turn": p1}
+    elif game == "sea":
+        state = {
+            "ships": {p1: _sea_place(), p2: _sea_place()},
+            "shots": {p1: {}, p2: {}},   # клетка -> 'hit'/'miss'
+            "turn": p1,
+        }
+    return {"id": None, "game": game, "p1": p1, "p2": p2, "over": False, "state": state}
+
+
+def _public_state(m: dict, nick: str) -> dict:
+    """Приватное состояние матча для конкретного игрока (без чужих секретов)."""
+    game, st, opp = m["game"], m["state"], (m["p2"] if nick == m["p1"] else m["p1"])
+    base = {"action": "game_state", "id": m["id"], "game": game,
+            "you": nick, "opp": opp, "over": m["over"]}
+    if game == "rps":
+        base.update({
+            "scores": st["scores"], "round": st["round"], "log": st["log"],
+            "my_choice": st["choices"].get(nick, ""),
+            "opp_sent": opp in st["choices"],
+        })
+    elif game == "ttt":
+        base.update({"board": st["board"], "my_mark": st["marks"][nick],
+                     "opp_mark": st["marks"][opp], "turn": st["turn"]})
+    elif game == "sea":
+        my_shots = st["shots"][nick]           # мои выстрелы по сопернику
+        foe_shots = st["shots"][opp]           # выстрелы соперника по мне
+        my_ships = [c for cells in st["ships"][nick] for c in cells]
+        foe_ships = st["ships"][opp]
+        base.update({
+            "turn": st["turn"], "my_ships": my_ships,
+            "my_field": foe_shots, "foe_field": my_shots,
+            "my_sunk": [c for cells in st["ships"][nick]
+                        if all(foe_shots.get(str(c)) == "hit" for c in cells) for c in cells],
+            "foe_sunk": [c for cells in foe_ships
+                         if all(my_shots.get(str(c)) == "hit" for c in cells) for c in cells],
+            "foe_ship_count": len(foe_ships),
+        })
+    return base
+
+
+async def _send_state(m: dict):
+    for nick in (m["p1"], m["p2"]):
+        await _gsend(nick, _public_state(m, nick))
+
+
+def _stats_payload(nick: str) -> dict:
+    cursor.execute("SELECT game, wins, losses, draws, matches FROM game_stats WHERE LOWER(nickname)=LOWER(?)",
+                   (nick,))
+    return {r[0]: {"wins": r[1], "losses": r[2], "draws": r[3], "matches": r[4]}
+            for r in cursor.fetchall()}
+
+
+async def _finish_match(m: dict, winner: Optional[str], reason: str = ""):
+    if m.get("over"):
+        return
+    m["over"] = True
+    p1, p2, game = m["p1"], m["p2"], m["game"]
+    score = ""
+    if game == "rps":
+        score = f"{m['state']['scores'][p1]}:{m['state']['scores'][p2]}"
+    if winner == p1:
+        pairs = ((p1, 1, 0, 0), (p2, 0, 1, 0))
+    elif winner == p2:
+        pairs = ((p1, 0, 1, 0), (p2, 1, 0, 0))
+    else:  # ничья
+        pairs = ((p1, 0, 0, 1), (p2, 0, 0, 1))
+    for nick, w, l, d in pairs:
+        cursor.execute("""
+            INSERT INTO game_stats (nickname, game, wins, losses, draws, matches)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(nickname, game) DO UPDATE SET
+              wins = wins + excluded.wins,
+              losses = losses + excluded.losses,
+              draws = draws + excluded.draws,
+              matches = matches + 1
+        """, (nick, game, w, l, d))
+    cursor.execute("INSERT INTO game_matches (game, player1, player2, winner, score) VALUES (?,?,?,?,?)",
+                   (game, p1, p2, winner or "", score))
+    conn.commit()
+
+    over = {"action": "game_over", "id": m["id"], "game": game,
+            "winner": winner, "you": None, "reason": reason, "score": score,
+            "stats": {p1: _stats_payload(p1), p2: _stats_payload(p2)}}
+    for nick in (p1, p2):
+        payload = dict(over, you=nick, you_won=(winner == nick),
+                       opp=(p2 if nick == p1 else p1))
+        await _gsend(nick, payload)
+    _matches.pop(m["id"], None)
+    await _lobby_broadcast()
+
+
+async def _create_match(game: str, a: str, b: str):
+    global _match_seq
+    _match_seq += 1
+    m = _init_match(game, a, b)
+    m["id"] = _match_seq
+    _matches[m["id"]] = m
+    for nick in (a, b):
+        await _gsend(nick, {"action": "game_found", "id": m["id"], "game": game,
+                            "game_title": GAMES[game], "opp": (b if nick == a else a)})
+    await _send_state(m)
+    await _lobby_broadcast()
+
+
+async def _drop_queue(nick: str):
+    g = _queue_game.pop(nick, None)
+    if g and nick in _queues[g]:
+        _queues[g].remove(nick)
+        await _gsend(nick, {"action": "unqueued"})
+
+
+async def _handle_queue(nick: str, game: str):
+    if game not in GAMES:
+        await _gsend(nick, {"action": "error", "msg": "Неизвестная игра"})
+        return
+    if any(mid for mid, mm in _matches.items() if not mm["over"] and nick in (mm["p1"], mm["p2"])):
+        await _gsend(nick, {"action": "error", "msg": "Вы уже в игре — доиграйте матч!"})
+        return
+    if _queue_game.get(nick) == game:
+        await _gsend(nick, {"action": "queued", "game": game, "title": GAMES[game]})
+        return
+    await _drop_queue(nick)
+    rival = next((n for n in _queues[game] if n != nick and n in _game_sockets), None)
+    if rival is None:
+        _queues[game].append(nick)
+        _queue_game[nick] = game
+        await _gsend(nick, {"action": "queued", "game": game, "title": GAMES[game]})
+    else:
+        _queues[game].remove(rival)
+        _queue_game.pop(rival, None)
+        await _create_match(game, rival, nick)
+    await _lobby_broadcast()
+
+
+_TTT_LINES = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
+
+
+async def _handle_move(nick: str, mid, data: dict):
+    try:
+        mid = int(mid)
+    except (TypeError, ValueError):
+        return
+    m = _matches.get(mid)
+    if not m or m["over"]:
+        await _gsend(nick, {"action": "error", "msg": "Матч уже закончен или не найден"})
+        return
+    if nick not in (m["p1"], m["p2"]):
+        return
+    game, st, opp = m["game"], m["state"], (m["p2"] if nick == m["p1"] else m["p1"])
+
+    if game == "rps":
+        choice = (data.get("choice") or "").lower()
+        if choice not in ("rock", "paper", "scissors"):
+            await _gsend(nick, {"action": "error", "msg": "Выберите камень, ножницы или бумагу"})
+            return
+        if st["choices"].get(nick):
+            return
+        st["choices"][nick] = choice
+        if len(st["choices"]) < 2:
+            await _send_state(m)
+            return
+        a, b = st["choices"][m["p1"]], st["choices"][m["p2"]]
+        if a == b:
+            res = 0
+        else:
+            beats = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
+            res = 1 if beats[a] == b else 2
+        if res:
+            st["scores"][m["p1"] if res == 1 else m["p2"]] += 1
+        st["log"].append({"round": st["round"], "a": a, "b": b,
+                          "winner": ("" if res == 0 else (m["p1"] if res == 1 else m["p2"]))})
+        st["round"] += 1
+        st["choices"] = {}
+        s1, s2 = st["scores"][m["p1"]], st["scores"][m["p2"]]
+        if s1 >= RPS_TARGET or s2 >= RPS_TARGET:
+            await _send_state(m)
+            await _finish_match(m, m["p1"] if s1 > s2 else m["p2"])
+            return
+        await _send_state(m)
+        return
+
+    if game == "ttt":
+        if st["turn"] != nick:
+            await _gsend(nick, {"action": "error", "msg": "Сейчас ход соперника"})
+            return
+        try:
+            cell = int(data.get("cell"))
+        except (TypeError, ValueError):
+            return
+        if not 0 <= cell <= 8 or st["board"][cell]:
+            await _gsend(nick, {"action": "error", "msg": "Клетка занята"})
+            return
+        st["board"][cell] = st["marks"][nick]
+        win_line = next((ln for ln in _TTT_LINES
+                         if all(st["board"][i] == st["marks"][nick] for i in ln)), None)
+        if win_line:
+            await _send_state(m)
+            await _finish_match(m, nick)
+            return
+        if all(st["board"]):
+            await _send_state(m)
+            await _finish_match(m, None)
+            return
+        st["turn"] = opp
+        await _send_state(m)
+        return
+
+    if game == "sea":
+        if st["turn"] != nick:
+            await _gsend(nick, {"action": "error", "msg": "Сейчас ход соперника"})
+            return
+        try:
+            cell = int(data.get("cell"))
+        except (TypeError, ValueError):
+            return
+        if not 0 <= cell <= 99:
+            return
+        shots = st["shots"][nick]
+        if str(cell) in shots:
+            await _gsend(nick, {"action": "error", "msg": "В эту клетку уже стреляли"})
+            return
+        hit = any(cell in cells for cells in st["ships"][opp])
+        shots[str(cell)] = "hit" if hit else "miss"
+        all_cells = [c for cells in st["ships"][opp] for c in cells]
+        if all(str(c) in shots for c in all_cells):
+            await _send_state(m)
+            await _finish_match(m, nick)
+            return
+        st["turn"] = opp
+        await _send_state(m)
+
+
+@app.get("/games/lobby")
+def games_lobby():
+    """Счётчики зала: онлайн, кто ищет, кто играет, сколько матчей сыграно."""
+    totals = {g: 0 for g in GAMES}
+    for (g, n) in cursor.execute(
+            "SELECT game, COUNT(*) FROM game_matches GROUP BY game").fetchall():
+        if g in totals:
+            totals[g] = n
+    players = {g: 0 for g in GAMES}
+    for (g, n) in cursor.execute(
+            "SELECT game, COUNT(DISTINCT nickname) FROM game_stats GROUP BY game").fetchall():
+        if g in players:
+            players[g] = n
+    return {
+        "online": len(manager.online_users()),
+        "queue": {g: len(_queues[g]) for g in GAMES},
+        "playing": {g: sum(1 for m in _matches.values()
+                           if m["game"] == g and not m["over"]) for g in GAMES},
+        "totals": totals,
+        "players": players,
+        "games": [{"id": g, "title": t} for g, t in GAMES.items()],
+    }
+
+
+@app.get("/games/leaderboard")
+def games_leaderboard(game: str = "all", limit: int = 10):
+    """Таблица лидеров: сначала по числу сыгранных 1х1 матчей, потом по победам."""
+    if game in GAMES:
+        rows = cursor.execute("""
+            SELECT nickname, wins, losses, draws, matches FROM game_stats
+            WHERE game=? ORDER BY matches DESC, wins DESC LIMIT ?
+        """, (game, limit)).fetchall()
+    else:
+        rows = cursor.execute("""
+            SELECT nickname, SUM(wins), SUM(losses), SUM(draws), SUM(matches)
+            FROM game_stats GROUP BY LOWER(nickname)
+            ORDER BY SUM(matches) DESC, SUM(wins) DESC LIMIT ?
+        """, (limit,)).fetchall()
+    return [{"rank": i + 1, "nickname": r[0], "wins": r[1] or 0, "losses": r[2] or 0,
+             "draws": r[3] or 0, "matches": r[4] or 0}
+            for i, r in enumerate(rows)]
+
+
+@app.get("/games/stats/{nickname}")
+def games_stats(nickname: str):
+    return {"status": "ok", "nickname": nickname, "stats": _stats_payload(nickname)}
+
+
+@app.websocket("/ws/games/{nickname}")
+async def games_websocket(websocket: WebSocket, nickname: str):
+    """Игровой сокет: очередь, ходы, счётчики зала. Требует живую сессию."""
+    token = (websocket.query_params.get("token") or "").strip()
+    try:
+        _auth_session(nickname, token)
+    except Exception:
+        await websocket.accept()
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    old = _game_sockets.get(nickname)
+    if old and old is not websocket:
+        try:
+            await old.close(code=4402)
+        except Exception:
+            pass
+    _game_sockets[nickname] = websocket
+    await websocket.send_json(_lobby_state())
+    await websocket.send_json({"action": "my_stats", "stats": _stats_payload(nickname)})
+    await _lobby_broadcast()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action")
+            if action == "queue":
+                await _handle_queue(nickname, (data.get("game") or "").strip())
+            elif action == "unqueue":
+                await _drop_queue(nickname)
+                await _lobby_broadcast()
+            elif action == "move":
+                await _handle_move(nickname, data.get("match_id"), data.get("data") or {})
+            elif action == "forfeit":
+                try:
+                    mid = int(data.get("match_id"))
+                except (TypeError, ValueError):
+                    continue
+                m = _matches.get(mid)
+                if m and not m["over"] and nickname in (m["p1"], m["p2"]):
+                    opp = m["p2"] if nickname == m["p1"] else m["p1"]
+                    await _finish_match(m, opp, "forfeit")
+            elif action == "lobby":
+                await websocket.send_json(_lobby_state())
+            elif action == "stats":
+                await websocket.send_json({"action": "my_stats", "stats": _stats_payload(nickname)})
+            elif action == "ping":
+                await websocket.send_json({"action": "pong"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if _game_sockets.get(nickname) is websocket:
+            _game_sockets.pop(nickname, None)
+        await _drop_queue(nickname)
+        # Противник не будет ждать вечно — закрытый игрок проигрывает
+        for m in list(_matches.values()):
+            if not m["over"] and nickname in (m["p1"], m["p2"]):
+                opp = m["p2"] if nickname == m["p1"] else m["p1"]
+                await _finish_match(m, opp, "forfeit")
+        await _lobby_broadcast()
+
+
 @app.websocket("/ws/{chat_id}/{nickname}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
     # Сокет тоже требует живую сессию — иначе можно было писать от чужого имени
@@ -2199,11 +2903,20 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 conn.commit()
                 data["id"] = cursor.lastrowid
                 data["action"] = "new_message"
+                data["chat_id"] = chat_id
                 await manager.broadcast_chat(chat_id, data)
+
+                # Личный чат с ботом-помощником: он отвечает отдельной задачей
+                if chat_id.startswith("bot_"):
+                    asyncio.create_task(bot_reply(chat_id, nickname, data.get("text") or ""))
 
             elif action == "react":
                 mid = data.get("message_id")
                 emoji = (data.get("emoji") or "").strip()[:8]
+                try:
+                    mid = int(mid)
+                except (TypeError, ValueError):
+                    mid = None
                 if mid and emoji:
                     # У одного пользователя на сообщение — одна реакция (как в Телеграме)
                     cursor.execute("DELETE FROM message_reactions WHERE message_id=? AND LOWER(nickname)=LOWER(?)",
@@ -2220,14 +2933,24 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
 
             elif action == "delete":
                 mid = data.get("message_id")
-                cursor.execute("SELECT sender FROM messages WHERE id=?", (mid,))
+                try:
+                    mid = int(mid)
+                except (TypeError, ValueError):
+                    continue
+                cursor.execute("SELECT sender, chat_id, file_url FROM messages WHERE id=?", (mid,))
                 row = cursor.fetchone()
                 if not row:
                     continue
                 owner = (row[0] or "").lower()
+                if (row[1] or "") != chat_id:
+                    await websocket.send_json({"action": "error",
+                                               "msg": "Это сообщение из другого чата"})
+                    continue
                 # Своё сообщение — можно всегда; чужое — глобальное право
                 # can_delete_messages либо чатовое право delete_messages
+                owns_bot = chat_id.lower() == f"bot_{nickname}".lower()
                 if (owner != (nickname or "").lower()
+                        and not owns_bot
                         and not can_delete_messages(nickname)
                         and not chat_permission(chat_id, nickname, "delete_messages")):
                     await websocket.send_json({"action": "error",
@@ -2236,6 +2959,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 cursor.execute("DELETE FROM messages WHERE id=?", (mid,))
                 cursor.execute("DELETE FROM message_reactions WHERE message_id=?", (mid,))
                 conn.commit()
+                # Файл (фото/голос/вложение) убираем с диска — в чате его больше нет
+                delete_upload_file(row[2])
                 await manager.broadcast_chat(chat_id, {"action": "deleted", "message_ids": [mid], "deleted_by": nickname})
 
     except WebSocketDisconnect:
