@@ -321,6 +321,16 @@ CREATE TABLE IF NOT EXISTS game_matches (
 )
 """)
 
+# Чёрный список удалённых аккаунтов: такой ник нельзя занять повторно
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS deleted_users (
+    nickname TEXT PRIMARY KEY,
+    deleted_by TEXT DEFAULT '',
+    reason TEXT DEFAULT '',
+    deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
 conn.commit()
 
 cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES ('general', '🌐 Общий чат', 'system', 0)")
@@ -351,6 +361,8 @@ _safe_alters = [
     # а сам кик не чаще одного раза в KICK_RATE_SECONDS (иначе аккаунт заморозить навсегда)
     ("users", "kicked_until", "TIMESTAMP"),
     ("users", "last_kick_at", "TIMESTAMP"),
+    # Служебные сообщения (мьют, бан, звонки) — не редактируются и не имеют автора
+    ("messages", "is_system", "INTEGER DEFAULT 0"),
 ]
 for tbl, col, ctype in _safe_alters:
     try:
@@ -859,6 +871,40 @@ def kick_block_left(nick: str) -> int:
     return max(0, int((until - datetime.utcnow()).total_seconds()))
 
 
+def mute_info(nick: str):
+    """Активный мьют: сколько минут осталось и почему. None — не замьючен."""
+    if not nick:
+        return None
+    cursor.execute(
+        "SELECT reason, duration_minutes, expires_at FROM mutes WHERE LOWER(target_nick)=LOWER(?) AND expires_at>?",
+        (nick, now_str()))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    reason, minutes, expires = row
+    try:
+        secs = (datetime.strptime(expires, '%Y-%m-%d %H:%M:%S') - datetime.utcnow()).total_seconds()
+    except Exception:
+        secs = float((minutes or 1) * 60)
+    if secs <= 0:
+        return None
+    return {"reason": (reason or "").strip(), "minutes": max(1, int(secs // 60)), "expires": expires}
+
+
+async def post_system_message(chat_id: str, text: str) -> int:
+    """Служебное сообщение чата (мьют/бан) — видят все участники, автора нет."""
+    cursor.execute("INSERT INTO messages (chat_id, sender, text, is_system) VALUES (?,?,?,1)",
+                   (chat_id, "Система", text))
+    conn.commit()
+    mid = cursor.lastrowid
+    await manager.broadcast_chat(chat_id, {
+        "action": "new_message", "id": mid, "chat_id": chat_id,
+        "sender": "Система", "text": text,
+        "time": datetime.now().strftime("%H:%M"), "is_system": True,
+    })
+    return mid
+
+
 def periodic_cleanup(force: bool = False):
     """Очистка устаревших данных. Вызывается из многих обработчиков,
     поэтому выполняется не чаще раза в 30 секунд одним потоком —
@@ -1207,21 +1253,32 @@ async def auth_user(data: AuthData, request: Request):
     ns = now_str()
     ip = data.ip_address or (request.client.host if request.client else "127.0.0.1")
 
-    # Только что выкинули из аккаунта — вход заблокирован на 30 секунд
-    lock_left = kick_block_left(data.nickname)
-    if lock_left > 0:
-        return {"status": "error",
-                "msg": f"Вас только что выкинули из аккаунта. Подождите {lock_left} сек. перед входом."}
-
+    # Сначала бан: забаненный при входе видит причину и срок, а не «кик-лок»
     cursor.execute("SELECT reason, ban_type, expires_at FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
     ban = cursor.fetchone()
     if ban:
         reason, ban_type, expires_at = ban
         if ban_type == "permanent" or (ban_type == "temporary" and expires_at and expires_at > ns):
-            return {"status": "banned", "msg": f"Аккаунт заблокирован! Причина: {reason}"}
+            if ban_type == "permanent":
+                srok = "навсегда"
+            else:
+                left = datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S') - datetime.utcnow()
+                if left.total_seconds() < 0:
+                    left = timedelta(0)
+                local_exp = datetime.now() + left
+                hh, mm = int(left.total_seconds() // 3600), int((left.total_seconds() % 3600) // 60)
+                srok = f"до {local_exp.strftime('%d.%m.%Y %H:%M')} (осталось {hh} ч. {mm} мин.)"
+            return {"status": "banned",
+                    "msg": f"Аккаунт заблокирован! Причина: {reason}. Срок бана: {srok}. Войти нельзя."}
         else:
             cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.nickname,))
             conn.commit()
+
+    # Только что выкинули из аккаунта — вход заблокирован на 30 секунд
+    lock_left = kick_block_left(data.nickname)
+    if lock_left > 0:
+        return {"status": "error",
+                "msg": f"Вас только что выкинули из аккаунта. Подождите {lock_left} сек. перед входом."}
 
     cursor.execute("""
         SELECT password, is_superadmin, is_admin, admin_perms, avatar_url, bio, nickname, is_owner
@@ -1255,6 +1312,20 @@ async def auth_user(data: AuthData, request: Request):
             "session_token": session_token
         }
     else:
+        # Регистрация: пустой аккаунт создать нельзя, ник и пароль — от 3 символов
+        nick = (data.nickname or "").strip()
+        pwd = data.password or ""
+        if len(nick) < 3:
+            return {"status": "error", "msg": "Ник должен быть от 3 символов!"}
+        if len(pwd.strip()) < 3:
+            return {"status": "error", "msg": "Пароль должен быть от 3 символов!"}
+        if is_deleted_nick(nick):
+            return {"status": "error",
+                    "msg": "Этот ник занят: аккаунт с таким никнеймом был удалён администрацией и больше не регистрируется."}
+        if nick.lower() in ("система", "system"):
+            return {"status": "error", "msg": "Этот ник зарезервирован системой."}
+        data.nickname = nick
+
         is_sup = 1 if is_super(data.nickname) else 0
         perms = {
             "can_delete_messages": True, "can_delete_chats": True, "can_kick_users": True,
@@ -1815,7 +1886,7 @@ def get_messages(chat_id: str):
     periodic_cleanup()
     cursor.execute("""
         SELECT id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender,
-               strftime('%H:%M', created_at)
+               strftime('%H:%M', created_at), is_system
         FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 150
     """, (chat_id,))
     rows = cursor.fetchall()
@@ -1834,7 +1905,7 @@ def get_messages(chat_id: str):
     return [{
         "id": r[0], "sender": r[1], "text": r[2], "file_url": r[3], "file_type": r[4],
         "reply_to_id": r[5], "reply_to_text": r[6], "reply_to_sender": r[7], "time": r[8],
-        "reactions": reactions.get(r[0], {}),
+        "reactions": reactions.get(r[0], {}), "is_system": bool(r[9]),
     } for r in rows]
 
 @app.post("/upload")
@@ -2125,7 +2196,7 @@ def get_admin_groups(admin: str):
     return res
 
 @app.post("/admin/ban")
-def ban_user(data: BanData):
+async def ban_user(data: BanData):
     require_admin(data.admin_nick)
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Главного администратора заблокировать невозможно!"}
@@ -2136,7 +2207,10 @@ def ban_user(data: BanData):
     cursor.execute("INSERT INTO bans (target_nick, banned_by, reason, ban_type, expires_at) VALUES (?,?,?,?,?)",
                    (data.target_nick, data.admin_nick, data.reason, data.ban_type, expires_at))
     conn.commit()
-    return {"status": "ok", "msg": f"@{data.target_nick} заблокирован!"}
+    # Забаненный сразу выкидывается со всех устройств и роняет открытые вкладки
+    await kick_account(data.target_nick,
+                       f"Вы заблокированы! Причина: {data.reason or 'нарушение правил'}.", lock=False)
+    return {"status": "ok", "msg": f"@{data.target_nick} заблокирован и отключён со всех устройств!"}
 
 @app.post("/admin/unban")
 def unban_user(data: BanData):
@@ -2157,13 +2231,33 @@ def get_bans(admin: str):
              "ban_type": r[4], "expires_at": r[5], "created_at": r[6]} for r in cursor.fetchall()]
 
 @app.post("/admin/mute")
-def mute_user(data: MuteData):
+async def mute_user(data: MuteData):
     require_admin(data.admin_nick)
     exp = (datetime.utcnow() + timedelta(minutes=data.duration_minutes)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
     cursor.execute("INSERT INTO mutes (target_nick, muted_by, reason, duration_minutes, expires_at) VALUES (?,?,?,?,?)",
                    (data.target_nick, data.admin_nick, data.reason, data.duration_minutes, exp))
     conn.commit()
+
+    reason_txt = (data.reason or "").strip()
+    # Все личные диалоги замьюченного получают служебное уведомление
+    cursor.execute("""
+        SELECT DISTINCT m.chat_id FROM members m JOIN chats c ON c.id = m.chat_id
+        WHERE LOWER(m.nickname)=LOWER(?) AND c.is_direct=1
+    """, (data.target_nick,))
+    dm_chats = [r[0] for r in cursor.fetchall()]
+    note = (f"🔇 Пользователь @{data.target_nick} замучен на {data.duration_minutes} мин. по правилам"
+            + (f": {reason_txt}" if reason_txt else "") + ".")
+    for cid in dm_chats:
+        await post_system_message(cid, note)
+
+    # Сам мьюченный узнаёт об этом сразу (даже если не в сети — увидит тостом при открытии)
+    await manager.send_to_user(data.target_nick, {
+        "action": "muted",
+        "msg": f"🔇 Вас замьючили на {data.duration_minutes} мин. по правилам"
+               + (f": {reason_txt}" if reason_txt else "") + ". Писать нельзя.",
+        "minutes": data.duration_minutes, "reason": reason_txt, "expires": exp,
+    })
     return {"status": "ok", "msg": f"@{data.target_nick} замьючен на {data.duration_minutes} мин."}
 
 @app.post("/admin/kick")
@@ -2177,6 +2271,17 @@ async def kick_user(data: BanData):
     if not ok:
         return {"status": "error", "msg": msg}
     return {"status": "ok", "msg": f"@{data.target_nick} кикнут. {msg}"}
+
+def note_deleted_user(nick: str, by: str, reason: str = ""):
+    """Аккаунт удалён — ник уходит в чёрный список и больше не регистрируется."""
+    cursor.execute("INSERT OR REPLACE INTO deleted_users (nickname, deleted_by, reason) VALUES (?,?,?)",
+                   (nick, by or "", (reason or "").strip()[:300]))
+
+
+def is_deleted_nick(nick: str) -> bool:
+    cursor.execute("SELECT 1 FROM deleted_users WHERE LOWER(nickname)=LOWER(?)", (nick,))
+    return cursor.fetchone() is not None
+
 
 @app.post("/admin/delete-user")
 def delete_user_action(data: DeleteUserAction):
@@ -2194,8 +2299,10 @@ def delete_user_action(data: DeleteUserAction):
         cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
         cursor.execute("DELETE FROM friends WHERE LOWER(user1)=LOWER(?) OR LOWER(user2)=LOWER(?)", (data.target_nick, data.target_nick))
         cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+        cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+        note_deleted_user(data.target_nick, data.admin_nick, data.reason)
         conn.commit()
-        return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} удалён!"}
+        return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} удалён! Ник больше нельзя занять."}
     elif perms.get("can_request_delete_users"):
         if not data.reason.strip(): return {"status": "error", "msg": "Укажите причину для заявки!"}
         exp = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
@@ -2216,20 +2323,33 @@ def get_delete_requests(admin: str):
     return [{"id": r[0], "target_nick": r[1], "requested_by": r[2], "reason": r[3],
              "created_at": r[4], "expires_at": r[5]} for r in cursor.fetchall()]
 
+@app.get("/admin/deleted")
+def get_deleted_users(admin: str):
+    """Стопка удалённых аккаунтов: их ники больше нельзя занять."""
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute("SELECT nickname, deleted_by, reason, deleted_at FROM deleted_users ORDER BY deleted_at DESC LIMIT 200")
+    return [{"nickname": r[0], "deleted_by": r[1], "reason": r[2], "deleted_at": r[3]}
+            for r in cursor.fetchall()]
+
 @app.post("/admin/delete-requests/decision")
 def decide_delete_request(data: ReqDecision):
     if not is_super(data.admin_nick): return {"status": "error", "msg": "Только Главный Администратор!"}
-    cursor.execute("SELECT target_nick, requested_by FROM delete_requests WHERE id=? AND status='pending'", (data.request_id,))
+    cursor.execute("SELECT target_nick, requested_by, reason FROM delete_requests WHERE id=? AND status='pending'", (data.request_id,))
     req = cursor.fetchone()
     if not req: return {"status": "error", "msg": "Заявка не найдена!"}
-    target, requester = req
+    target, requester, req_reason = req
     if data.action == "approve":
         cursor.execute("UPDATE delete_requests SET status='approved' WHERE id=?", (data.request_id,))
         cursor.execute("DELETE FROM users WHERE LOWER(nickname)=LOWER(?)", (target,))
         cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (target,))
+        cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (target,))
+        note_deleted_user(target, data.admin_nick, req_reason)
         cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Главный администратор одобрил удаление @{target}."))
         conn.commit()
-        return {"status": "ok", "msg": f"@{target} удалён!"}
+        return {"status": "ok", "msg": f"@{target} удалён! Ник больше нельзя занять."}
     else:
         cursor.execute("UPDATE delete_requests SET status='rejected' WHERE id=?", (data.request_id,))
         cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Заявка на удаление @{target} отклонена."))
@@ -2894,6 +3014,19 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                                        f"Отправь запрос в друзья, чтобы общаться без лимита!",
                             })
                             continue
+
+                # Мьют: замьюченный не может писать никуда — ни в ЛС, ни в группы
+                mu = mute_info(nickname)
+                if mu:
+                    if data.get("file_url"):
+                        delete_upload_file(data.get("file_url"))
+                    await websocket.send_json({
+                        "action": "error",
+                        "msg": (f"🔇 Вы замучены на {mu['minutes']} мин. по правилам"
+                                + (f": {mu['reason']}" if mu["reason"] else "")
+                                + ". Писать нельзя."),
+                    })
+                    continue
 
                 cursor.execute("""
                     INSERT INTO messages (chat_id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender)

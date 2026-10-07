@@ -895,6 +895,7 @@
       <button class="admin-tab-btn" id="tab-bans-btn">🚫 Баны</button>
       <button class="admin-tab-btn" id="tab-support-btn">🎧 Саппорт</button>
       <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
+      <button class="admin-tab-btn" id="tab-deleted-btn">🗑 Удалённые</button>
     </div>
 
     <!-- Вкладка Юзеры с фильтрами -->
@@ -914,6 +915,7 @@
     <div id="admin-tab-bans" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
     <div id="admin-tab-support" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
     <div id="admin-tab-requests" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+    <div id="admin-tab-deleted" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
 
     <button class="pill-btn" onclick="closeModal('admin-modal')">Закрыть</button>
   </div>
@@ -1133,9 +1135,13 @@ function showToast(text) {
 function openModal(id) {
   const el = document.getElementById(id);
   el.style.display = 'flex';
-  // Экран входа живёт выше модалок (z-index 10000) — поднимаем модалку над ним
   const auth = document.getElementById('auth-screen');
-  el.style.zIndex = (auth && auth.style.display !== 'none') ? '10001' : '';
+  if (id === 'confirm-modal') {
+    // Подтверждение всегда накладывается поверх открытого меню/панели
+    el.style.zIndex = '19000';
+  } else {
+    el.style.zIndex = (auth && auth.style.display !== 'none') ? '10001' : '';
+  }
 }
   function closeModal(id) {
     document.getElementById(id).style.display = 'none';
@@ -1208,6 +1214,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
 async function login(nickname, password) {
   const err = document.getElementById('auth-error');
+  err.innerText = '';
+  // Пустой аккаунт создать нельзя: ник и пароль от 3 символов
+  if ((nickname || '').trim().length < 3) { err.innerText = 'Ник должен быть от 3 символов!'; return; }
+  if ((password || '').trim().length < 3) { err.innerText = 'Пароль должен быть от 3 символов!'; return; }
   try {
     const res = await fetch(`${BACKEND_URL}/auth`, {
       method: 'POST',
@@ -1813,6 +1823,9 @@ async function switchChat(chatId, chatName, isDirect = null) {
       if (el) renderReactions(el, data.reactions || {});
     } else if (data.action === 'error') {
       showToast(data.msg || 'Ошибка сервера', 'error');
+    } else if (data.action === 'muted') {
+      // Админ замьютил — показываем причину и срок
+      showToast(data.msg || 'Вы замьючены по правилам', 'warning');
     } else if (data.action === 'new_invite') {
       checkInvites();
       showToast(`Новое приглашение в чат от @${data.from}!`);
@@ -1896,6 +1909,20 @@ function escapeHtml(s) {
 
 function renderMessage(msg) {
   const box = document.getElementById('messages-box');
+
+  // Служебное сообщение (мьют/бан): без автора, меню и реакций
+  if (msg.is_system) {
+    const sys = document.createElement('div');
+    sys.id = `msg-${msg.id}`;
+    sys.className = 'msg-call-system';
+    sys.dataset.msgId = msg.id;
+    sys.innerHTML = `<div class="msg-call-text">${escapeHtml(msg.text || '')}</div>
+      <div class="msg-time" style="opacity:.55;">${msg.time || ''}</div>`;
+    box.appendChild(sys);
+    box.scrollTop = box.scrollHeight;
+    return;
+  }
+
   const isMine = msg.sender === currentUser;
   const el = document.createElement('div');
   el.id = `msg-${msg.id}`;
@@ -3288,7 +3315,7 @@ function showAdminTab(tab) {
   document.querySelectorAll('.admin-tab-btn').forEach(b => {
     b.classList.toggle('active', b.id === `tab-${tab}-btn`);
   });
-  ['users','groups','bans','support','requests'].forEach(t => {
+  ['users','groups','bans','support','requests','deleted'].forEach(t => {
     document.getElementById(`admin-tab-${t}`).style.display = t === tab ? 'flex' : 'none';
   });
   if (tab === 'users') loadAdminUsers();
@@ -3296,6 +3323,41 @@ function showAdminTab(tab) {
   else if (tab === 'bans') loadAdminBans();
   else if (tab === 'support') loadAdminSupport();
   else if (tab === 'requests') loadAdminRequests();
+  else if (tab === 'deleted') loadAdminDeleted();
+}
+
+// Стопка удалённых аккаунтов: отдельный список, ник таких юзеров занять нельзя
+async function loadAdminDeleted() {
+  const c = document.getElementById('admin-tab-deleted');
+  c.innerHTML = '<div style="text-align:center;color:var(--text-dim);">Загрузка...</div>';
+  try {
+    const res = await fetch(`${BACKEND_URL}/admin/deleted?admin=${encodeURIComponent(currentUser)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && data.detail) || 'Доступ запрещён');
+    const rows = Array.isArray(data) ? data : (data.users || []);
+    if (!rows.length) {
+      c.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:8px;">Пока пусто — удалённых аккаунтов нет.</div>';
+      return;
+    }
+    c.innerHTML = `<div style="font-size:12px;color:var(--text-dim);">Удалено: ${rows.length}. Эти ники больше нельзя занять при регистрации.</div>`;
+    rows.forEach(u => {
+      const row = document.createElement('div');
+      row.className = 'user-row';
+      const when = (u.deleted_at || '').replace(' ', ' в ') + ' UTC';
+      row.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b>🗑 @${escapeHtml(u.nickname || '')}</b>
+          <span style="font-size:11px;color:var(--text-dim);">${escapeHtml(when)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);">
+          Кем: @${escapeHtml(u.deleted_by || '—')}<br>
+          Причина: ${escapeHtml(u.reason || '—')}
+        </div>`;
+      c.appendChild(row);
+    });
+  } catch (e) {
+    c.innerHTML = `<div style="color:#f66;text-align:center;">Не удалось загрузить: ${escapeHtml(String(e.message || e))}</div>`;
+  }
 }
 
 function setAdminFilter(ftype) {
@@ -4137,6 +4199,7 @@ function editMemberPerms(m) {
   document.getElementById('confirm-title').innerText = 'Права админа';
   document.getElementById('confirm-text').innerHTML = body;
   document.getElementById('confirm-modal').style.display = 'flex';
+  document.getElementById('confirm-modal').style.zIndex = '19000';
   const yBtn = document.getElementById('confirm-yes-btn');
   const nBtn = document.getElementById('confirm-no-btn');
   yBtn.onclick = async () => {
