@@ -1097,30 +1097,30 @@ let voiceStartX = 0, voiceStartY = 0;
 let voiceTimerInt = null;
 let voiceSec = 0;
 
-// WebRTC Звонки: STUN для адресов + бесплатный TURN-ретранслятор,
-// без которого звонок между разными сетями (мобайл/улица/другой провайдер) не стыкуется
+// WebRTC Звонки: только живые STUN (мёртвый openrelay вешал сбор кандидатов,
+// из-за чего звонок не мог установиться, особенно на мобильном интернете)
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-  ]
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  ],
+  iceCandidatePoolSize: 10
 };
 let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
 let isCamOn = false, isScreenOn = false, isMicOn = true;
 let callTimeoutTimer = null;
 let callConnectTimer = null;   // таймаут установки ICE-соединения
-// Если за 15 секунд после ответа нет соединения — говорим прямо, а не вечно «Соединение...»
+// Если за 25 секунд после ответа нет соединения — говорим прямо, а не вечно «Соединение...»
 function armCallConnectTimeout() {
   clearTimeout(callConnectTimer);
   callConnectTimer = setTimeout(() => {
     if (callState === 'active' && !callConnectedAt && currentCallPartner) {
-      showToast('Соединение не установилось за 15 сек — проверьте интернет у вас и собеседника, затем перезвоните', 'warning');
+      showToast('Соединение не установилось за 25 сек — проверьте интернет у вас и собеседника, затем перезвоните', 'warning');
       endCall();
     }
-  }, 15000);
+  }, 25000);
 }
 let pendingIncomingOffer = null;
 let iceCandidatesQueue = [];
@@ -1971,7 +1971,9 @@ async function switchChat(chatId, chatName, isDirect = null) {
       handleCallAnswer(data);
     } else if (data.action === 'call_ice') {
       if (peerConnection && peerConnection.remoteDescription) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        try {
+          peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+        } catch (e) { /* битый кандидат — игнорируем */ }
       } else {
         iceCandidatesQueue.push(data.candidate);
       }
@@ -2883,23 +2885,32 @@ function createPeerConnectionInstance(precreate) {
 
   peerConnection.onicecandidate = (e) => {
     if (e.candidate && currentCallPartner) {
-      sendSignal({ action: 'call_ice', target: currentCallPartner, candidate: e.candidate });
+      sendSignal({ action: 'call_ice', target: currentCallPartner,
+                   candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate });
     }
   };
 
-  // Следим за установкой соединения — иначе «тихий» звонок без причины
+  // Подключение ловим и по connectionState, и по iceConnectionState:
+  // на смартфонах общий статус часто висит в connecting, пока ICE уже готова
+  const handleConnected = () => {
+    if (callConnectedAt) return;
+    clearTimeout(callConnectTimer);
+    clearTimeout(callTimeoutTimer);
+    callConnectedAt = Date.now();
+    callState = 'active';
+    stopRing();
+    setCallRinging(null);
+    markCallConnected('🔊 Разговор идёт');
+    const b = document.getElementById('call-status-badge');
+    if (b) b.innerText = '🔊 Разговор идёт';
+    document.getElementById('call-mini-toast').style.display = 'none';
+    playRemoteAudio();
+  };
+
   peerConnection.onconnectionstatechange = () => {
     const st = peerConnection ? peerConnection.connectionState : '';
     if (st === 'connected') {
-      stopRing();
-      setCallRinging(null);
-      callState = 'active';
-      if (!callConnectedAt) callConnectedAt = Date.now();
-      markCallConnected('🔊 Разговор идёт');
-      const b = document.getElementById('call-status-badge');
-      if (b) b.innerText = '🔊 Разговор идёт';
-      document.getElementById('call-mini-toast').style.display = 'none';
-      playRemoteAudio();
+      handleConnected();
     } else if (st === 'failed') {
       showToast('Не удалось соединиться с собеседником', 'error');
       endCall();
@@ -2911,8 +2922,10 @@ function createPeerConnectionInstance(precreate) {
 
   peerConnection.oniceconnectionstatechange = () => {
     const st = peerConnection ? peerConnection.iceConnectionState : '';
-    if (st === 'failed' && peerConnection && peerConnection.connectionState !== 'connected') {
-      showToast('Нет соединения со собеседником (проверьте сеть)', 'error');
+    if (st === 'connected' || st === 'completed') {
+      handleConnected();
+    } else if (st === 'failed' && peerConnection && peerConnection.connectionState !== 'connected') {
+      showToast('Нет соединения с собеседником (проверьте сеть)', 'error');
       endCall();
     }
   };
@@ -3089,7 +3102,9 @@ document.getElementById('btn-accept-call').onclick = async () => {
 
     while (iceCandidatesQueue.length > 0) {
       const cand = iceCandidatesQueue.shift();
-      await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) { /* битый кандидат — не мешаем отправке SDP-ответа */ }
     }
 
     const answer = await peerConnection.createAnswer();
@@ -3097,7 +3112,7 @@ document.getElementById('btn-accept-call').onclick = async () => {
     await peerConnection.setLocalDescription(answer);
 
     sendSignal({ action: 'call_answer', target: currentCallPartner, sdp: answer });
-    document.getElementById('call-status-badge').innerText = 'Соединение...';
+    if (!callConnectedAt) document.getElementById('call-status-badge').innerText = 'Соединение...';
     armCallConnectTimeout();
     markCallAccepted();
 
@@ -3133,12 +3148,14 @@ function handleCallAnswer(data) {
   callState = 'active';
   if (!peerConnection) return;
   peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
-    document.getElementById('call-status-badge').innerText = 'Соединение...';
+    if (!callConnectedAt) document.getElementById('call-status-badge').innerText = 'Соединение...';
     armCallConnectTimeout();
     markCallAccepted();
     while (iceCandidatesQueue.length > 0) {
       const cand = iceCandidatesQueue.shift();
-      peerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+      try {
+        peerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+      } catch (e) { /* битый кандидат — игнорируем */ }
     }
     playRemoteAudio();
   }).catch(e => {
@@ -3370,7 +3387,8 @@ function updateCallTimer() {
 
 function markCallAccepted() {
   const b = document.getElementById('call-status-badge');
-  if (b) b.innerText = 'Соединение…';
+  // гонка: ICE может подключиться ещё до .then — тогда бейдж уже «Разговор идёт»
+  if (b && !callConnectedAt) b.innerText = 'Соединение…';
   if (callStartMsgEl) {
     const txt = callStartMsgEl.querySelector('.msg-call-text');
     if (txt && currentCallPartner) {
@@ -4637,6 +4655,7 @@ function handleGameEvent(m) {
       gameCurrent = m.game;
       gameMatchId = m.id;
       gameLastOver = null;
+      seaPlace = null;   // новый матч — чистим старую расстановку
       gameSend({ action: 'stats' });
       showGameOverlay();
       showToast(`Соперник найден: @${m.opp}!`, 'success');
@@ -4774,6 +4793,7 @@ function showGameOverlay() { document.getElementById('game-overlay').style.displ
 function hideGameOverlay() { document.getElementById('game-overlay').style.display = 'none'; }
 
 function exitGame() {
+  seaPlace = null;
   if (gamePhase === 'searching') {
     gameSend({ action: 'unqueue' });
     gamePhase = 'idle';
@@ -4924,8 +4944,125 @@ function renderTtt(body, foot, s) {
   });
 }
 
+// ── 🚢 Морской бой: расстановка кораблей ──
+// Правила: 10 кораблей (4,3,3,2,2,2,1,1,1,1), только по прямой,
+// корабли НЕ соприкасаются (в том числе по диагонали).
+const SEA_SIZES = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
+let seaPlace = null; // { placed: [[cell,...]], dir: 'h'|'v' }
+
+function seaPlaceEnsure() {
+  if (!seaPlace) seaPlace = { placed: [], dir: 'h' };
+  return seaPlace;
+}
+
+function seaShipFits(cells) {
+  for (const c of cells) {
+    const r = Math.floor(c / 10), col = c % 10;
+    if (r < 0 || r > 9 || col < 0 || col > 9) return false;
+  }
+  const occ = new Set();
+  for (const ship of seaPlace.placed) for (const c of ship) occ.add(c);
+  for (const c of cells) {
+    const r = Math.floor(c / 10), col = c % 10;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const rr = r + dr, cc = col + dc;
+      if (rr >= 0 && rr <= 9 && cc >= 0 && cc <= 9 && occ.has(rr * 10 + cc)) return false;
+    }
+  }
+  return true;
+}
+
+function seaRemainingSizes() {
+  const left = SEA_SIZES.slice();
+  for (const s of seaPlace.placed) {
+    const i = left.indexOf(s.length);
+    if (i >= 0) left.splice(i, 1);
+  }
+  return left;
+}
+
+function seaPlaceAt(cell) {
+  const left = seaRemainingSizes();
+  if (!left.length) { showToast('Все корабли расставлены — нажмите «Готово»'); return; }
+  const size = left[0];
+  const r = Math.floor(cell / 10), col = cell % 10;
+  const cells = [];
+  for (let i = 0; i < size; i++) {
+    const rr = seaPlace.dir === 'v' ? r + i : r;
+    const cc = seaPlace.dir === 'h' ? col + i : col;
+    if (rr > 9 || cc > 9) { showToast(`Корабль длиной ${size} не влезает с края поля`); return; }
+    cells.push(rr * 10 + cc);
+  }
+  if (!seaShipFits(cells)) { showToast('Здесь нельзя: корабли не соприкасаются (даже по диагонали)'); return; }
+  seaPlace.placed.push(cells);
+  renderGame();
+}
+
+function renderSeaPlacing(body, foot, s) {
+  seaPlaceEnsure();
+  const ready = !!s.my_ready;
+  const placedCells = new Set();
+  seaPlace.placed.forEach(sh => sh.forEach(c => placedCells.add(c)));
+
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:13.5px; font-weight:700; text-align:center; color:#58a6ff;';
+  const left = seaRemainingSizes();
+  head.textContent = ready
+    ? '⚓ Расстановка принята — ждём, пока соперник поставит флот...'
+    : (seaPlace.placed.length
+        ? `⚓ Осталось поставить: ${left.join(', ')} · клик по своему кораблю — убрать его`
+        : '⚓ Расставьте флот: 4, 3, 3, 2, 2, 2 и четыре одиночных. Корабли не соприкасаются (даже по диагонали).');
+
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid; grid-template-columns:repeat(10,26px); gap:2px; padding:6px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(0,40,80,.25); width:max-content; margin:0 auto;';
+  for (let i = 0; i < 100; i++) {
+    const c = document.createElement('div');
+    const isShip = placedCells.has(i);
+    c.style.cssText = `width:26px;height:26px;border-radius:4px;background:${isShip ? 'rgba(88,166,255,.7)' : 'rgba(255,255,255,.05)'};cursor:${ready ? 'default' : 'pointer'};transition:.15s;`;
+    if (!ready) {
+      c.onclick = () => {
+        if (isShip) {
+          const idx = seaPlace.placed.findIndex(sh => sh.includes(i));
+          if (idx >= 0) seaPlace.placed.splice(idx, 1);
+          renderGame();
+        } else {
+          seaPlaceAt(i);
+        }
+      };
+    } else if (isShip) c.title = 'Ваш корабль';
+    grid.appendChild(c);
+  }
+
+  body.appendChild(head);
+  body.appendChild(grid);
+
+  if (!ready) {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; justify-content:center;';
+    const mk = (label, fn, css) => {
+      const b = document.createElement('button');
+      b.className = 'pill-btn';
+      if (css) b.style.cssText = css;
+      b.textContent = label;
+      b.onclick = fn;
+      bar.appendChild(b);
+      return b;
+    };
+    mk(seaPlace.dir === 'h' ? '↔ Горизонталь' : '↕ Вертикаль',
+       () => { seaPlace.dir = seaPlace.dir === 'h' ? 'v' : 'h'; renderGame(); });
+    mk('🎲 Авто', () => gameSend({ action: 'place_ships', match_id: gameMatchId, auto: true }));
+    mk('🧹 Сброс', () => { seaPlace.placed = []; renderGame(); });
+    mk('⚔️ Готово', () => {
+      if (seaPlace.placed.length !== 10) { showToast(`Расставлено ${seaPlace.placed.length} из 10 кораблей`); return; }
+      gameSend({ action: 'place_ships', match_id: gameMatchId, ships: seaPlace.placed });
+    }, 'background:var(--neon-cyan); color:#000; font-weight:700;');
+    body.appendChild(bar);
+  }
+}
+
 // ── 🚢 Морской бой ──
 function renderSea(body, foot, s) {
+  if (s.phase === 'placing') { renderSeaPlacing(body, foot, s); return; }
   const myTurn = s.turn === s.you;
   const mkGrid = (opts) => {
     const wrap = document.createElement('div');
@@ -4969,6 +5106,17 @@ function renderSea(body, foot, s) {
   head.textContent = myTurn ? '🎯 Ваш ход — стреляйте по чужому полю'
                             : `⏳ Ход соперника (${s.opp}) — ждём выстрела`;
 
+  // Результат последнего выстрела (попадание = ещё один ход)
+  const lastLine = document.createElement('div');
+  lastLine.style.cssText = 'font-size:12.5px; font-weight:700; text-align:center; margin-top:2px;';
+  if (s.last && s.last.by === s.you) {
+    lastLine.textContent = s.last.hit ? '🎯 Попадание! Стреляйте ещё — ход за вами' : '💦 Ваш промах — ход соперника';
+    lastLine.style.color = s.last.hit ? '#3fb950' : 'var(--text-dim)';
+  } else if (s.last) {
+    lastLine.textContent = s.last.hit ? '💥 Вас подбили — у соперника ещё ход' : '💦 Соперник промахнулся — ваш ход';
+    lastLine.style.color = s.last.hit ? '#ff7b72' : 'var(--text-dim)';
+  }
+
   const note = document.createElement('div');
   note.style.cssText = 'font-size:11.5px; color:var(--text-dim); text-align:center;';
   const hitCount = Object.values(s.foe_field || {}).filter(v => v === 'hit').length;
@@ -4976,6 +5124,7 @@ function renderSea(body, foot, s) {
   note.textContent = `Попаданий по сопернику: ${hitCount} из ${totalFoe} клеток · синее — ваши корабли, красное — попадания.`;
 
   body.appendChild(head);
+  if (s.last) body.appendChild(lastLine);
   const row = document.createElement('div');
   row.style.cssText = 'display:flex; gap:26px; flex-wrap:wrap; justify-content:center;';
   row.appendChild(myField);

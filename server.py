@@ -2621,33 +2621,94 @@ async def _lobby_broadcast():
 
 
 def _sea_place() -> List[List[int]]:
-    """Случайная расстановка 10 кораблей (4/3/3/2/2/2/1/1/1/1) на поле 10×10."""
+    """Случайная расстановка 10 кораблей (4/3/3/2/2/2/1/1/1/1) на поле 10×10.
+    Корабли НЕ соприкасаются — даже по диагонали (классические правила)."""
     while True:
-        board = [[False] * 10 for _ in range(10)]
+        taken = set()
         ships: List[List[int]] = []
         ok = True
         for size in (4, 3, 3, 2, 2, 2, 1, 1, 1, 1):
-            for _try in range(500):
+            placed = False
+            for _try in range(800):
                 horiz = random.random() < 0.5
                 r, c = random.randrange(10), random.randrange(10)
-                cells, good = [], True
+                cells = []
                 for i in range(size):
                     rr = r if horiz else r + i
                     cc = c + i if horiz else c
-                    if rr > 9 or cc > 9 or board[rr][cc]:
-                        good = False
+                    if rr > 9 or cc > 9:
+                        cells = []
                         break
                     cells.append(rr * 10 + cc)
-                if good:
-                    for cell in cells:
-                        board[cell // 10][cell % 10] = True
-                    ships.append(cells)
-                    break
-            else:
+                if len(cells) != size:
+                    continue
+                # Окрестность корабля (включая диагонали) должна быть пуста
+                bad = False
+                for cell in cells:
+                    cr, cc2 = divmod(cell, 10)
+                    for dr in (-1, 0, 1):
+                        for dc in (-1, 0, 1):
+                            rr, rc = cr + dr, cc2 + dc
+                            if 0 <= rr <= 9 and 0 <= rc <= 9 and (rr * 10 + rc) in taken:
+                                bad = True
+                                break
+                        if bad:
+                            break
+                    if bad:
+                        break
+                if bad:
+                    continue
+                taken.update(cells)
+                ships.append(cells)
+                placed = True
+                break
+            if not placed:
                 ok = False
                 break
         if ok and len(ships) == 10:
             return ships
+
+
+def _sea_validate(ships_raw) -> List[List[int]]:
+    """Проверка ручной расстановки: 10 кораблей 4/3/3/2/2/2/1/1/1/1,
+    прямые линии, в границах, без соприкосновений (вкл. диагонали)."""
+    try:
+        ships = [[int(c) for c in cells] for cells in ships_raw]
+    except (TypeError, ValueError):
+        raise ValueError("Неверный формат расстановки")
+    if sorted(len(c) for c in ships) != [1, 1, 1, 1, 2, 2, 2, 3, 3, 4]:
+        raise ValueError("Нужно 10 кораблей: 4, 3, 3, 2, 2, 2 и четыре одиночных")
+    taken = set()
+    for cells in ships:
+        if len(set(cells)) != len(cells):
+            raise ValueError("Клетки повторяются")
+        if any(c < 0 or c > 99 for c in cells):
+            raise ValueError("Корабль за пределами поля")
+        rows = {c // 10 for c in cells}
+        cols = {c % 10 for c in cells}
+        if not (len(rows) == 1 or len(cols) == 1):
+            raise ValueError("Корабль должен стоять по прямой")
+        # непрерывность линии
+        if len(rows) == 1:
+            r = next(iter(rows))
+            expect = list(range(r * 10 + min(cols), r * 10 + min(cols) + len(cells)))
+            if sorted(cells) != expect:
+                raise ValueError("Клетки корабля должны идти подряд")
+        else:
+            c0 = next(iter(cols))
+            expect = list(range(min(rows) * 10 + c0, (min(rows) + len(cells)) * 10 + c0, 10))
+            if sorted(cells) != expect:
+                raise ValueError("Клетки корабля должны идти подряд")
+        # соприкосновение с уже поставленными (вкл. диагонали)
+        for cell in cells:
+            cr, cc = divmod(cell, 10)
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    rr, rc = cr + dr, cc + dc
+                    if 0 <= rr <= 9 and 0 <= rc <= 9 and (rr * 10 + rc) in taken:
+                        raise ValueError("Корабли не должны соприкасаться (в том числе по диагонали)")
+        taken.update(cells)
+    return ships
 
 
 def _init_match(game: str, p1: str, p2: str) -> dict:
@@ -2658,9 +2719,12 @@ def _init_match(game: str, p1: str, p2: str) -> dict:
         state = {"board": [""] * 9, "marks": {p1: "X", p2: "O"}, "turn": p1}
     elif game == "sea":
         state = {
-            "ships": {p1: _sea_place(), p2: _sea_place()},
-            "shots": {p1: {}, p2: {}},   # клетка -> 'hit'/'miss'
+            "phase": "placing",              # placing -> battle
+            "ships": {p1: None, p2: None},   # каждый ставит сам
+            "ready": {p1: False, p2: False},
+            "shots": {p1: {}, p2: {}},       # клетка -> 'hit'/'miss'
             "turn": p1,
+            "last": None,                    # последний выстрел: {"cell","hit","by"}
         }
     return {"id": None, "game": game, "p1": p1, "p2": p2, "over": False, "state": state}
 
@@ -2680,14 +2744,19 @@ def _public_state(m: dict, nick: str) -> dict:
         base.update({"board": st["board"], "my_mark": st["marks"][nick],
                      "opp_mark": st["marks"][opp], "turn": st["turn"]})
     elif game == "sea":
+        phase = st.get("phase", "battle")
         my_shots = st["shots"][nick]           # мои выстрелы по сопернику
         foe_shots = st["shots"][opp]           # выстрелы соперника по мне
-        my_ships = [c for cells in st["ships"][nick] for c in cells]
-        foe_ships = st["ships"][opp]
+        my_ship_cells = [c for cells in (st["ships"].get(nick) or []) for c in cells]
+        foe_ships = st["ships"].get(opp) or []
         base.update({
-            "turn": st["turn"], "my_ships": my_ships,
+            "phase": phase,
+            "my_ready": bool(st["ready"][nick]),
+            "foe_ready": bool(st["ready"][opp]),
+            "last": st.get("last"),
+            "turn": st["turn"], "my_ships": my_ship_cells,
             "my_field": foe_shots, "foe_field": my_shots,
-            "my_sunk": [c for cells in st["ships"][nick]
+            "my_sunk": [c for cells in (st["ships"].get(nick) or [])
                         if all(foe_shots.get(str(c)) == "hit" for c in cells) for c in cells],
             "foe_sunk": [c for cells in foe_ships
                          if all(my_shots.get(str(c)) == "hit" for c in cells) for c in cells],
@@ -2793,6 +2862,40 @@ async def _handle_queue(nick: str, game: str):
 _TTT_LINES = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
 
 
+async def _handle_place_ships(nick: str, mid, data: dict):
+    """Морской бой: игрок присылает свою расстановку (или просит авто)."""
+    try:
+        mid = int(mid)
+    except (TypeError, ValueError):
+        return
+    m = _matches.get(mid)
+    if not m or m["over"]:
+        await _gsend(nick, {"action": "error", "msg": "Матч уже закончен или не найден"})
+        return
+    if nick not in (m["p1"], m["p2"]):
+        return
+    if m["game"] != "sea":
+        return
+    st = m["state"]
+    if st.get("phase") != "placing":
+        await _gsend(nick, {"action": "error", "msg": "Расстановка уже завершена"})
+        return
+    if data.get("auto"):
+        ships = _sea_place()
+    else:
+        try:
+            ships = _sea_validate(data.get("ships"))
+        except ValueError as e:
+            await _gsend(nick, {"action": "error", "msg": f"Расстановка не подходит: {e}"})
+            return
+    st["ships"][nick] = ships
+    st["ready"][nick] = True
+    if all(st["ready"].values()):
+        st["phase"] = "battle"
+        st["turn"] = m["p1"]
+    await _send_state(m)
+
+
 async def _handle_move(nick: str, mid, data: dict):
     try:
         mid = int(mid)
@@ -2864,6 +2967,9 @@ async def _handle_move(nick: str, mid, data: dict):
         return
 
     if game == "sea":
+        if st.get("phase") != "battle":
+            await _gsend(nick, {"action": "error", "msg": "Соперник ещё расставляет корабли"})
+            return
         if st["turn"] != nick:
             await _gsend(nick, {"action": "error", "msg": "Сейчас ход соперника"})
             return
@@ -2879,12 +2985,15 @@ async def _handle_move(nick: str, mid, data: dict):
             return
         hit = any(cell in cells for cells in st["ships"][opp])
         shots[str(cell)] = "hit" if hit else "miss"
+        st["last"] = {"cell": cell, "hit": bool(hit), "by": nick}
         all_cells = [c for cells in st["ships"][opp] for c in cells]
         if all(str(c) in shots for c in all_cells):
             await _send_state(m)
             await _finish_match(m, nick)
             return
-        st["turn"] = opp
+        # Классические правила: попал — ходишь ещё, промах — ход соперника
+        if not hit:
+            st["turn"] = opp
         await _send_state(m)
 
 
@@ -2976,6 +3085,8 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                 await _lobby_broadcast()
             elif action == "move":
                 await _handle_move(nickname, data.get("match_id"), data.get("data") or {})
+            elif action == "place_ships":
+                await _handle_place_ships(nickname, data.get("match_id"), data)
             elif action == "forfeit":
                 try:
                     mid = int(data.get("match_id"))
