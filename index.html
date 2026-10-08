@@ -1097,11 +1097,31 @@ let voiceStartX = 0, voiceStartY = 0;
 let voiceTimerInt = null;
 let voiceSec = 0;
 
-// WebRTC Звонки
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+// WebRTC Звонки: STUN для адресов + бесплатный TURN-ретранслятор,
+// без которого звонок между разными сетями (мобайл/улица/другой провайдер) не стыкуется
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  ]
+};
 let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
 let isCamOn = false, isScreenOn = false, isMicOn = true;
 let callTimeoutTimer = null;
+let callConnectTimer = null;   // таймаут установки ICE-соединения
+// Если за 15 секунд после ответа нет соединения — говорим прямо, а не вечно «Соединение...»
+function armCallConnectTimeout() {
+  clearTimeout(callConnectTimer);
+  callConnectTimer = setTimeout(() => {
+    if (callState === 'active' && !callConnectedAt && currentCallPartner) {
+      showToast('Соединение не установилось за 15 сек — проверьте интернет у вас и собеседника, затем перезвоните', 'warning');
+      endCall();
+    }
+  }, 15000);
+}
 let pendingIncomingOffer = null;
 let iceCandidatesQueue = [];
 let callStartedAt = null;        // когда звонок начат
@@ -3078,6 +3098,7 @@ document.getElementById('btn-accept-call').onclick = async () => {
 
     sendSignal({ action: 'call_answer', target: currentCallPartner, sdp: answer });
     document.getElementById('call-status-badge').innerText = 'Соединение...';
+    armCallConnectTimeout();
     markCallAccepted();
 
   } catch (err) {
@@ -3113,6 +3134,7 @@ function handleCallAnswer(data) {
   if (!peerConnection) return;
   peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
     document.getElementById('call-status-badge').innerText = 'Соединение...';
+    armCallConnectTimeout();
     markCallAccepted();
     while (iceCandidatesQueue.length > 0) {
       const cand = iceCandidatesQueue.shift();
@@ -3258,6 +3280,7 @@ document.getElementById('btn-end-call').onclick = () => {
 
 function endCall() {
   clearTimeout(callTimeoutTimer);
+  clearTimeout(callConnectTimer);
   stopRing();
   stopIncomingNotification();
   stopTitleBlink();
