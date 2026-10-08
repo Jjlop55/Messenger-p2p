@@ -486,6 +486,9 @@
           <div class="tile-label">Вы</div>
           <button class="tile-fs-btn" onclick="toggleFullScreen('tile-local')">⛶</button>
         </div>
+
+        <!-- Групповой звонок: динамические плитки остальных участников -->
+        <div id="group-tiles" style="display:none;"></div>
       </div>
 
       <div class="call-controls-bar" id="call-incoming-bar" style="display:none;">
@@ -497,6 +500,7 @@
         <button class="call-ctrl-btn active" id="btn-toggle-mic">🎙️ Микрофон</button>
         <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
         <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
+        <button class="call-ctrl-btn" id="btn-add-participant" style="display:none;" title="Добавить друга в звонок — будет групповой звонок">➕ Добавить</button>
         <button class="call-ctrl-btn" id="btn-audio-route" title="Куда выводить звук: динамики или трубка/наушники">🔊 Динамики</button>
         <button class="call-ctrl-btn" id="call-minimize-btn2">🗕 Свернуть</button>
         <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Завершить</button>
@@ -1123,6 +1127,7 @@ function armCallConnectTimeout() {
   }, 25000);
 }
 let pendingIncomingOffer = null;
+let pendingGroupOffer = null;    // { groupId, members, name } — если входящий групповой
 let iceCandidatesQueue = [];
 let callStartedAt = null;        // когда звонок начат
 let callConnectedAt = null;      // когда собеседник ответил
@@ -1140,6 +1145,16 @@ let originalDocTitle = document.title;
 let titleBlinkTimer = null;
 let incomingNotify = null;       // объект Notification о входящем звонке
 let callState = null;            // 'outgoing' | 'incoming' | 'active'
+
+// ── Групповой звонок (full-mesh WebRTC) ──
+let peers = {};                  // { nick: RTCPeerConnection } — mesh-пиры (кроме основного peerConnection)
+let groupCallActive = false;     // true, когда участников 3+
+let groupCallMembers = [];       // все участники (включая меня)
+let groupCallId = null;          // id серверной группы-обёртки (call_xxx)
+let groupCallName = '';          // имя этой группы для инвайтов
+let groupPrimaryPartner = null;  // первый собеседник — его видео идёт в tile-remote
+let groupPeerIce = {};           // { nick: [candidates] } — очередь ICE до setRemote
+let groupAudioStream = null;     // общий MediaStream со всеми remote-аудио
 
 const EMOJI_AVATARS = ["🐱","🦊","🐺","🦁","🤖","👑","💀","👾","🐉","⚡","🔥","💎","🚀","🎭","🎮","🦄","🛸","🐧","🐼","🧙","🎃","🥋","🎯","🛰️"];
 
@@ -1966,11 +1981,23 @@ async function switchChat(chatId, chatName, isDirect = null) {
       return;
     }
     if (data.action === 'call_offer') {
-      handleIncomingCall(data);
+      // mesh: оффер от участника, к которому мы уже подключены или который добирается в группу
+      if (data.group && (groupCallActive || currentCallPartner || callState)) {
+        handleGroupOffer(data);
+      } else {
+        handleIncomingCall(data);
+      }
     } else if (data.action === 'call_answer') {
       handleCallAnswer(data);
     } else if (data.action === 'call_ice') {
-      if (peerConnection && peerConnection.remoteDescription) {
+      if (data.group && data.caller && groupCallActive && data.caller !== groupPrimaryPartner) {
+        const mpc = peers[data.caller];
+        if (mpc && mpc.remoteDescription) {
+          try { mpc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {}); } catch (e) {}
+        } else {
+          (groupPeerIce[data.caller] = groupPeerIce[data.caller] || []).push(data.candidate);
+        }
+      } else if (peerConnection && peerConnection.remoteDescription) {
         try {
           peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
         } catch (e) { /* битый кандидат — игнорируем */ }
@@ -1978,19 +2005,33 @@ async function switchChat(chatId, chatName, isDirect = null) {
         iceCandidatesQueue.push(data.candidate);
       }
     } else if (data.action === 'call_end' || data.action === 'call_reject' || data.action === 'call_timeout') {
-      stopRing();
-      stopIncomingNotification();
-      stopTitleBlink();
-      showToast(data.action === 'call_timeout' ? 'Абонент не ответил на звонок'
-        : (data.action === 'call_reject' ? 'Звонок отклонён' : 'Звонок завершён'),
-        data.action === 'call_end' ? undefined : 'warning');
-      endCall();
+      if (groupCallActive && data.caller && data.caller !== groupPrimaryPartner && (data.action === 'call_end' || data.action === 'call_reject')) {
+        // mesh: один участник вышел — остальные продолжают
+        closeGroupPeer(data.caller, data.action === 'call_reject' ? 'Участник отклонил приглашение' : 'Участник вышел из звонка');
+      } else {
+        stopRing();
+        stopIncomingNotification();
+        stopTitleBlink();
+        showToast(data.action === 'call_timeout' ? 'Абонент не ответил на звонок'
+          : (data.action === 'call_reject' ? 'Звонок отклонён' : 'Звонок завершён'),
+          data.action === 'call_end' ? undefined : 'warning');
+        endCall();
+      }
     } else if (data.action === 'call_offline') {
-      showToast('Абонент не в сети — звонок невозможен', 'warning');
-      endCall();
+      if (groupCallActive && data.target && data.target !== groupPrimaryPartner) {
+        // mesh: этот участник не в сети — убираем его из звонка, остальные продолжают
+        closeGroupPeer(data.target, 'не в сети');
+      } else {
+        showToast('Абонент не в сети — звонок невозможен', 'warning');
+        endCall();
+      }
     } else if (data.action === 'call_busy') {
-      showToast('Абонент уже разговаривает — звонок занят', 'warning');
-      endCall();
+      if (groupCallActive && data.caller && data.caller !== groupPrimaryPartner) {
+        closeGroupPeer(data.caller, 'занят — не смог присоединиться');
+      } else {
+        showToast('Абонент уже разговаривает — звонок занят', 'warning');
+        endCall();
+      }
     } else if (data.action === 'new_message') {
       renderMessage(data);
       notifyIncomingMessage(data);
@@ -2008,8 +2049,25 @@ async function switchChat(chatId, chatName, isDirect = null) {
       // Админ замьютил — показываем причину и срок
       showToast(data.msg || 'Вы замьючены по правилам', 'warning');
     } else if (data.action === 'new_invite') {
-      checkInvites();
-      showToast(`Новое приглашение в чат от @${data.from}!`);
+      // Звонковая группа («📞 Звонок ...») — принимаем инвайт автоматически, чтобы все были «перекинуты»
+      if (data.chat && data.chat.indexOf('📞 Звонок') === 0) {
+        (async () => {
+          try {
+            const list = await (await fetch(`${BACKEND_URL}/invites/${encodeURIComponent(currentUser)}`)).json();
+            const hit = (list || []).find(v => v.chat_name === data.chat && v.from_user === data.from);
+            if (hit) {
+              await fetch(`${BACKEND_URL}/invite/respond`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ invite_id: hit.id, nickname: currentUser, action: 'accept' })
+              });
+              loadChats();
+            }
+          } catch (e) {}
+        })();
+      } else {
+        checkInvites();
+        showToast(`Новое приглашение в чат от @${data.from}!`);
+      }
     } else if (data.action === 'chat_created') {
       // Информация о новом чате приходит всем пользователям на сайте
       if (data.created_by !== currentUser) showToast(`@${data.created_by} создал(а) чат «${data.name}»`);
@@ -2816,11 +2874,12 @@ document.addEventListener('keydown', () => ensureAudioContext(), { once: true })
 
 // Поиск отправителя нужного медиа: свойства kind у RTCRtpSender нет,
 // поэтому сначала смотрим на трек, затем на трансивер (надёжно на всех браузерах)
-function findSender(kind) {
-  if (!peerConnection) return null;
-  const byTrack = peerConnection.getSenders().find(s => s.track && s.track.kind === kind);
+function findSender(kind, pcOverride) {
+  const pc = pcOverride || peerConnection;
+  if (!pc) return null;
+  const byTrack = pc.getSenders().find(s => s.track && s.track.kind === kind);
   if (byTrack) return byTrack;
-  const tr = peerConnection.getTransceivers().find(t =>
+  const tr = pc.getTransceivers().find(t =>
     t.receiver && t.receiver.track && t.receiver.track.kind === kind);
   return tr ? tr.sender : null;
 }
@@ -2828,8 +2887,9 @@ function findSender(kind) {
 
 // Подключает трек к нужному m-line. Для принимающего браузер по умолчанию
 // помечает его как recvonly — без явного sendrecv наш микрофон не уйдёт собеседнику.
-async function attachTrack(kind, track) {
-  const tr = peerConnection && peerConnection.getTransceivers().find(t =>
+async function attachTrack(kind, track, pcOverride) {
+  const pc = pcOverride || peerConnection;
+  const tr = pc && pc.getTransceivers().find(t =>
     t.receiver && t.receiver.track && t.receiver.track.kind === kind);
   if (!tr) return false;
   try {
@@ -2843,30 +2903,75 @@ async function attachTrack(kind, track) {
   return true;
 }
 
+// mesh: отправить трек всем участникам (replaceTrack на каждом пире)
+async function broadcastTrack(kind, track) {
+  if (!groupCallActive) {
+    await attachTrack(kind, track);
+    return;
+  }
+  // основной пир (groupPrimaryPartner) — в peerConnection
+  await attachTrack(kind, track, peerConnection);
+  // остальные — в peers
+  for (const nick of Object.keys(peers)) {
+    await attachTrack(kind, track, peers[nick]);
+  }
+}
 
-function createPeerConnectionInstance(precreate) {
-  peerConnection = new RTCPeerConnection(rtcConfig);
+
+function createPeerConnectionInstance(precreate, peerNick) {
+  const pn = peerNick || currentCallPartner;
+  const pc = new RTCPeerConnection(rtcConfig);
+  // Для mesh-звонка каждый пир живёт в peers[pn]; для 1:1 — в глобальном peerConnection
+  if (groupCallActive && pn && pn !== groupPrimaryPartner) peers[pn] = pc;
+  else peerConnection = pc;
 
   // Звонящий (offerer) обязан заранее объявить аудио/видео в своем предложении.
   // Принимающий НЕ создаёт трансиверы заранее: они создаются из SDP звонящего,
   // иначе браузер добавит второй комплект и разговор пойдёт «вхолостую» (без звука).
   if (precreate) {
-    peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
-    peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+    pc.addTransceiver('audio', { direction: 'sendrecv' });
+    pc.addTransceiver('video', { direction: 'sendrecv' });
   }
 
-  peerConnection.ontrack = (event) => {
+  pc.ontrack = (event) => {
     // Воспроизведение звука с гарантированным снятием блокировки Autoplay
     if (event.track.kind === 'audio') {
-      const audioEl = document.getElementById('peer-audio');
-      remoteAudioStream = event.streams[0] || new MediaStream([event.track]);
-      audioEl.srcObject = remoteAudioStream;
-      audioEl.volume = 1.0;
-      audioEl.play().then(() => hideSoundUnlock()).catch(e => {
-        console.log('Audio autoplay prevented:', e);
-        showSoundUnlock();
-      });
+      if (groupCallActive) {
+        // mesh: собираем все remote-аудио в один поток для #peer-audio
+        if (!groupAudioStream) groupAudioStream = new MediaStream();
+        groupAudioStream.addTrack(event.track);
+        const audioEl = document.getElementById('peer-audio');
+        if (audioEl.srcObject !== groupAudioStream) {
+          audioEl.srcObject = groupAudioStream;
+          audioEl.volume = 1.0;
+        }
+        audioEl.play().then(() => hideSoundUnlock()).catch(e => {
+          console.log('Audio autoplay prevented:', e);
+          showSoundUnlock();
+        });
+      } else {
+        const audioEl = document.getElementById('peer-audio');
+        remoteAudioStream = event.streams[0] || new MediaStream([event.track]);
+        audioEl.srcObject = remoteAudioStream;
+        audioEl.volume = 1.0;
+        audioEl.play().then(() => hideSoundUnlock()).catch(e => {
+          console.log('Audio autoplay prevented:', e);
+          showSoundUnlock();
+        });
+      }
     } else if (event.track.kind === 'video') {
+      if (groupCallActive && pn && pn !== groupPrimaryPartner) {
+        // mesh: видео остальных участников — в отдельные плитки
+        const tile = ensureGroupTile(pn);
+        const vid = tile.querySelector('video');
+        vid.srcObject = event.streams[0] || new MediaStream([event.track]);
+        vid.style.display = 'block';
+        const ph = tile.querySelector('.call-avatar-placeholder');
+        if (ph) ph.style.display = 'none';
+        event.track.onmute = () => { vid.style.display = 'none'; if (ph) ph.style.display = 'flex'; };
+        event.track.onunmute = () => { vid.style.display = 'block'; if (ph) ph.style.display = 'none'; };
+        return;
+      }
       const remoteVid = document.getElementById('remote-video');
       remoteVid.srcObject = event.streams[0] || new MediaStream([event.track]);
       remoteVid.style.display = 'block';
@@ -2883,9 +2988,9 @@ function createPeerConnectionInstance(precreate) {
     }
   };
 
-  peerConnection.onicecandidate = (e) => {
-    if (e.candidate && currentCallPartner) {
-      sendSignal({ action: 'call_ice', target: currentCallPartner,
+  pc.onicecandidate = (e) => {
+    if (e.candidate && pn) {
+      sendSignal({ action: 'call_ice', target: pn, group: groupCallActive,
                    candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate });
     }
   };
@@ -2907,28 +3012,37 @@ function createPeerConnectionInstance(precreate) {
     playRemoteAudio();
   };
 
-  peerConnection.onconnectionstatechange = () => {
-    const st = peerConnection ? peerConnection.connectionState : '';
+  pc.onconnectionstatechange = () => {
+    const st = pc.connectionState;
     if (st === 'connected') {
       handleConnected();
     } else if (st === 'failed') {
+      if (groupCallActive && pn && pn !== groupPrimaryPartner) {
+        closeGroupPeer(pn, 'Собеседник отключился');
+        return;
+      }
       showToast('Не удалось соединиться с собеседником', 'error');
       endCall();
     } else if (st === 'disconnected') {
       const b = document.getElementById('call-status-badge');
-      if (b) b.innerText = 'Связь прервалась…';
+      if (b && (!groupCallActive || pn === groupPrimaryPartner)) b.innerText = 'Связь прервалась…';
     }
   };
 
-  peerConnection.oniceconnectionstatechange = () => {
-    const st = peerConnection ? peerConnection.iceConnectionState : '';
+  pc.oniceconnectionstatechange = () => {
+    const st = pc.iceConnectionState;
     if (st === 'connected' || st === 'completed') {
       handleConnected();
-    } else if (st === 'failed' && peerConnection && peerConnection.connectionState !== 'connected') {
+    } else if (st === 'failed' && pc.connectionState !== 'connected') {
+      if (groupCallActive && pn && pn !== groupPrimaryPartner) {
+        closeGroupPeer(pn, 'Нет соединения с участником');
+        return;
+      }
       showToast('Нет соединения с собеседником (проверьте сеть)', 'error');
       endCall();
     }
   };
+  return pc;
 }
 
 async function startCall(target) {
@@ -2953,6 +3067,7 @@ async function startCall(target) {
   startRing('ringback');
   document.getElementById('call-incoming-bar').style.display = 'none';
   document.getElementById('call-active-bar').style.display = 'flex';
+  document.getElementById('btn-add-participant').style.display = 'inline-block';
   restoreCallPanel();
   document.getElementById('call-overlay').style.display = 'flex';
   document.getElementById('call-timer').style.display = 'inline-block';
@@ -3028,15 +3143,19 @@ function handleIncomingCall(data) {
   currentCallPartner = data.caller;
   callState = 'incoming';
   pendingIncomingOffer = data.sdp;
+  pendingGroupOffer = data.group ? { groupId: data.groupId, members: data.members || [], name: data.groupName || '' } : null;
   iceCandidatesQueue = [];
   callSignalWs = (activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null;
   callStartedAt = Date.now();
   callConnectedAt = null;
   startCallTimer();
 
-  document.getElementById('call-partner-header').innerText = `@${data.caller}`;
-  document.getElementById('fab-partner').innerText = `@${data.caller}`;
-  document.getElementById('call-status-badge').innerText = 'Входящий звонок';
+  document.getElementById('call-partner-header').innerText = data.group
+    ? `👥 Групповой звонок` : `@${data.caller}`;
+  document.getElementById('fab-partner').innerText = data.group
+    ? `👥 ${data.caller}+` : `@${data.caller}`;
+  document.getElementById('call-status-badge').innerText = data.group
+    ? `Групповой звонок от @${data.caller}` : 'Входящий звонок';
   setCallRinging('incoming');
   startTitleBlink(`📞 Входящий звонок от @${data.caller}!`);
   startRing('ringtone');
@@ -3086,8 +3205,20 @@ document.getElementById('btn-accept-call').onclick = async () => {
   document.getElementById('call-mini-toast').style.display = 'none';
   document.getElementById('call-incoming-bar').style.display = 'none';
   document.getElementById('call-active-bar').style.display = 'flex';
+  document.getElementById('btn-add-participant').style.display = 'inline-block';
   document.getElementById('call-status-badge').innerText = 'Соединение...';
   setCallRinging(null);
+
+  // Групповой входящий: переключаемся в mesh-режим ДО создания основного пира,
+  // чтобы он ушёл в peerConnection (pn === groupPrimaryPartner)
+  if (pendingGroupOffer) {
+    groupCallActive = true;
+    groupCallId = pendingGroupOffer.groupId;
+    groupCallName = pendingGroupOffer.name || '';
+    groupPrimaryPartner = currentCallPartner;
+    groupCallMembers = Array.from(new Set([currentUser, currentCallPartner].concat(pendingGroupOffer.members || [])));
+    pendingGroupOffer = null;
+  }
 
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('insecure');
@@ -3096,6 +3227,12 @@ document.getElementById('btn-accept-call').onclick = async () => {
     createPeerConnectionInstance(false);
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingIncomingOffer));
+
+    // Держим видео m-line живым: без этого Chrome отключит его в ответе (port 9)
+    // и камера/демонстрация принявшего собеседника не уйдут никогда
+    const vTr = peerConnection.getTransceivers().find(t =>
+      t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
+    if (vTr && vTr.direction === 'recvonly') vTr.direction = 'sendrecv';
 
     // Трек подключаем ПОСЛЕ разбора SDP — только тогда браузер знает наш m-line
     await attachTrack('audio', localStream.getAudioTracks()[0]);
@@ -3115,6 +3252,15 @@ document.getElementById('btn-accept-call').onclick = async () => {
     if (!callConnectedAt) document.getElementById('call-status-badge').innerText = 'Соединение...';
     armCallConnectTimeout();
     markCallAccepted();
+
+    // Групповой звонок: кому ещё нет пира — отправляем offers (mesh)
+    if (groupCallActive) {
+      updateGroupTilesVisibility();
+      for (const m of groupCallMembers) {
+        if (m === currentUser || m === currentCallPartner) continue;
+        if (!peers[m]) await sendGroupOfferTo(m);
+      }
+    }
 
   } catch (err) {
     endCall();
@@ -3146,6 +3292,21 @@ function handleCallAnswer(data) {
   setCallRinging(null);
   ensureAudioContext();
   callState = 'active';
+
+  // mesh: ответ от не-основного участника — применяем к его пиру
+  if (groupCallActive && data.caller && data.caller !== groupPrimaryPartner) {
+    const mpc = peers[data.caller];
+    if (!mpc) return;
+    mpc.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
+      const q = groupPeerIce[data.caller] || [];
+      while (q.length > 0) {
+        const cand = q.shift();
+        try { mpc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {}); } catch (e) {}
+      }
+    }).catch(e => console.log('group setRemoteDescription failed:', e));
+    return;
+  }
+
   if (!peerConnection) return;
   peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
     if (!callConnectedAt) document.getElementById('call-status-badge').innerText = 'Соединение...';
@@ -3177,7 +3338,7 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
       document.getElementById('local-video').srcObject = vStream;
       document.getElementById('local-video').style.display = 'block';
       document.getElementById('local-avatar-wrap').style.display = 'none';
-      if (!await attachTrack('video', vTrack)) throw new Error('no-video');
+      await broadcastTrack('video', vTrack);
       btn.classList.add('active');
     } catch(e) {
       isCamOn = false;
@@ -3187,11 +3348,7 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
   } else {
     document.getElementById('local-video').style.display = 'none';
     document.getElementById('local-avatar-wrap').style.display = 'flex';
-    const videoSender = findSender('video');
-    if (videoSender) {
-      if (videoSender.track) videoSender.track.stop();
-      await videoSender.replaceTrack(null);
-    }
+    await broadcastTrack('video', null);
     btn.classList.remove('active');
   }
 };
@@ -3210,7 +3367,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
       document.getElementById('local-video').style.display = 'block';
       document.getElementById('local-avatar-wrap').style.display = 'none';
 
-      if (!await attachTrack('video', sTrack)) throw new Error('no-video');
+      await broadcastTrack('video', sTrack);
       btn.classList.add('active');
 
       sTrack.onended = async () => {
@@ -3218,7 +3375,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
         btn.classList.remove('active');
         document.getElementById('local-video').style.display = 'none';
         document.getElementById('local-avatar-wrap').style.display = 'flex';
-        await attachTrack('video', null);
+        await broadcastTrack('video', null);
       };
     } catch(e) {
       isScreenOn = false;
@@ -3228,8 +3385,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
     if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     document.getElementById('local-video').style.display = 'none';
     document.getElementById('local-avatar-wrap').style.display = 'flex';
-    const videoSender = findSender('video');
-    if (videoSender) await videoSender.replaceTrack(null);
+    await broadcastTrack('video', null);
     btn.classList.remove('active');
   }
 };
@@ -3290,8 +3446,15 @@ document.getElementById('btn-audio-route').onclick = async () => {
 
 document.getElementById('btn-end-call').onclick = () => {
   clearTimeout(callTimeoutTimer);
-  const partnerNow = currentCallPartner;
-  if (partnerNow) sendSignal({ action: 'call_end', target: partnerNow });
+  // mesh: сообщаем всем участникам (включая основного), что выходим
+  if (groupCallActive) {
+    for (const m of groupCallMembers) {
+      if (m !== currentUser) sendSignal({ action: 'call_end', target: m });
+    }
+  } else {
+    const partnerNow = currentCallPartner;
+    if (partnerNow) sendSignal({ action: 'call_end', target: partnerNow });
+  }
   endCall();
 };
 
@@ -3306,6 +3469,16 @@ function endCall() {
   if (miniToast) miniToast.style.display = 'none';
   if (localStream) localStream.getTracks().forEach(t => t.stop());
   if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+  // mesh: закрываем все пир-соединения
+  for (const nick of Object.keys(peers)) {
+    try { peers[nick].close(); } catch (e) {}
+  }
+  peers = {};
+  groupPeerIce = {};
+  if (groupAudioStream) {
+    try { groupAudioStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  }
+  groupAudioStream = null;
   if (peerConnection) {
     try { peerConnection.close(); } catch (e) {}
     peerConnection = null;
@@ -3315,6 +3488,7 @@ function endCall() {
   const connectedAt = callConnectedAt;
   currentCallPartner = null;
   pendingIncomingOffer = null;
+  pendingGroupOffer = null;
   iceCandidatesQueue = [];
   callState = null;
   callSignalWs = null;
@@ -3323,6 +3497,14 @@ function endCall() {
   isCamOn = false;
   isScreenOn = false;
   isMicOn = true;
+  groupCallActive = false;
+  groupCallMembers = [];
+  groupCallId = null;
+  groupCallName = '';
+  groupPrimaryPartner = null;
+  document.getElementById('btn-add-participant').style.display = 'none';
+  const gt = document.getElementById('group-tiles');
+  if (gt) { gt.innerHTML = ''; gt.style.display = 'none'; }
 
   const peerAudio = document.getElementById('peer-audio');
   if (peerAudio) { try { peerAudio.pause(); peerAudio.srcObject = null; } catch (e) {} }
@@ -3520,7 +3702,8 @@ document.getElementById('call-header-btn').onclick = () => {
   openCallPicker();
 };
 
-async function openCallPicker() {
+async function openCallPicker(mode) {
+  const isAdd = mode === 'add';
   openModal('call-picker-modal');
   const c = document.getElementById('call-picker-list');
   c.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Загрузка списка...</div>';
@@ -3534,22 +3717,250 @@ async function openCallPicker() {
       return;
     }
     c.innerHTML = '';
+    if (!isAdd) {
+      // Звонок по нику — работает и для тех, кто не в друзьях
+      const byNick = document.createElement('div');
+      byNick.className = 'chat-item';
+      byNick.style.justifyContent = 'space-between';
+      byNick.innerHTML = `<span>⌨️ Позвонить по нику...</span><span style="font-size:12px;color:var(--neon-cyan);">Ввести ник</span>`;
+      byNick.onclick = async () => {
+        const nick = (prompt('Никнейм собеседника:') || '').trim().replace(/^@/, '');
+        if (!nick) return;
+        closeModal('call-picker-modal');
+        await callUser(nick);
+      };
+      c.appendChild(byNick);
+    }
     all.forEach(f => {
       const row = document.createElement('div');
       row.className = 'chat-item';
       row.style.justifyContent = 'space-between';
-      row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${f.nickname}</span>` +
-        `<span style="font-size:12px;color:${f.is_online ? 'var(--success)' : 'var(--text-dim)'};">${f.is_online ? '📞 Позвонить' : 'Не в сети'}</span>`;
-      row.onclick = () => {
-        closeModal('call-picker-modal');
-        if (f.is_online) startCall(f.nickname);
-        else showToast('@' + f.nickname + ' не в сети', 'warning');
-      };
+      if (isAdd) {
+        // в режиме добавления — онлайн-друзья, которых ещё нет в звонке
+        const inCall = groupCallMembers.some(m => m.toLowerCase() === f.nickname.toLowerCase());
+        row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${f.nickname}</span>` +
+          `<span style="font-size:12px;color:${f.is_online ? 'var(--success)' : 'var(--text-dim)'};">${inCall ? 'Уже в звонке' : (f.is_online ? '➕ Добавить' : 'Не в сети')}</span>`;
+        if (!f.is_online || inCall) row.style.opacity = '0.5';
+        row.onclick = () => {
+          if (!f.is_online || inCall) return;
+          closeModal('call-picker-modal');
+          addToCall(f.nickname);
+        };
+      } else {
+        row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${f.nickname}</span>` +
+          `<span style="font-size:12px;color:${f.is_online ? 'var(--success)' : 'var(--text-dim)'};">${f.is_online ? '📞 Позвонить' : 'Не в сети'}</span>`;
+        row.onclick = () => {
+          closeModal('call-picker-modal');
+          if (f.is_online) startCall(f.nickname);
+          else showToast('@' + f.nickname + ' не в сети', 'warning');
+        };
+      }
       c.appendChild(row);
     });
   } catch (e) {
     c.innerHTML = '<div style="color:var(--danger);font-size:13px;">Не удалось загрузить список</div>';
   }
+}
+
+// ── Групповой звонок: добавление участника, mesh-подключение ──
+
+document.getElementById('btn-add-participant').onclick = () => {
+  if (!callState) return;
+  openCallPicker('add');
+};
+
+// mesh: перейти из 1:1 в групповой режим (participants уже известны)
+function enterGroupCallMode(existingMembers) {
+  groupCallActive = true;
+  groupPrimaryPartner = currentCallPartner;
+  groupCallMembers = Array.from(new Set([currentUser].concat(existingMembers).concat([currentCallPartner]).filter(Boolean)));
+  // основной пир (primary) остаётся в peerConnection — остальные живут в peers
+  updateGroupTilesVisibility();
+  const b = document.getElementById('call-status-badge');
+  if (b && !callConnectedAt) b.innerText = `Групповой звонок (${groupCallMembers.length} участников)`;
+  else if (b) b.innerText = `🔊 Разговор идёт · ${groupCallMembers.length} участников`;
+  document.getElementById('call-partner-header').innerText = '👥 Групповой звонок';
+}
+
+function updateGroupTilesVisibility() {
+  const gt = document.getElementById('group-tiles');
+  if (!gt) return;
+  gt.style.display = groupCallActive ? 'contents' : 'none';
+}
+
+// mesh: создать серверную группу-обёртку и пригласить участников
+async function ensureGroupServerChat(membersToInvite) {
+  if (!groupCallId) {
+    groupCallId = 'call_' + Math.random().toString(36).slice(2, 10);
+    groupCallName = '📞 Звонок ' + groupCallMembers.map(x => '@' + x).join(', ');
+    try {
+      await fetch(`${BACKEND_URL}/chats`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: groupCallId, name: groupCallName, created_by: currentUser, silent: true })
+      });
+    } catch (e) {}
+  }
+  // пригласить тех, кого ещё нет в группе (инвайт в чат — чтобы переписка звонка была видна)
+  for (const m of membersToInvite) {
+    if (m === currentUser) continue;
+    try {
+      await fetch(`${BACKEND_URL}/invite`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: groupCallId, chat_name: groupCallName, from_user: currentUser, to_user: m })
+      });
+    } catch (e) {}
+  }
+}
+
+// mesh: отправить group-offer конкретному участнику
+async function sendGroupOfferTo(nick) {
+  if (!nick || nick === currentUser) return;
+  try {
+    const pc = createPeerConnectionInstance(true, nick); // precreate=true: offerer объявляет audio+video
+    if (localStream) await attachTrack('audio', localStream.getAudioTracks()[0], pc);
+    const offer = await pc.createOffer();
+    offer.sdp = offer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    await pc.setLocalDescription(offer);
+    sendSignal({ action: 'call_offer', caller: currentUser, target: nick, sdp: offer,
+                 group: true, groupId: groupCallId, groupName: groupCallName,
+                 members: groupCallMembers });
+    if (isCamOn && localStream) {
+      const vTrack = localStream.getVideoTracks()[0];
+      if (vTrack) await attachTrack('video', vTrack, pc);
+    }
+  } catch (e) { console.log('sendGroupOfferTo failed:', e); }
+}
+
+// mesh: вошли в чужой групповой звонок — отвечаем всем, у кого нет пира
+async function handleGroupOffer(data) {
+  if (!data.caller) return;
+  // уже есть пир с этим участником — дубликат, игнорируем
+  if (data.caller === groupPrimaryPartner && peerConnection) return;
+  if (peers[data.caller]) return;
+
+  const oldPartner = currentCallPartner;
+  groupCallActive = true;
+  if (!groupCallId) groupCallId = data.groupId;
+  if (!groupCallName) groupCallName = data.groupName || '';
+  // primary — тот, с кем уже был основной пир (peerConnection), иначе первый входящий
+  if (!groupPrimaryPartner) {
+    if (peerConnection && oldPartner && oldPartner !== data.caller) groupPrimaryPartner = oldPartner;
+    else groupPrimaryPartner = data.caller;
+  }
+  const incoming = data.members || [data.caller];
+  groupCallMembers = Array.from(new Set([currentUser].concat(incoming).concat(groupCallMembers).concat(oldPartner ? [oldPartner] : [])));
+
+  ensureAudioContext();
+  currentCallPartner = data.caller;
+  callState = 'active';
+  pendingIncomingOffer = null;
+  iceCandidatesQueue = [];
+  updateGroupTilesVisibility();
+  document.getElementById('call-active-bar').style.display = 'flex';
+  document.getElementById('btn-add-participant').style.display = 'inline-block';
+  document.getElementById('call-overlay').style.display = 'flex';
+  document.getElementById('call-timer').style.display = 'inline-block';
+
+  try {
+    if (!localStream) localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const pc = createPeerConnectionInstance(false, data.caller);
+    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    // видео m-line живой — иначе Chrome отключит его в ответе (port 9)
+    const vTr = pc.getTransceivers().find(t =>
+      t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
+    if (vTr && vTr.direction === 'recvonly') vTr.direction = 'sendrecv';
+    await attachTrack('audio', localStream.getAudioTracks()[0], pc);
+    const answer = await pc.createAnswer();
+    answer.sdp = answer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    await pc.setLocalDescription(answer);
+    sendSignal({ action: 'call_answer', target: data.caller, sdp: answer, group: true });
+    if (!callConnectedAt) callConnectedAt = Date.now();
+
+    // кому ещё нет пира — отправляем offers (mesh); основной пир (primary) уже в peerConnection
+    for (const m of groupCallMembers) {
+      if (m === currentUser || m === data.caller) continue;
+      if (m === groupPrimaryPartner && peerConnection) continue;
+      if (!peers[m]) await sendGroupOfferTo(m);
+    }
+  } catch (e) { console.log('handleGroupOffer failed:', e); }
+}
+
+// кнопка «➕ Добавить»: позвать друга в текущий звонок (он станет групповым)
+async function addToCall(nick) {
+  if (!nick || !callState) return;
+  if (nick === currentUser) return;
+  const existing = groupCallActive ? groupCallMembers.slice() : [currentUser, currentCallPartner].filter(Boolean);
+  if (existing.some(m => m.toLowerCase() === nick.toLowerCase())) {
+    showToast('@' + nick + ' уже в этом звонке', 'warning');
+    return;
+  }
+  // переходим из 1:1 в mesh-режим (если ещё не в нём)
+  if (!groupCallActive) enterGroupCallMode(existing);
+  // серверная группа-обёртка + инвайты в чат звонка (переписка)
+  await ensureGroupServerChat(existing.concat([nick]));
+  groupCallMembers = Array.from(new Set(groupCallMembers.concat([nick])));
+  const b = document.getElementById('call-status-badge');
+  if (b) b.innerText = (callConnectedAt ? '🔊 Разговор идёт · ' : 'Групповой звонок · ') + groupCallMembers.length + ' участников';
+  document.getElementById('call-partner-header').innerText = '👥 Групповой звонок';
+  // отправляем новичку group-offer (mesh: он сам доберёт остальных)
+  await sendGroupOfferTo(nick);
+  showToast('Приглашение в звонок отправлено @' + nick);
+}
+
+// mesh: закрыть пир одного участника (он вышел/отклонил/отвалился)
+function closeGroupPeer(nick, reason) {
+  if (!nick) return;
+  if (nick === groupPrimaryPartner && peerConnection) {
+    try { peerConnection.close(); } catch (e) {}
+    peerConnection = null;
+    // primary вышел — его tile-remote очищаем, переназначаем primary на первого участника
+    document.getElementById('remote-video').srcObject = null;
+    document.getElementById('remote-video').style.display = 'none';
+    document.getElementById('call-avatar-wrap').style.display = 'flex';
+    const rest = groupCallMembers.filter(m => m !== nick && m !== currentUser);
+    groupPrimaryPartner = rest[0] || null;
+  } else if (peers[nick]) {
+    try { peers[nick].close(); } catch (e) {}
+    delete peers[nick];
+  }
+  delete groupPeerIce[nick];
+  const tile = document.getElementById('gtile-' + nick);
+  if (tile) tile.remove();
+  groupCallMembers = groupCallMembers.filter(m => m !== nick);
+  if (reason) showToast(`@${nick}: ${reason}`, 'warning');
+
+  // участников не осталось — завершаем звонок
+  if (groupCallMembers.filter(m => m !== currentUser).length === 0) {
+    endCall();
+    return;
+  }
+  // остался ровно один собеседник — выходим из mesh в обычный 1:1
+  if (groupCallMembers.filter(m => m !== currentUser).length === 1 && groupPrimaryPartner) {
+    // mesh сворачиваем: primary остаётся в peerConnection, остальные пир-сети закрыты
+    groupCallActive = false;
+    updateGroupTilesVisibility();
+    const b = document.getElementById('call-status-badge');
+    if (b) b.innerText = callConnectedAt ? '🔊 Разговор идёт' : 'Соединение...';
+    document.getElementById('call-partner-header').innerText = groupPrimaryPartner ? '@' + groupPrimaryPartner : 'Групповой звонок';
+  }
+}
+
+// mesh: динамическая плитка для remote-участника (его видео)
+function ensureGroupTile(nick) {
+  let tile = document.getElementById('gtile-' + nick);
+  if (tile) return tile;
+  tile = document.createElement('div');
+  tile.className = 'call-tile';
+  tile.id = 'gtile-' + nick;
+  tile.style.position = 'relative';
+  tile.innerHTML = `
+    <video autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:10px;background:#000;"></video>
+    <div class="call-avatar-placeholder" style="display:flex;">
+      <div class="call-avatar-large">👤</div>
+    </div>
+    <div class="tile-label">@${nick}</div>`;
+  document.getElementById('group-tiles').appendChild(tile);
+  return tile;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3886,12 +4297,19 @@ async function loadAdminSupport() {
   tickets.forEach(t => {
     const row = document.createElement('div');
     row.className = 'user-row';
+    const rep = (t.replies || []).map(r =>
+      `<div style="font-size:11px; background:rgba(0,240,255,0.08); padding:4px 8px; border-radius:6px; margin-top:2px;"><b>@${r.from_user}:</b> ${r.message}</div>`).join('');
+    const statusIcon = t.status === 'open' ? '🟢 Открыто' : (t.status === 'answered' ? '💬 Есть ответ' : '⚪ Закрыто');
     row.innerHTML = `
       <div style="display:flex; justify-content:space-between;">
         <b>#${t.id} от @${t.from_user}: ${t.subject}</b>
-        <button class="pill-btn" style="background:rgba(255,51,102,0.2); color:var(--danger); padding:2px 8px; font-size:10px;" onclick="adminDeleteTicket(${t.id})">🗑️ Удалить тикет</button>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <span style="font-size:10px; color:var(--neon-cyan);">${statusIcon}</span>
+          <button class="pill-btn" style="background:rgba(255,51,102,0.2); color:var(--danger); padding:2px 8px; font-size:10px;" onclick="adminDeleteTicket(${t.id})">🗑️ Удалить тикет</button>
+        </div>
       </div>
       <div style="font-size:12px;">${t.message}</div>
+      ${rep}
       <div style="display:flex; gap:6px; margin-top:6px;">
         <input type="text" id="ans-${t.id}" placeholder="Ответ..." class="modal-input" style="padding:4px 8px; font-size:12px;">
         <button class="pill-btn" style="background:var(--neon-cyan); color:#000; padding:4px 10px; font-size:11px;" onclick="sendSupportReply(${t.id})">Ответить</button>
@@ -4504,13 +4922,14 @@ function leaveChat() {
 async function callUser(nick) {
   const d = await (await fetch(`${BACKEND_URL}/user/info/${encodeURIComponent(nick)}?by=${encodeURIComponent(currentUser || '')}`)).json().catch(() => ({}));
   if (!d || d.status !== 'ok') { showToast('Профиль недоступен', 'error'); return; }
-  if (d.friend_status !== 'friends') {
-    showToast('Звонить можно только друзьям — добавьте собеседника в друзья', 'error');
+  // Звоним всем онлайн (друзья — просто удобный список). Если не в сети — сервер сам ответит.
+  if (d.is_online === false) {
+    showToast('@' + nick + ' сейчас не в сети', 'warning');
     return;
   }
   closeModal('members-modal');
   closeModal('user-profile-modal');
-  await openChatWith(nick);
+  try { await openChatWith(nick); } catch (e) { /* ЛС может не открыться — звонок всё равно пойдёт */ }
   startCall(nick);
 }
 

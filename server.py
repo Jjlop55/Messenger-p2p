@@ -1019,6 +1019,7 @@ class ChatCreateData(BaseModel):
     id: str
     name: str
     created_by: str
+    silent: bool = False  # звонковая группа: не broadcast_all всему сайту
 
 class ChatRenameData(BaseModel):
     chat_id: str
@@ -1713,12 +1714,14 @@ async def create_custom_chat(data: ChatCreateData):
     # Если чат уже был (дубль id) — нового владельца не перетираем
     conn.commit()
     # Новый чат видят ВСЕ пользователи на сайте, а не только создатель
-    await manager.broadcast_all({
-        "action": "chat_created",
-        "id": data.id,
-        "name": data.name,
-        "created_by": data.created_by,
-    })
+    # (для звонковой группы silent=True — она не должна мелькать в общем списке)
+    if not data.silent:
+        await manager.broadcast_all({
+            "action": "chat_created",
+            "id": data.id,
+            "name": data.name,
+            "created_by": data.created_by,
+        })
     return {"status": "ok", "owner": data.created_by}
 
 @app.delete("/chats/{chat_id}")
