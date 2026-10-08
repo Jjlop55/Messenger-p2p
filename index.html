@@ -1823,6 +1823,35 @@ async function loadChats() {
   }
 }
 
+// ── Авто-reconnect WS: без этого после обрыва (деплой/сброс сервера)
+//    сокет умирал навсегда — все висели «Офлайн», пока не обновишь страницу ──
+let wsReconnectTimer = null;
+let wsReconnectDelay = 3000;
+function scheduleWsReconnect() {
+  if (wasKicked || !currentUser) return;
+  if (wsReconnectTimer) return;
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    if (wasKicked || !currentUser) return;
+    if (activeWs && activeWs.readyState === WebSocket.OPEN) return;
+    switchChat(activeChatId, window.activeChatName || activeChatId)
+      .then(() => { wsReconnectDelay = 3000; })
+      .catch(() => {
+        // сервер ещё не ответил — пробуем снова с растущей задержкой
+        wsReconnectDelay = Math.min(wsReconnectDelay + 2000, 15000);
+        scheduleWsReconnect();
+      });
+  }, wsReconnectDelay);
+}
+// Вернулись на вкладку — если сокет мёртв, переподключаемся сразу
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentUser && !wasKicked
+      && (!activeWs || activeWs.readyState !== WebSocket.OPEN)) {
+    wsReconnectDelay = 1000;
+    scheduleWsReconnect();
+  }
+});
+
 async function switchChat(chatId, chatName, isDirect = null) {
     activeChatId = chatId;
     if (typeof clearReplyTo === 'function') clearReplyTo();
@@ -1893,13 +1922,18 @@ async function switchChat(chatId, chatName, isDirect = null) {
   activeWs = new WebSocket(BACKEND_URL.replace('https','wss').replace('http','ws') + `/ws/${chatId}/${currentUser}?token=${encodeURIComponent(currentSessionToken || '')}`);
   const ws = activeWs;
 
-  ws.onopen = () => { flushSignalQueue(); };
+  ws.onopen = () => {
+    flushSignalQueue();
+    const nb = document.getElementById('net-warning-banner');
+    if (nb) nb.style.display = 'none';
+  };
 
   ws.onclose = () => {
     if (ws._manual || ws !== activeWs) return;
     if (wasKicked) return;                       // кик обработан — выходим сами
     document.getElementById('net-warning-banner').style.display = 'flex';
-    showToast('Связь с сервером прервана — обнови страницу');
+    showToast('Связь с сервером прервана — переподключаемся...');
+    scheduleWsReconnect();
   };
 
   ws.onmessage = (e) => {
