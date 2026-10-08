@@ -420,6 +420,21 @@
       aside { width: 100vw; position: absolute; inset: 0; }
       main { width: 100vw; position: absolute; inset: 0; display: none; }
       .call-video-grid { flex-direction: column; }
+      /* Шапка чата: на узком экране кнопки (в т.ч. звонка) не обрезаются */
+      .chat-header { height: auto; min-height: 64px; flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+      .chat-header .pill-btn { padding: 4px 7px !important; font-size: 10px !important; }
+      #call-header-btn, #delete-chat-btn, #archive-chat-btn, #members-btn { flex: none; font-size: 18px; }
+      /* Панель управления звонком: кнопки переносятся, а не вылезают за экран */
+      .call-controls-bar { flex-wrap: wrap; justify-content: center; }
+      .call-ctrl-btn { flex: 1 1 42%; font-size: 12px; padding: 10px 8px; }
+      .call-head-actions { flex-wrap: wrap; }
+      #call-minimize-btn { font-size: 11px; }
+    }
+    /* Вертикальная ориентация на телефоне: кнопка звонка и панель звонка остаются видимы */
+    @media (max-width: 768px) and (orientation: portrait) {
+      .chat-header { order: 0; }
+      #call-header-btn { order: 99; }
+      .call-tile { min-height: 160px; }
     }
   </style>
 </head>
@@ -482,6 +497,7 @@
         <button class="call-ctrl-btn active" id="btn-toggle-mic">🎙️ Микрофон</button>
         <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
         <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
+        <button class="call-ctrl-btn" id="btn-audio-route" title="Куда выводить звук: динамики или трубка/наушники">🔊 Динамики</button>
         <button class="call-ctrl-btn" id="call-minimize-btn2">🗕 Свернуть</button>
         <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Завершить</button>
       </div>
@@ -586,6 +602,7 @@
         <button class="pill-btn" id="chat-rename-btn" style="padding: 5px 10px; font-size: 11px;">✏️ Название</button>
         <button class="pill-btn" id="chat-invite-btn" style="padding: 5px 10px; font-size: 11px;">+ Пригласить</button>
         <button class="icon-btn" id="call-header-btn" style="color: var(--success);" title="Позвонить">📞</button>
+        <button class="pill-btn" id="archive-chat-btn" style="padding: 5px 10px; font-size: 11px; display:none;">📦 В архив</button>
         <button class="icon-btn" id="delete-chat-btn" style="color: var(--danger); display: none;" title="Удалить чат">🗑️</button>
       </div>
     </div>
@@ -820,6 +837,18 @@
     </div>
 
     <div>
+      <label style="font-size:12px; color:var(--text-dim);">Или загрузите картинку с устройства:</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="pill-btn" id="prof-avatar-upload-btn" type="button" style="flex:1;">📎 Загрузить файл</button>
+        <input type="file" id="prof-avatar-file" accept="image/*" style="display:none;">
+        <div id="prof-avatar-preview" style="width:40px; height:40px; border-radius:50%; overflow:hidden; background:var(--bg-sec); flex:none; display:none;">
+          <img id="prof-avatar-preview-img" style="width:100%; height:100%; object-fit:cover;" alt="">
+        </div>
+      </div>
+      <div id="prof-avatar-upload-status" style="font-size:11px; color:var(--text-dim); margin-top:4px; display:none;"></div>
+    </div>
+
+    <div>
       <label style="font-size:12px; color:var(--text-dim);">Или ссылка на фото (URL картинки):</label>
       <input type="text" id="prof-avatar-input" class="modal-input" placeholder="https://example.com/avatar.jpg">
     </div>
@@ -890,12 +919,12 @@
   <div class="modal-card" style="max-width:540px;">
     <h3 class="modal-title">⚡ Панель управления</h3>
     <div class="admin-nav">
-      <button class="admin-tab-btn active" id="tab-users-btn">👥 Юзеры</button>
-      <button class="admin-tab-btn" id="tab-groups-btn">💬 Группы</button>
-      <button class="admin-tab-btn" id="tab-bans-btn">🚫 Баны</button>
-      <button class="admin-tab-btn" id="tab-support-btn">🎧 Саппорт</button>
-      <button class="admin-tab-btn" id="tab-requests-btn">📋 Заявки</button>
-      <button class="admin-tab-btn" id="tab-deleted-btn">🗑 Удалённые</button>
+<button class="admin-tab-btn active" id="tab-users-btn" onclick="showAdminTab('users')">👥 Юзеры</button>
+<button class="admin-tab-btn" id="tab-groups-btn" onclick="showAdminTab('groups')">💬 Группы</button>
+<button class="admin-tab-btn" id="tab-bans-btn" onclick="showAdminTab('bans')">🚫 Баны</button>
+<button class="admin-tab-btn" id="tab-support-btn" onclick="showAdminTab('support')">🎧 Саппорт</button>
+<button class="admin-tab-btn" id="tab-requests-btn" onclick="showAdminTab('requests')">📋 Заявки</button>
+<button class="admin-tab-btn" id="tab-deleted-btn" onclick="showAdminTab('deleted')">🗑 Удалённые</button>
     </div>
 
     <!-- Вкладка Юзеры с фильтрами -->
@@ -1473,8 +1502,39 @@ bioInput.oninput = () => {
   document.getElementById('bio-word-counter').style.color = (words.length > 45) ? 'var(--danger)' : 'var(--neon-cyan)';
 };
 
-document.getElementById('save-profile-btn').onclick = async () => {
-  const newNick = document.getElementById('prof-nick-input').value.trim();
+// ── Аватарка: загрузка картинки с устройства вместо ссылки ──
+document.getElementById('prof-avatar-upload-btn').onclick = () =>
+  document.getElementById('prof-avatar-file').click();
+
+document.getElementById('prof-avatar-file').onchange = async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const status = document.getElementById('prof-avatar-upload-status');
+  status.style.display = 'block';
+  status.style.color = 'var(--text-dim)';
+  status.textContent = 'Загрузка картинки...';
+  try {
+    const res = await fetch(`${BACKEND_URL}/upload?filename=${encodeURIComponent('avatar_' + Date.now() + '_' + file.name)}`, {
+      method: 'POST',
+      body: file
+    });
+    const d = await res.json();
+    if (!res.ok || d.status !== 'ok' || !d.url) throw new Error(d.detail || 'Не удалось загрузить');
+    const fullUrl = d.url.startsWith('http') ? d.url : (BACKEND_URL + d.url);
+    document.getElementById('prof-avatar-input').value = fullUrl;
+    const prev = document.getElementById('prof-avatar-preview');
+    prev.style.display = 'block';
+    document.getElementById('prof-avatar-preview-img').src = fullUrl;
+    status.style.color = 'var(--neon-cyan)';
+    status.textContent = '✅ Картинка загружена — нажмите «Сохранить изменения»';
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = '❌ ' + (err.message || 'Ошибка загрузки');
+  }
+};
+
+document.getElementById('save-profile-btn').onclick = async () => {  const newNick = document.getElementById('prof-nick-input').value.trim();
   const avatarVal = document.getElementById('prof-avatar-input').value.trim();
   const bioVal = bioInput.value.trim();
 
@@ -1523,6 +1583,7 @@ function showFriendsTab(tab) {
   fetch(`${BACKEND_URL}/friends/${currentUser}`)
     .then(r => r.json())
     .then(data => {
+      if (!data || !Array.isArray(data.friends)) throw new Error('bad response');
       c.innerHTML = '';
       let list = data.friends;
       if (tab === 'online') list = data.friends.filter(f => f.is_online);
@@ -1574,6 +1635,9 @@ function showFriendsTab(tab) {
         c.appendChild(row);
         renderAvatar(f.avatar_url, row.querySelector(`#fav-${f.nickname}`));
       });
+    })
+    .catch(() => {
+      c.innerHTML = '<div style="text-align:center;color:var(--danger);">⚠️ Не удалось загрузить список друзей. Попробуйте открыть вкладку ещё раз.</div>';
     });
 }
 
@@ -1678,14 +1742,44 @@ async function respondInvite(id, action) {
 // ═══════════════════════════════════════════════════════════
 //  ЧАТЫ, ПЕРЕИМЕНОВАНИЕ И ПРАВИЛА ОЧИСТКИ
 // ═══════════════════════════════════════════════════════════
+// ── Архив ЛС: чаты в архиве лежат отдельной папкой внизу списка,
+//    им не приходят уведомления; сам чат не удаляется ──
+function getArchivedChats() {
+  try { return JSON.parse(localStorage.getItem('utopia_archived_' + currentUser) || '[]'); }
+  catch (e) { return []; }
+}
+function setArchivedChats(arr) {
+  localStorage.setItem('utopia_archived_' + currentUser, JSON.stringify(arr));
+}
+function isChatArchived(id) {
+  return getArchivedChats().indexOf(id) >= 0;
+}
+function toggleArchiveChat(id) {
+  const arr = getArchivedChats();
+  const i = arr.indexOf(id);
+  if (i >= 0) arr.splice(i, 1); else arr.push(id);
+  setArchivedChats(arr);
+  return i < 0;
+}
+
 async function loadChats() {
-  const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
-  const chats = await res.json();
+  let chats;
+  try {
+    const res = await fetch(`${BACKEND_URL}/chats/${currentUser}`);
+    chats = await res.json();
+    if (!Array.isArray(chats)) throw new Error('bad response');
+  } catch (e) {
+    showToast('⚠️ Не удалось обновить список чатов — показан прежний список');
+    return;
+  }
   window.chatsMeta = window.chatsMeta || {};
   const cList = document.getElementById('chat-list');
   cList.innerHTML = '';
 
-  chats.forEach(c => {
+  const archivedIds = getArchivedChats();
+  const isArchivedItem = c => !!(c.is_direct && c.chat_type !== 'bot' && archivedIds.indexOf(c.id) >= 0);
+
+  const renderChatItem = (c) => {
     const isGen = c.id === 'general';
     window.chatsMeta[c.id] = c;
     const d = document.createElement('div');
@@ -1709,7 +1803,24 @@ async function loadChats() {
       }
     };
     cList.appendChild(d);
-  });
+  };
+
+  chats.filter(c => !isArchivedItem(c)).forEach(renderChatItem);
+
+  // 📦 Архив ЛС — отдельная папка внизу списка
+  const archChats = chats.filter(isArchivedItem);
+  if (archChats.length) {
+    const head = document.createElement('div');
+    head.className = 'chat-item';
+    head.style.opacity = '.8';
+    head.style.borderTop = '1px solid var(--border, rgba(255,255,255,.08))';
+    head.innerHTML = `
+      <span style="font-weight:600;">📦 Архив (${archChats.length})</span>
+      <span style="font-size:10px; color:var(--text-dim);">${window.archiveOpen ? 'свернуть' : 'показать'}</span>`;
+    head.onclick = () => { window.archiveOpen = !window.archiveOpen; loadChats(); };
+    cList.appendChild(head);
+    if (window.archiveOpen) archChats.forEach(renderChatItem);
+  }
 }
 
 async function switchChat(chatId, chatName, isDirect = null) {
@@ -1726,7 +1837,21 @@ async function switchChat(chatId, chatName, isDirect = null) {
 
   const isGen = chatId === 'general';
   const isBot = isBotChat(chatId);
-  document.getElementById('delete-chat-btn').style.display = (isGen || isBot) ? 'none' : 'block';
+  const delBtn = document.getElementById('delete-chat-btn');
+  delBtn.style.display = (isGen || isBot) ? 'none' : 'block';
+  if (isDMChat(chatId)) {
+    delBtn.innerText = '🧹';
+    delBtn.title = 'Очистить историю ЛС (сам чат удалить можно только удалив друга)';
+  } else {
+    delBtn.innerText = '🗑️';
+    delBtn.title = 'Удалить чат';
+  }
+  const archBtn = document.getElementById('archive-chat-btn');
+  const archVisible = isDMChat(chatId) && !isBot;
+  archBtn.style.display = archVisible ? 'inline-block' : 'none';
+  if (archVisible) {
+    archBtn.innerText = isChatArchived(chatId) ? '📦↩ Вернуть' : '📦 В архив';
+  }
   document.getElementById('chat-rename-btn').style.display = (isGen || isBot) ? 'none' : 'block';
   document.getElementById('chat-invite-btn').style.display = (isGen || isBot) ? 'none' : 'block';
   updateChatHeader(chatId);
@@ -1836,6 +1961,9 @@ async function switchChat(chatId, chatName, isDirect = null) {
     } else if (data.action === 'chat_deleted') {
       if (data.id === activeChatId) switchChat('general', '🌐 Общий чат');
       loadChats();
+    } else if (data.action === 'chat_cleared') {
+      // История чата очищена (например, ЛС) — перечитываем ленту без перезагрузки
+      if (data.id === activeChatId) switchChat(activeChatId, window.activeChatName || activeChatId);
     } else if (data.action === 'members_updated') {
       // Состав/роли в группе поменялись (в т.ч. передача владельца)
       if (data.chat_id === activeChatId) {
@@ -2606,6 +2734,7 @@ function notifyIncomingMessage(msg) {
     const focused = document.hasFocus();
     const inThisChat = (chatId === activeChatId);
     if (focused && inThisChat) return;
+    if (isChatArchived(chatId)) return;
     if (!focused && msgSoundEnabled()) playMessageTone();
     const meta = (chatId && typeof chatMeta === 'function') ? chatMeta(chatId) : null;
     const isDm = !!(chatId && String(chatId).indexOf('dm_') === 0);
@@ -2740,6 +2869,7 @@ async function startCall(target) {
   if (!target) return showToast('Не удалось определить собеседника', 'warning');
   if (currentCallPartner) return showToast('У вас уже идёт звонок', 'warning');
   ensureAudioContext();
+  initAudioRoute();
   currentCallPartner = target;
   callState = 'outgoing';
   callStartedAt = Date.now();
@@ -2884,6 +3014,7 @@ document.getElementById('btn-accept-call').onclick = async () => {
   stopTitleBlink();
   hideSoundUnlock();
   ensureAudioContext();
+  initAudioRoute();
   callState = 'active';
   document.getElementById('call-mini-toast').style.display = 'none';
   document.getElementById('call-incoming-bar').style.display = 'none';
@@ -3037,6 +3168,51 @@ document.getElementById('btn-toggle-mic').onclick = () => {
   if (aTrack) aTrack.enabled = isMicOn;
   document.getElementById('btn-toggle-mic').classList.toggle('active', isMicOn);
   document.getElementById('btn-toggle-mic').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выключен';
+};
+
+// ── Маршрутизация звука: 🔊 динамики ↔ трубка/наушники ──
+// На компе по умолчанию динамики, на телефоне — трубка; кнопка переключает
+// вывод звонка между доступными устройствами (Chrome/Edge setSinkId).
+function isTouchMobile() {
+  return /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 900);
+}
+let audioRouteIndex = 0;
+let audioOutputs = [];
+async function refreshAudioOutputs() {
+  audioOutputs = [];
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    audioOutputs = devs.filter(d => d.kind === 'audiooutput' && d.deviceId && d.deviceId !== 'default');
+  } catch (e) {}
+  return audioOutputs;
+}
+function audioRouteLabel() {
+  const cur = audioOutputs[audioRouteIndex];
+  if (cur && /phone|receiver|трубк|handset|наушник|headset|earpiece/i.test(cur.label || '')) return '📱 Трубка';
+  if (isTouchMobile() && !cur) return '📱 Звук телефона';
+  return '🔊 Динамики';
+}
+async function initAudioRoute() {
+  audioRouteIndex = 0;
+  await refreshAudioOutputs();
+  const b = document.getElementById('btn-audio-route');
+  if (b) b.innerText = audioRouteLabel();
+}
+document.getElementById('btn-audio-route').onclick = async () => {
+  const el = document.getElementById('peer-audio');
+  if (typeof el.setSinkId !== 'function') {
+    showToast('Этот браузер не умеет переключать устройства вывода (нужен Chrome/Edge)');
+    return;
+  }
+  await refreshAudioOutputs();
+  if (!audioOutputs.length) { showToast('Нет доступных устройств вывода'); return; }
+  audioRouteIndex = (audioRouteIndex + 1) % audioOutputs.length;
+  try {
+    await el.setSinkId(audioOutputs[audioRouteIndex].deviceId);
+    document.getElementById('btn-audio-route').innerText = audioRouteLabel();
+    showToast('🔈 Звук: ' + audioRouteLabel());
+  } catch (e) { showToast('Не удалось сменить устройство вывода'); }
 };
 
 document.getElementById('btn-end-call').onclick = () => {
@@ -3362,8 +3538,9 @@ async function loadAdminDeleted() {
 
 function setAdminFilter(ftype) {
   currentAdminFilter = ftype;
+  const labels = { all: 'Все', online: 'Онлайн', offline: 'Офлайн', admins: 'Админы', banned: 'Баны' };
   document.querySelectorAll('.filter-tab-btn').forEach(b => {
-    b.classList.toggle('active', b.innerText.toLowerCase().includes(ftype) || (ftype==='all' && b.innerText==='Все'));
+    b.classList.toggle('active', b.innerText.trim() === (labels[ftype] || ftype));
   });
   loadAdminUsers(document.getElementById('admin-search-input').value.trim());
 }
@@ -3503,7 +3680,7 @@ function openMutePrompt(nick) {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: 'Мьют от админа', duration_minutes: parseInt(mins)||10 })
-  }).then(r=>r.json()).then(d=>showToast(d.msg));
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminUsers(); });
 }
 
 function adminKickUser(nick) {
@@ -3512,7 +3689,7 @@ function adminKickUser(nick) {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
-    }).then(r=>r.json()).then(d=>showToast(d.msg));
+    }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminUsers(); });
   });
 }
 
@@ -3860,6 +4037,16 @@ document.getElementById('change-pwd-btn').onclick = () => {
 };
 
 document.getElementById('delete-chat-btn').onclick = () => {
+  if (isDMChat(activeChatId)) {
+    confirmAction('Очистка', 'Очистить историю ЛС? Сам чат останется — удалить его можно только удалив друга.', () => {
+      fetch(`${BACKEND_URL}/chats/${activeChatId}/clear?user=${encodeURIComponent(currentUser)}`, { method: 'POST' })
+        .then(r=>r.json()).then(d=>{
+          showToast(d.msg||'Очищено');
+          if (d.status === 'ok') switchChat(activeChatId, window.activeChatName || activeChatId);
+        });
+    });
+    return;
+  }
   confirmAction('Удаление', 'Удалить этот чат?', () => {
     fetch(`${BACKEND_URL}/chats/${activeChatId}?user=${currentUser}`, { method: 'DELETE' })
       .then(r=>r.json()).then(d=>{
@@ -3868,6 +4055,14 @@ document.getElementById('delete-chat-btn').onclick = () => {
         switchChat('general', '🌐 Общий чат');
       });
   });
+};
+
+document.getElementById('archive-chat-btn').onclick = () => {
+  const nowArchived = toggleArchiveChat(activeChatId);
+  showToast(nowArchived ? '📦 Чат перенесён в архив — уведомления отключены'
+                        : '📦 Чат возвращён из архива');
+  loadChats();
+  switchChat(activeChatId, window.activeChatName || activeChatId);
 };
 
 // Создание нового чата через модалку на сайте

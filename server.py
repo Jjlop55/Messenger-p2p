@@ -1489,6 +1489,22 @@ async def manage_friend(data: FriendActionData):
         cursor.execute("DELETE FROM friends WHERE (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?)) OR (LOWER(user1)=LOWER(?) AND LOWER(user2)=LOWER(?))",
                        (data.from_user, canonical_target, canonical_target, data.from_user))
         conn.commit()
+        if data.action == "remove":
+            # Удаление из друзей = единственная возможность удалить ЛС-чат:
+            # находим dm-чат этой пары и удаляем его целиком
+            cursor.execute("""
+                SELECT id FROM chats
+                WHERE is_direct=1 AND (
+                    (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?)) OR
+                    (LOWER(direct_user1)=LOWER(?) AND LOWER(direct_user2)=LOWER(?)))
+            """, (data.from_user, canonical_target, canonical_target, data.from_user))
+            for (dm_id,) in cursor.fetchall():
+                _purge_files_for("chat_id=?", (dm_id,))
+                cursor.execute("DELETE FROM chats WHERE id=?", (dm_id,))
+                cursor.execute("DELETE FROM members WHERE chat_id=?", (dm_id,))
+                cursor.execute("DELETE FROM messages WHERE chat_id=?", (dm_id,))
+                conn.commit()
+                await manager.broadcast_all({"action": "chat_deleted", "id": dm_id})
         return {"status": "ok", "msg": "Удалено из друзей."}
 
     return {"status": "error", "msg": "Неизвестное действие"}
@@ -1720,6 +1736,25 @@ async def delete_chat(chat_id: str, user: str):
     conn.commit()
     await manager.broadcast_all({"action": "chat_deleted", "id": chat_id})
     return {"status": "ok"}
+
+@app.post("/chats/{chat_id}/clear")
+async def clear_chat(chat_id: str, user: str):
+    # Очистка ленты: для ЛС — любой участник, для групп — как удаление чата
+    cursor.execute("SELECT is_direct FROM chats WHERE id=?", (chat_id,))
+    row = cursor.fetchone()
+    if not row:
+        return {"status": "error", "msg": "Чат не найден"}
+    if row[0]:
+        cursor.execute("SELECT 1 FROM members WHERE chat_id=? AND LOWER(nickname)=LOWER(?)", (chat_id, user))
+        if not cursor.fetchone():
+            return {"status": "error", "msg": "Это не ваш чат"}
+    elif not can_delete_chat(chat_id, user):
+        return {"status": "error", "msg": "Очищать может только владелец группы!"}
+    _purge_files_for("chat_id=?", (chat_id,))
+    cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    conn.commit()
+    await manager.broadcast_chat(chat_id, {"action": "chat_cleared", "id": chat_id})
+    return {"status": "ok", "msg": "История очищена"}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2879,18 +2914,26 @@ def games_lobby():
 
 @app.get("/games/leaderboard")
 def games_leaderboard(game: str = "all", limit: int = 10):
-    """Таблица лидеров: сначала по числу сыгранных 1х1 матчей, потом по победам."""
+    """Таблица лидеров: сначала по числу сыгранных 1х1 матчей, потом по победам.
+    Удалённые аккаунты (нет в users) и активно забаненные в топ не попадают."""
+    ns = now_str()
+    where = """
+        WHERE EXISTS (SELECT 1 FROM users u WHERE LOWER(u.nickname)=LOWER(gs.nickname))
+          AND NOT EXISTS (SELECT 1 FROM bans b WHERE LOWER(b.target_nick)=LOWER(gs.nickname)
+                          AND (b.ban_type='permanent' OR b.expires_at>?))
+    """
     if game in GAMES:
-        rows = cursor.execute("""
-            SELECT nickname, wins, losses, draws, matches FROM game_stats
-            WHERE game=? ORDER BY matches DESC, wins DESC LIMIT ?
-        """, (game, limit)).fetchall()
+        rows = cursor.execute(f"""
+            SELECT gs.nickname, gs.wins, gs.losses, gs.draws, gs.matches
+            FROM game_stats gs {where} AND gs.game=?
+            ORDER BY gs.matches DESC, gs.wins DESC LIMIT ?
+        """, (ns, game, limit)).fetchall()
     else:
-        rows = cursor.execute("""
-            SELECT nickname, SUM(wins), SUM(losses), SUM(draws), SUM(matches)
-            FROM game_stats GROUP BY LOWER(nickname)
-            ORDER BY SUM(matches) DESC, SUM(wins) DESC LIMIT ?
-        """, (limit,)).fetchall()
+        rows = cursor.execute(f"""
+            SELECT gs.nickname, SUM(gs.wins), SUM(gs.losses), SUM(gs.draws), SUM(gs.matches)
+            FROM game_stats gs {where} GROUP BY LOWER(gs.nickname)
+            ORDER BY SUM(gs.matches) DESC, SUM(gs.wins) DESC LIMIT ?
+        """, (ns, limit)).fetchall()
     return [{"rank": i + 1, "nickname": r[0], "wins": r[1] or 0, "losses": r[2] or 0,
              "draws": r[3] or 0, "matches": r[4] or 0}
             for i, r in enumerate(rows)]
