@@ -380,6 +380,19 @@
     }
     .call-avatar-large img { width: 100%; height: 100%; object-fit: cover; }
 
+    /* Индикатор речи: неоновые линии расходятся при голосе, красные при молчании/мьютe */
+    .voice-indicator {
+      position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 4px; align-items: center; pointer-events: none; z-index: 5;
+    }
+    .voice-indicator .vi-bar {
+      width: 3px; height: 18px; border-radius: 2px;
+      background: var(--neon-cyan); box-shadow: 0 0 8px var(--neon-cyan);
+      transition: height 0.08s ease;
+    }
+    .voice-indicator.muted .vi-bar { background: #ff4444; box-shadow: 0 0 8px #ff4444; height: 4px; }
+    .voice-indicator.tired .vi-bar { background: #ff8800; box-shadow: 0 0 8px #ff8800; }
+
     .call-controls-bar {
       display: flex; gap: 12px; padding: 14px 20px; border-radius: 35px; background: rgba(16, 24, 38, 0.92);
       border: var(--glass-border); box-shadow: 0 0 25px rgba(0,0,0,0.8); flex-wrap: wrap; justify-content: center;
@@ -463,7 +476,7 @@
     <div class="call-panel-body">
       <div class="call-video-grid">
         <!-- Стрим собеседника -->
-        <div class="call-tile" id="tile-remote">
+        <div class="call-tile" id="tile-remote" style="position:relative;">
           <video id="remote-video" autoplay playsinline style="display:none;"></video>
           <div class="call-avatar-placeholder" id="call-avatar-wrap">
             <div class="call-avatar-anim" id="call-avatar-anim">
@@ -472,16 +485,22 @@
             </div>
             <div id="call-avatar-hint" style="font-size: 12px; color: var(--text-dim);">Камера собеседника выключена</div>
           </div>
+          <div class="voice-indicator" id="remote-voice-ind" style="display:none;">
+            <span class="vi-bar"></span><span class="vi-bar"></span><span class="vi-bar"></span><span class="vi-bar"></span><span class="vi-bar"></span>
+          </div>
           <div class="tile-label" id="tile-remote-label">Собеседник</div>
           <button class="tile-fs-btn" onclick="toggleFullScreen('tile-remote')">⛶</button>
         </div>
 
         <!-- Наш стрим (камера или демка экрана) -->
-        <div class="call-tile" id="tile-local">
+        <div class="call-tile" id="tile-local" style="position:relative;">
           <video id="local-video" autoplay playsinline muted style="display:none;"></video>
           <div class="call-avatar-placeholder" id="local-avatar-wrap">
             <div id="local-remote-avatar" class="call-avatar-large">👤</div>
             <div style="font-size: 12px; color: var(--text-dim);">Ваше видео выключено</div>
+          </div>
+          <div class="voice-indicator" id="local-voice-ind" style="display:none;">
+            <span class="vi-bar"></span><span class="vi-bar"></span><span class="vi-bar"></span><span class="vi-bar"></span><span class="vi-bar"></span>
           </div>
           <div class="tile-label">Вы</div>
           <button class="tile-fs-btn" onclick="toggleFullScreen('tile-local')">⛶</button>
@@ -1298,6 +1317,7 @@ async function login(nickname, password) {
       myAdminPerms = d.admin_perms || {};
 
       localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname: currentUser, password }));
+      localStorage.setItem('utopia_session_token', currentSessionToken);
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
       document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
@@ -1310,6 +1330,7 @@ async function login(nickname, password) {
       switchChat('general', '🌐 Общий чат');
       checkFriendRequests();
       checkInvites();
+      loadSettingsFromServer(); // загружаем настройки с сервера
 
       setInterval(() => {
         if (activeWs && activeWs.readyState === WebSocket.OPEN) {
@@ -2031,6 +2052,27 @@ async function switchChat(chatId, chatName, isDirect = null) {
       } else {
         showToast('Абонент уже разговаривает — звонок занят', 'warning');
         endCall();
+      }
+    } else if (data.action === 'call_video_state') {
+      // Собеседник включил/выключил камеру/демонстрацию
+      const on = data.on !== false;
+      const rv = document.getElementById('remote-video');
+      if (on) {
+        rv.style.display = 'block';
+        document.getElementById('call-avatar-wrap').style.display = 'none';
+      } else {
+        rv.style.display = 'none';
+        document.getElementById('call-avatar-wrap').style.display = 'flex';
+      }
+      // mesh: состояние видео конкретного участника в его плитке
+      if (groupCallActive && data.caller) {
+        const tile = document.getElementById('gtile-' + data.caller);
+        if (tile) {
+          const vid = tile.querySelector('video');
+          const ph = tile.querySelector('.call-avatar-placeholder');
+          if (vid) vid.style.display = on ? 'block' : 'none';
+          if (ph) ph.style.display = on ? 'none' : 'flex';
+        }
       }
     } else if (data.action === 'new_message') {
       renderMessage(data);
@@ -2787,6 +2829,38 @@ function requestCallNotifications() {
 function msgNotifEnabled() { return localStorage.getItem('utopia_notif_msgs') !== '0'; }
 function msgSoundEnabled() { return localStorage.getItem('utopia_notif_sound') !== '0'; }
 
+// Синхронизация настроек с сервером
+async function syncSettingsToServer() {
+  if (!currentUser) return;
+  const settings = {
+    notif_msgs: msgNotifEnabled(),
+    notif_sound: msgSoundEnabled(),
+  };
+  try {
+    await fetch(`${BACKEND_URL}/user/settings/${encodeURIComponent(currentUser)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings })
+    });
+  } catch (e) {}
+}
+
+async function loadSettingsFromServer() {
+  if (!currentUser) return;
+  try {
+    const r = await fetch(`${BACKEND_URL}/user/settings/${encodeURIComponent(currentUser)}`);
+    const d = await r.json();
+    if (d.status === 'ok' && d.settings) {
+      if (typeof d.settings.notif_msgs === 'boolean') {
+        localStorage.setItem('utopia_notif_msgs', d.settings.notif_msgs ? '1' : '0');
+      }
+      if (typeof d.settings.notif_sound === 'boolean') {
+        localStorage.setItem('utopia_notif_sound', d.settings.notif_sound ? '1' : '0');
+      }
+      updateNotifSettingsUi();
+    }
+  } catch (e) {}
+}
+
 function updateNotifSettingsUi() {
   const t = document.getElementById('notif-messages-toggle');
   const s = document.getElementById('notif-sound-toggle');
@@ -2817,9 +2891,11 @@ function updateNotifSettingsUi() {
 
 document.getElementById('notif-messages-toggle').onchange = (e) => {
   localStorage.setItem('utopia_notif_msgs', e.target.checked ? '1' : '0');
+  syncSettingsToServer();
 };
 document.getElementById('notif-sound-toggle').onchange = (e) => {
   localStorage.setItem('utopia_notif_sound', e.target.checked ? '1' : '0');
+  syncSettingsToServer();
 };
 document.getElementById('notif-enable-btn').onclick = () => {
   if (!window.Notification) return;
@@ -2949,6 +3025,7 @@ function createPeerConnectionInstance(precreate, peerNick) {
           console.log('Audio autoplay prevented:', e);
           showSoundUnlock();
         });
+        updateVoiceIndicators();
       } else {
         const audioEl = document.getElementById('peer-audio');
         remoteAudioStream = event.streams[0] || new MediaStream([event.track]);
@@ -2958,6 +3035,7 @@ function createPeerConnectionInstance(precreate, peerNick) {
           console.log('Audio autoplay prevented:', e);
           showSoundUnlock();
         });
+        updateVoiceIndicators();
       }
     } else if (event.track.kind === 'video') {
       if (groupCallActive && pn && pn !== groupPrimaryPartner) {
@@ -2968,8 +3046,11 @@ function createPeerConnectionInstance(precreate, peerNick) {
         vid.style.display = 'block';
         const ph = tile.querySelector('.call-avatar-placeholder');
         if (ph) ph.style.display = 'none';
-        event.track.onmute = () => { vid.style.display = 'none'; if (ph) ph.style.display = 'flex'; };
-        event.track.onunmute = () => { vid.style.display = 'block'; if (ph) ph.style.display = 'none'; };
+        const hideTileVid = () => { vid.style.display = 'none'; if (ph) ph.style.display = 'flex'; };
+        const showTileVid = () => { vid.style.display = 'block'; if (ph) ph.style.display = 'none'; };
+        event.track.onmute = hideTileVid;
+        event.track.onunmute = showTileVid;
+        event.track.onended = () => { vid.srcObject = null; hideTileVid(); };
         return;
       }
       const remoteVid = document.getElementById('remote-video');
@@ -2977,14 +3058,11 @@ function createPeerConnectionInstance(precreate, peerNick) {
       remoteVid.style.display = 'block';
       document.getElementById('call-avatar-wrap').style.display = 'none';
 
-      event.track.onmute = () => {
-        remoteVid.style.display = 'none';
-        document.getElementById('call-avatar-wrap').style.display = 'flex';
-      };
-      event.track.onunmute = () => {
-        remoteVid.style.display = 'block';
-        document.getElementById('call-avatar-wrap').style.display = 'none';
-      };
+      const hideRemoteVid = () => { remoteVid.style.display = 'none'; document.getElementById('call-avatar-wrap').style.display = 'flex'; };
+      const showRemoteVid = () => { remoteVid.style.display = 'block'; document.getElementById('call-avatar-wrap').style.display = 'none'; };
+      event.track.onmute = hideRemoteVid;
+      event.track.onunmute = showRemoteVid;
+      event.track.onended = () => { remoteVid.srcObject = null; hideRemoteVid(); };
     }
   };
 
@@ -3339,6 +3417,8 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
       document.getElementById('local-video').style.display = 'block';
       document.getElementById('local-avatar-wrap').style.display = 'none';
       await broadcastTrack('video', vTrack);
+      if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: true });
+      if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: true }); });
       btn.classList.add('active');
     } catch(e) {
       isCamOn = false;
@@ -3349,6 +3429,8 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
     document.getElementById('local-video').style.display = 'none';
     document.getElementById('local-avatar-wrap').style.display = 'flex';
     await broadcastTrack('video', null);
+    if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: false });
+    if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: false }); });
     btn.classList.remove('active');
   }
 };
@@ -3368,6 +3450,8 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
       document.getElementById('local-avatar-wrap').style.display = 'none';
 
       await broadcastTrack('video', sTrack);
+      if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: true });
+      if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: true }); });
       btn.classList.add('active');
 
       sTrack.onended = async () => {
@@ -3376,6 +3460,8 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
         document.getElementById('local-video').style.display = 'none';
         document.getElementById('local-avatar-wrap').style.display = 'flex';
         await broadcastTrack('video', null);
+        if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: false });
+        if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: false }); });
       };
     } catch(e) {
       isScreenOn = false;
@@ -3386,6 +3472,8 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
     document.getElementById('local-video').style.display = 'none';
     document.getElementById('local-avatar-wrap').style.display = 'flex';
     await broadcastTrack('video', null);
+    if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: false });
+    if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: false }); });
     btn.classList.remove('active');
   }
 };
@@ -3397,7 +3485,123 @@ document.getElementById('btn-toggle-mic').onclick = () => {
   if (aTrack) aTrack.enabled = isMicOn;
   document.getElementById('btn-toggle-mic').classList.toggle('active', isMicOn);
   document.getElementById('btn-toggle-mic').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выключен';
+  // Режим тишины: выключил микрофон → не слышу и не вижу видео собеседника
+  applySilentMode(!isMicOn);
+  updateVoiceIndicators();
 };
+
+// ── Режим тишины: mute выключает всё входящее для себя ──
+// При включении микрофона всё возвращается в прежнее состояние.
+let _prevRemoteVidDisplay = null;
+function applySilentMode(silent) {
+  const pa = document.getElementById('peer-audio');
+  const rv = document.getElementById('remote-video');
+  const aw = document.getElementById('call-avatar-wrap');
+  if (silent) {
+    // Запоминаем текущее состояние видео собеседника
+    _prevRemoteVidDisplay = rv.style.display;
+    if (pa) pa.muted = true;
+    rv.style.display = 'none';
+    aw.style.display = 'flex';
+    // mesh: скрыть видео всех участников
+    document.querySelectorAll('#group-tiles video').forEach(v => { v.style.display = 'none'; });
+    document.querySelectorAll('#group-tiles .call-avatar-placeholder').forEach(p => { p.style.display = 'flex'; });
+    showToast('🔇 Тихий режим: звук и видео выключены', 'warning');
+  } else {
+    if (pa) pa.muted = false;
+    // Восстанавливаем видео собеседника, если оно было включено
+    if (_prevRemoteVidDisplay === 'block') {
+      rv.style.display = 'block';
+      aw.style.display = 'none';
+    }
+    // mesh: восстановить видео участников (показываем те, у которых srcObject есть)
+    document.querySelectorAll('#group-tiles video').forEach(v => {
+      if (v.srcObject) { v.style.display = 'block'; const p = v.closest('.call-tile')?.querySelector('.call-avatar-placeholder'); if (p) p.style.display = 'none'; }
+    });
+    showToast('🔊 Звук и видео включены');
+  }
+}
+
+// ── Индикатор речи: неоновые линии над аватаркой ──
+// AnalyserNode меряет уровень голоса; линии расходятся при громости,
+// краснеют при мьюте, оранжевые при слабом/замученном голосе.
+let _voiceCtx = null, _localAnalyser = null, _remoteAnalyser = null, _voiceRaf = null;
+function ensureVoiceCtx() {
+  if (!_voiceCtx) {
+    try { _voiceCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+  }
+  if (_voiceCtx.state === 'suspended') _voiceCtx.resume().catch(()=>{});
+  return _voiceCtx;
+}
+function attachAnalyser(stream, which) {
+  const ctx = ensureVoiceCtx();
+  if (!ctx) return;
+  try {
+    const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser();
+    an.fftSize = 256;
+    src.connect(an);
+    if (which === 'local') _localAnalyser = an; else _remoteAnalyser = an;
+  } catch(e) {}
+}
+function detachAnalyser(which) {
+  if (which === 'local') _localAnalyser = null; else _remoteAnalyser = null;
+}
+function _readLevel(an) {
+  if (!an) return 0;
+  const buf = new Uint8Array(an.fftSize);
+  an.getByteTimeDomainData(buf);
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+  return Math.sqrt(sum / buf.length);
+}
+function _paintVoiceInd(id, level, muted, analyserExists) {
+  const ind = document.getElementById(id);
+  if (!ind) return;
+  if (!analyserExists && !muted) { ind.style.display = 'none'; return; }
+  ind.style.display = 'flex';
+  ind.classList.toggle('muted', !!muted);
+  const tired = !muted && analyserExists && level > 0.02 && level < 0.06;
+  ind.classList.toggle('tired', tired);
+  const bars = ind.querySelectorAll('.vi-bar');
+  const mid = (bars.length - 1) / 2;
+  bars.forEach((b, i) => {
+    if (muted) { b.style.height = '4px'; return; }
+    const dist = Math.abs(i - mid);
+    const amp = level * (1 - dist / (mid + 1)) * 60;
+    b.style.height = Math.max(4, Math.min(28, 4 + amp)) + 'px';
+  });
+}
+function _voiceLoop() {
+  const localLvl = _readLevel(_localAnalyser);
+  const remoteLvl = _readLevel(_remoteAnalyser);
+  _paintVoiceInd('local-voice-ind', localLvl, !isMicOn, !!_localAnalyser);
+  _paintVoiceInd('remote-voice-ind', remoteLvl, false, !!_remoteAnalyser);
+  _voiceRaf = requestAnimationFrame(_voiceLoop);
+}
+function updateVoiceIndicators() {
+  // Локальный голос: анализируем localStream
+  if (localStream && localStream.getAudioTracks().length) {
+    attachAnalyser(localStream, 'local');
+  } else {
+    detachAnalyser('local');
+  }
+  // Голос собеседника: анализируем peer-audio (remote)
+  const pa = document.getElementById('peer-audio');
+  if (pa && pa.srcObject && pa.srcObject.getAudioTracks && pa.srcObject.getAudioTracks().length) {
+    attachAnalyser(pa.srcObject, 'remote');
+  }
+  // Запускаем цикл отрисовки, если ещё не запущен
+  if (!_voiceRaf) _voiceLoop();
+}
+function stopVoiceIndicators() {
+  if (_voiceRaf) { cancelAnimationFrame(_voiceRaf); _voiceRaf = null; }
+  _localAnalyser = null; _remoteAnalyser = null;
+  ['local-voice-ind', 'remote-voice-ind'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.classList.remove('muted', 'tired'); }
+  });
+}
 
 // ── Маршрутизация звука: 🔊 динамики ↔ трубка/наушники ──
 // На компе по умолчанию динамики, на телефоне — трубка; кнопка переключает
@@ -3465,6 +3669,7 @@ function endCall() {
   stopIncomingNotification();
   stopTitleBlink();
   hideSoundUnlock();
+  stopVoiceIndicators();
   const miniToast = document.getElementById('call-mini-toast');
   if (miniToast) miniToast.style.display = 'none';
   if (localStream) localStream.getTracks().forEach(t => t.stop());
@@ -3597,6 +3802,7 @@ function markCallConnected(statusText) {
     ]);
   }
   updateCallTimer();
+  updateVoiceIndicators();
 }
 
 function minimizeCall() {
@@ -5015,8 +5221,8 @@ async function openUserProfile(nick, memberData) {
 // ═══════════════════════════════════════════════════════════
 //  ИГРОВОЙ ЗАЛ: поиск соперника, три игры, лидеры
 // ═══════════════════════════════════════════════════════════
-const GAME_TITLES = { rps: '✊ Камень-ножницы-бумага', ttt: '❌ Крестики-нолики', sea: '🚢 Морской бой' };
-const GAME_EMOJI = { rps: '✊', ttt: '❌', sea: '🚢' };
+const GAME_TITLES = { rps: '✊ Камень-ножницы-бумага', ttt: '❌ Крестики-нолики', sea: '🚢 Морской бой', utopia: '⚔️ Утопия (арена)' };
+const GAME_EMOJI = { rps: '✊', ttt: '❌', sea: '🚢', utopia: '⚔️' };
 let gameWs = null;
 let gamePhase = 'idle';          // idle | searching | playing | over
 let gameMatchId = null;
@@ -5303,6 +5509,29 @@ function renderGame() {
   if (s.game === 'rps') renderRps(body, foot, s);
   else if (s.game === 'ttt') renderTtt(body, foot, s);
   else if (s.game === 'sea') renderSea(body, foot, s);
+  else if (s.game === 'utopia') renderUtopia(body, foot, s);
+}
+
+// ── ⚔️ Утопия: PvP-арена ──
+function renderUtopia(body, foot, s) {
+  body.innerHTML = `
+    <div style="font-size:52px;">⚔️</div>
+    <div style="font-size:22px; font-weight:900; color:#818cf8;">УТОПИЯ — АРЕНА</div>
+    <div style="font-size:13px; color:var(--text-dim); text-align:center; line-height:1.6; max-width:420px;">
+      Соперник: <b style="color:#fff;">@${escapeHtml(s.opp)}</b><br>
+      Матч создан! Откройте игру «Утопия» (Плеер.html), чтобы сражаться в реальном времени.
+    </div>`;
+  const open = document.createElement('button');
+  open.className = 'pill-btn';
+  open.style.cssText = 'background:rgba(129,140,248,.22); color:#818cf8; border:1px solid rgba(129,140,248,.6); font-weight:700;';
+  open.textContent = '⚔️ Открыть игру';
+  open.onclick = () => window.open('https://jjlop55.github.io/Messenger-p2p/utopia.html', '_blank');
+  const cancel = document.createElement('button');
+  cancel.className = 'pill-btn';
+  cancel.textContent = 'Сдался';
+  cancel.onclick = () => gameSend({ action: 'forfeit', match_id: gameMatchId });
+  foot.appendChild(open);
+  foot.appendChild(cancel);
 }
 
 // ── ✊ Камень-ножницы-бумага ──

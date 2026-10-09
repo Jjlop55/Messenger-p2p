@@ -331,6 +331,15 @@ CREATE TABLE IF NOT EXISTS deleted_users (
 )
 """)
 
+# Настройки пользователя (синхронизируются между устройствами)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_settings (
+    nickname TEXT PRIMARY KEY,
+    settings_json TEXT DEFAULT '{}',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
 conn.commit()
 
 cursor.execute("INSERT OR IGNORE INTO chats (id, name, created_by, is_direct) VALUES ('general', '🌐 Общий чат', 'system', 0)")
@@ -2138,6 +2147,35 @@ def get_user_info(nickname: str, by: str = ""):
         "common_chats": common,
     }
 
+# ── НАСТРОЙКИ ПОЛЬЗОВАТЕЛЯ (синхронизация между устройствами) ──
+@app.get("/user/settings/{nickname}")
+def get_user_settings(nickname: str):
+    cursor.execute("SELECT settings_json FROM user_settings WHERE LOWER(nickname)=LOWER(?)", (nickname,))
+    row = cursor.fetchone()
+    if row:
+        try:
+            import json as _json
+            return {"status": "ok", "settings": _json.loads(row[0] or "{}")}
+        except Exception:
+            return {"status": "ok", "settings": {}}
+    return {"status": "ok", "settings": {}}
+
+@app.post("/user/settings/{nickname}")
+def save_user_settings(nickname: str, data: dict = None):
+    import json as _json
+    if not data: return {"status": "error", "msg": "Нет данных"}
+    settings = data.get("settings", {})
+    # Ограничиваем размер — не храним мегабайты
+    s = _json.dumps(settings, ensure_ascii=False)
+    if len(s) > 10000:
+        return {"status": "error", "msg": "Настройки слишком большие"}
+    cursor.execute("""INSERT INTO user_settings (nickname, settings_json, updated_at)
+                      VALUES (?, ?, datetime('now'))
+                      ON CONFLICT(nickname) DO UPDATE SET settings_json=excluded.settings_json, updated_at=datetime('now')""",
+                   (nickname, s))
+    conn.commit()
+    return {"status": "ok"}
+
 # ═══════════════════════════════════════════════════════════
 #  АДМИНИСТРАТИВНАЯ ПАНЕЛЬ
 # ═══════════════════════════════════════════════════════════
@@ -2584,6 +2622,7 @@ GAMES = {
     "rps": "✊ Камень-ножницы-бумага",
     "ttt": "❌ Крестики-нолики",
     "sea": "🚢 Морской бой",
+    "utopia": "⚔️ Утопия (арена)",
 }
 RPS_TARGET = 3  # до скольких побед идёт матч
 
@@ -2728,6 +2767,14 @@ def _init_match(game: str, p1: str, p2: str) -> dict:
             "shots": {p1: {}, p2: {}},       # клетка -> 'hit'/'miss'
             "turn": p1,
             "last": None,                    # последний выстрел: {"cell","hit","by"}
+        }
+    elif game == "utopia":
+        # реалтайм-арена: сервер только релеит стейт, боевая логика на клиенте
+        state = {
+            "phase": "fighting",
+            "hp": {p1: 100, p2: 100},
+            "pos": {p1: {"x": 0, "z": 60}, "p2": {"x": 0, "z": -60}},
+            "last_state": {},                # последний присланный стейт от каждого
         }
     return {"id": None, "game": game, "p1": p1, "p2": p2, "over": False, "state": state}
 
@@ -3090,6 +3137,33 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                 await _handle_move(nickname, data.get("match_id"), data.get("data") or {})
             elif action == "place_ships":
                 await _handle_place_ships(nickname, data.get("match_id"), data)
+            elif action == "utopia_state":
+                # Утопия: клиент шлёт свой стейт, сервер релеит сопернику
+                try:
+                    mid = int(data.get("match_id"))
+                except (TypeError, ValueError):
+                    continue
+                m = _matches.get(mid)
+                if not m or m["over"] or m["game"] != "utopia" or nickname not in (m["p1"], m["p2"]):
+                    continue
+                opp = m["p2"] if nickname == m["p1"] else m["p1"]
+                payload = data.get("state") or {}
+                m["state"]["last_state"][nickname] = payload
+                # сохраняем hp/alive и pos для статистики
+                if "hp" in payload:
+                    m["state"]["hp"][nickname] = payload["hp"]
+                if "alive" in payload:
+                    m["state"]["hp"][nickname] = 100 if payload["alive"] else 0
+                if "pos" in payload:
+                    m["state"]["pos"][nickname] = payload["pos"]
+                # если кто-то умер — матч окончен
+                hp = m["state"]["hp"]
+                if hp.get(m["p1"], 100) <= 0 or hp.get(m["p2"], 100) <= 0:
+                    winner = m["p1"] if hp.get(m["p2"], 100) <= 0 else m["p2"]
+                    await _finish_match(m, winner, "kill")
+                    continue
+                # релеим сопернику
+                await _gsend(opp, {"action": "utopia_state", "id": mid, "from": nickname, "state": payload})
             elif action == "forfeit":
                 try:
                     mid = int(data.get("match_id"))
@@ -3143,7 +3217,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     conn.commit()
                 await websocket.send_json({"action": "pong"})
 
-            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_timeout"):
+            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_timeout", "call_video_state"):
                 target = data.get("target")
                 # Звонящий тоже берётся из URL сокета — нельзя представиться чужим именем
                 data["caller"] = nickname
