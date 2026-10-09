@@ -1233,6 +1233,7 @@ class Stickman {
     this.spawnX = spawnX;
     this.spawnY = spawnY;
     this.isBot = isBot;
+    this.name = isBot ? 'Бот' : 'Игрок';
 
     this.x = spawnX;
     this.y = spawnY;
@@ -1488,6 +1489,21 @@ class Stickman {
     c.fill();
 
     c.restore();
+
+    // ник над головой
+    if (this.name) {
+      c.save();
+      c.font = 'bold 12px Arial';
+      c.textAlign = 'center';
+      c.textBaseline = 'bottom';
+      const ny = this.y - this.radius - 10;
+      c.fillStyle = 'rgba(0,0,0,0.55)';
+      const tw = c.measureText(this.name).width;
+      c.fillRect(this.x - tw/2 - 4, ny - 13, tw + 8, 16);
+      c.fillStyle = this.isBot ? '#aab4c0' : '#fff';
+      c.fillText(this.name, this.x, ny);
+      c.restore();
+    }
   }
 }
 
@@ -1495,12 +1511,17 @@ const particles = new Particles();
 const bullets = [];
 const p1 = new Stickman(1, '#ff2a2a', 250, 590, false);
 const p2 = new Stickman(2, '#2a82ff', 1030, 130, true);
+p1.name = localStorage.getItem('utopia_nickname') || 'Игрок 1';
+p2.name = 'Бот Средний';
 
 /**
  * ТАКТИЧЕСКИЙ БОТ: УМНОЕ УКЛОНЕНИЕ, ПРИОРИТЕТЫ И ПОМЕХИ
  */
 function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
   if (!bot.alive) return;
+
+  // множитель сложности
+  const diff = bot.name === 'Бот Сложный' ? 1.0 : (bot.name === 'Бот Лёгкий' ? 0.35 : 0.7);
 
   let moveDirX = 0;
   let moveDirY = 0;
@@ -1509,8 +1530,9 @@ function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
   if (currentGameMode === 'cells') {
     const enemyDist = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
 
-    if (enemyDist < 260 && bot.shootCooldown <= 0 && bot.ammo > 0) {
+    if (enemyDist < 260 && bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.3 + diff * 0.7) {
       bot.angle = Math.atan2(enemy.y - bot.y, enemy.x - bot.x);
+      if (diff < 0.9) bot.angle += (Math.random() - 0.5) * (1 - diff) * 0.5;
       bot.shootRequest = true;
     }
 
@@ -1591,11 +1613,13 @@ function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
         moveDirX = Math.cos(ang + Math.PI / 2);
         moveDirY = Math.sin(ang + Math.PI / 2);
       }
-      if (enemyDist < 520 && bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.08) {
+      if (enemyDist < 520 && bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.08 + diff * 0.15) {
         bot.shootRequest = true;
       }
     }
     bot.angle = Math.atan2(enemy.y - bot.y, enemy.x - bot.x);
+    // лёгкий бот стреляет мимо, сложный — точно
+    if (diff < 0.9) bot.angle += (Math.random() - 0.5) * (1 - diff) * 0.6;
   }
 
   // 3. ЗАХВАТ ФЛАГА (FLAG)
@@ -2357,12 +2381,25 @@ p1Btn.addEventListener('click', () => {
   sfx.init();
   p1.isBot = !p1.isBot;
   p1Btn.textContent = p1.isBot ? '🤖 Бот' : '👤 Человек';
+  p1.name = p1.isBot ? 'Бот Лёгкий' : (localStorage.getItem('utopia_nickname') || 'Игрок 1');
 });
 
 p2Btn.addEventListener('click', () => {
   sfx.init();
-  p2.isBot = !p2.isBot;
-  p2Btn.textContent = p2.isBot ? '🤖 Тактический Бот' : '👤 Человек';
+  // цикл: Бот Лёгкий → Бот Средний → Бот Сложный → Человек → ...
+  if (p2.name === 'Бот Средний') {
+    p2.isBot = true;
+    p2.name = 'Бот Сложный';
+    p2Btn.textContent = '🤖 Бот Сложный';
+  } else if (p2.name === 'Бот Сложный') {
+    p2.isBot = false;
+    p2.name = localStorage.getItem('utopia_nickname') || 'Игрок 2';
+    p2Btn.textContent = '👤 Человек';
+  } else {
+    p2.isBot = true;
+    p2.name = 'Бот Средний';
+    p2Btn.textContent = '🤖 Тактический Бот';
+  }
 });
 
 document.querySelectorAll('#mode-group .select-btn').forEach(btn => {
@@ -2391,6 +2428,11 @@ startBtn.addEventListener('click', () => {
   p2.score = 0;
   bullets.length = 0;
   powerups.length = 0;
+
+  // ники: свой — из мессенджера, бот — по сложности
+  const myNick = localStorage.getItem('utopia_nickname') || 'Игрок 1';
+  p1.name = p1.isBot ? 'Бот Лёгкий' : myNick;
+  p2.name = p2.isBot ? 'Бот Средний' : (pvpOppNick || 'Игрок 2');
 
   if (currentGameMode === 'flag') {
     p1.spawnX = redBasePos.x;
@@ -2514,6 +2556,8 @@ function pvpStartMatch() {
   p2.score = 0;
   p1.isBot = false;
   p2.isBot = false; // соперник — живой человек
+  p1.name = localStorage.getItem('utopia_nickname') || 'Игрок';
+  p2.name = pvpOppNick || 'Соперник';
   p1.spawnX = 250; p1.spawnY = 590;
   p2.spawnX = 1030; p2.spawnY = 130;
   arenaCrate.respawn();

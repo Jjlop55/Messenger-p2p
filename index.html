@@ -1318,6 +1318,7 @@ async function login(nickname, password) {
 
       localStorage.setItem('utopia_saved_user', JSON.stringify({ nickname: currentUser, password }));
       localStorage.setItem('utopia_session_token', currentSessionToken);
+      localStorage.setItem('utopia_nickname', currentUser);
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
       document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
