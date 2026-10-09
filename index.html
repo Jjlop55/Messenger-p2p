@@ -1095,8 +1095,8 @@
     <div id="game-countdown-num" style="font-size:96px; font-weight:900; color:#818cf8; line-height:1;">3</div>
     <div style="font-size:14px; color:#888;">Игра откроется на полный экран…</div>
   </div>
-  <!-- Кнопка выхода в мессенджер (поверх полноэкранной игры) -->
-  <div id="game-return-btn" style="display:none; position:absolute; top:8px; right:8px; z-index:11000; padding:6px 14px; border-radius:8px; border:1px solid rgba(255,255,255,.25); background:rgba(0,0,0,.7); color:#fff; font-size:12px; cursor:pointer; backdrop-filter:blur(4px);">↩ В мессенджер</div>
+  <!-- Кнопка выхода в мессенджер (поверх полноэкранной игры) — всегда видна -->
+  <div id="game-return-btn" style="display:none; position:fixed; top:8px; right:8px; z-index:11000; padding:8px 16px; border-radius:8px; border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.85); color:#fff; font-size:13px; font-weight:700; cursor:pointer; backdrop-filter:blur(4px); box-shadow:0 0 12px rgba(0,0,0,.8);">↩ В мессенджер</div>
   <!-- iframe с полноэкранной игрой (utopia/greenu) -->
   <iframe id="game-iframe" style="width:100%; height:100%; border:none; display:none; background:#000;" allow="fullscreen; autoplay; microphone; camera"></iframe>
   <!-- Обычные игры (rps/ttt/sea) — старый интерфейс -->
@@ -5697,25 +5697,19 @@ function gameMove(data) {
   gameSend({ action: 'move', match_id: gameMatchId, data });
 }
 
-// ── Полноэкранный запуск игры: отсчёт 3 сек → игра на весь экран ──
+// ── Полноэкранный запуск игры: отсчёт 3 сек → fullscreen → игра ──
 let _gameFullscreenCountdown = null;
 function openGameFullscreen(file, title, emoji) {
   const ov = document.getElementById('game-overlay');
   const cd = document.getElementById('game-countdown');
   const iframe = document.getElementById('game-iframe');
   const retBtn = document.getElementById('game-return-btn');
-  // запрос fullscreen на gesture (до await)
-  const root = ov;
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-    if (root.requestFullscreen) root.requestFullscreen().catch(() => {});
-    else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
-  }
   ov.style.display = 'block';
   document.getElementById('game-classic-wrap').style.display = 'none';
   iframe.style.display = 'none';
   iframe.src = 'about:blank';
   retBtn.style.display = 'none';
-  // обратный отсчёт
+  // обратный отсчёт (fullscreen НЕ запрашиваем — он будет после отсчёта)
   document.getElementById('game-countdown-emoji').textContent = emoji || '🎮';
   document.getElementById('game-countdown-title').textContent = title || '';
   cd.style.display = 'flex';
@@ -5728,9 +5722,14 @@ function openGameFullscreen(file, title, emoji) {
       clearInterval(_gameFullscreenCountdown);
       _gameFullscreenCountdown = null;
       cd.style.display = 'none';
+      // fullscreen ПОСЛЕ отсчёта (кнопка кликнулась 3 сек назад — gesture ещё валиден)
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (ov.requestFullscreen) ov.requestFullscreen().catch(() => {});
+        else if (ov.webkitRequestFullscreen) ov.webkitRequestFullscreen();
+      }
       iframe.src = file;
       iframe.style.display = 'block';
-      setTimeout(() => { retBtn.style.display = 'block'; }, 500);
+      retBtn.style.display = 'block';
     } else {
       document.getElementById('game-countdown-num').textContent = n;
     }
@@ -5751,6 +5750,19 @@ function closeGameFullscreen() {
   else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
 }
 document.getElementById('game-return-btn').onclick = () => closeGameModal();
+
+// При выходе из fullscreen (ESC) — кнопка возврата остаётся видимой
+document.addEventListener('fullscreenchange', () => {
+  const iframe = document.getElementById('game-iframe');
+  const retBtn = document.getElementById('game-return-btn');
+  // если iframe виден (игра открыта) — кнопка всегда видна
+  if (iframe.style.display === 'block') retBtn.style.display = 'block';
+});
+document.addEventListener('webkitfullscreenchange', () => {
+  const iframe = document.getElementById('game-iframe');
+  const retBtn = document.getElementById('game-return-btn');
+  if (iframe.style.display === 'block') retBtn.style.display = 'block';
+});
 
 function showGameOverlay() {
   document.getElementById('game-overlay').style.display = 'block';
@@ -6191,12 +6203,12 @@ const CLICKER_UPGRADES = [
 
 // ── Скины для магазина (постоянные пассивные баффы) ──
 const CLICKER_SKINS = [
-  { id: 'skin_gold',   emoji: '🪙', name: 'Золотой',      cost: 500,    buff: '+10% к шансу крита',            type: 'crit_chance', val: 0.10 },
-  { id: 'skin_diamond',emoji: '💎', name: 'Алмазный',     cost: 2000,   buff: '+15% к шансу двойного клика',   type: 'double_chance', val: 0.15 },
-  { id: 'skin_fire',   emoji: '🔥', name: 'Огненный',     cost: 5000,   buff: 'x1.5 к силе клика',             type: 'click_mult', val: 1.5 },
-  { id: 'skin_shadow', emoji: '🌑', name: 'Теневой',      cost: 8000,   buff: '+2 автокликера',                type: 'auto_bonus', val: 2 },
-  { id: 'skin_rainbow',emoji: '🌈', name: 'Радужный',     cost: 15000,  buff: 'x2 ко всему',                   type: 'global_mult', val: 2 },
-  { id: 'skin_cosmic', emoji: '🌌', name: 'Космический',  cost: 30000,  buff: 'x3 к силе клика + крит x2',     type: 'cosmic', val: 3 },
+  { id: 'skin_gold',    emoji: '⭐', name: 'Золотой',      cost: 500,    buff: '+10% к шансу крита',            type: 'crit_chance', val: 0.10, bg: 'rgba(255,200,0,.08)',  btn: '#ffd700', btnGrad: 'radial-gradient(circle at 40% 40%, #fff5c0, #ffd700)' },
+  { id: 'skin_diamond', emoji: '💎', name: 'Алмазный',     cost: 2000,   buff: '+15% к шансу двойного клика',   type: 'double_chance', val: 0.15, bg: 'rgba(0,200,255,.08)', btn: '#00c8ff', btnGrad: 'radial-gradient(circle at 40% 40%, #c0f0ff, #00c8ff)' },
+  { id: 'skin_fire',    emoji: '🔥', name: 'Огненный',     cost: 5000,   buff: 'x1.5 к силе клика',             type: 'click_mult', val: 1.5, bg: 'rgba(255,80,0,.08)',   btn: '#ff5500', btnGrad: 'radial-gradient(circle at 40% 40%, #ffc0a0, #ff5500)' },
+  { id: 'skin_shadow',  emoji: '🌙', name: 'Теневой',      cost: 8000,   buff: '+2 автокликера',                type: 'auto_bonus', val: 2, bg: 'rgba(100,80,180,.08)', btn: '#8866cc', btnGrad: 'radial-gradient(circle at 40% 40%, #d0c0ff, #8866cc)' },
+  { id: 'skin_rainbow', emoji: '🌈', name: 'Радужный',     cost: 15000,  buff: 'x2 ко всему',                   type: 'global_mult', val: 2, bg: 'rgba(255,0,128,.08)',  btn: '#ff44aa', btnGrad: 'radial-gradient(circle at 40% 40%, #ffb0d0, #ff44aa)' },
+  { id: 'skin_cosmic',  emoji: '🌌', name: 'Космический',  cost: 30000,  buff: 'x3 к силе клика + крит x2',     type: 'cosmic', val: 3, bg: 'rgba(40,0,80,.12)',    btn: '#6633cc', btnGrad: 'radial-gradient(circle at 40% 40%, #a080ff, #6633cc)' },
 ];
 
 // ── Временные баффы из сундука ──
@@ -6209,13 +6221,14 @@ const CLICKER_CHEST_BUFFS = [
   { id: 'nuke',    emoji: '☢️', name: 'Ядерный клик', desc: 'x100 к одному клику',   mult: 100, duration: 5 },
 ];
 
-let clickerData = { score: 0, total: 0, levels: {}, prestige: 0, skins: [], chestBase: 3000, chestOpens: 0 };
+let clickerData = { score: 0, total: 0, levels: {}, prestige: 0, skins: [], selectedSkin: null, chestBase: 3000, chestOpens: 0 };
 try { const s = JSON.parse(localStorage.getItem('utopia_clicker') || '{}'); if (s && typeof s.score === 'number') clickerData = s; } catch (_) {}
 if (!clickerData.levels) clickerData.levels = {};
 if (!Array.isArray(clickerData.skins)) clickerData.skins = [];
 if (typeof clickerData.prestige !== 'number') clickerData.prestige = 0;
 if (!clickerData.chestBase) clickerData.chestBase = 3000;
 if (!clickerData.chestOpens) clickerData.chestOpens = 0;
+if (!clickerData.selectedSkin) clickerData.selectedSkin = null;
 
 // Активные временные баффы: {id, expires, data}
 let clickerActiveBuffs = [];
@@ -6226,38 +6239,47 @@ function clickerLevel(id) { return clickerData.levels[id] || 0; }
 function clickerCost(u) { return Math.ceil(u.base * Math.pow(u.mult, clickerLevel(u.id))); }
 function clickerPrestigeMult() { return Math.pow(2, clickerData.prestige); }
 function hasSkin(id) { return clickerData.skins.indexOf(id) >= 0; }
+function getActiveSkin() {
+  if (!clickerData.selectedSkin) return null;
+  return CLICKER_SKINS.find(s => s.id === clickerData.selectedSkin && hasSkin(s.id)) || null;
+}
 
-// Итоговые множители (с учётом скинов и временных баффов)
+// Итоговые множители (с учётом ВЫБРАННОГО скина и временных баффов)
 function clickerClickPower() {
   let p = (1 + clickerLevel('click')) * clickerPrestigeMult();
-  if (hasSkin('skin_fire')) p *= 1.5;
-  if (hasSkin('skin_cosmic')) p *= 3;
+  const skin = getActiveSkin();
+  if (skin && skin.id === 'skin_fire') p *= 1.5;
+  if (skin && skin.id === 'skin_cosmic') p *= 3;
   // временные баффы
   clickerActiveBuffs.forEach(b => { if (b.data.mult) p *= b.data.mult; });
   return Math.floor(p);
 }
 function clickerAutoRate() {
   let a = clickerLevel('auto') * clickerPrestigeMult();
-  if (hasSkin('skin_shadow')) a += 2;
+  const skin = getActiveSkin();
+  if (skin && skin.id === 'skin_shadow') a += 2;
   clickerActiveBuffs.forEach(b => { if (b.data.auto) a += b.data.auto; });
   return Math.floor(a);
 }
 function clickerCritChance() {
   let c = 0.05;
-  if (hasSkin('skin_gold')) c += 0.10;
-  if (hasSkin('skin_cosmic')) c *= 2;
+  const skin = getActiveSkin();
+  if (skin && skin.id === 'skin_gold') c += 0.10;
+  if (skin && skin.id === 'skin_cosmic') c *= 2;
   clickerActiveBuffs.forEach(b => { if (b.data.lucky) c *= b.data.lucky; });
   return Math.min(c, 1);
 }
 function clickerDoubleChance() {
   let d = 0.20;
-  if (hasSkin('skin_diamond')) d += 0.15;
+  const skin = getActiveSkin();
+  if (skin && skin.id === 'skin_diamond') d += 0.15;
   clickerActiveBuffs.forEach(b => { if (b.data.lucky) d *= b.data.lucky; });
   return Math.min(d, 1);
 }
 function clickerGlobalMult() {
   let g = 1;
-  if (hasSkin('skin_rainbow')) g *= 2;
+  const skin = getActiveSkin();
+  if (skin && skin.id === 'skin_rainbow') g *= 2;
   return g;
 }
 
@@ -6277,10 +6299,11 @@ function openChest() {
   if (clickerData.score < cost) return;
   clickerData.score -= cost;
   clickerData.chestOpens++;
-  clickerData.chestBase += 3000;
   // 50% шанс получить бафф
   if (Math.random() < 0.5) {
     const buff = CLICKER_CHEST_BUFFS[Math.floor(Math.random() * CLICKER_CHEST_BUFFS.length)];
+    // цена растёт ТОЛЬКО при выпадении баффа
+    clickerData.chestBase += 3000;
     // проверяем, нет ли уже такого же активного — если есть, увеличиваем время
     const existing = clickerActiveBuffs.find(b => b.id === buff.id);
     if (existing) {
@@ -6294,7 +6317,8 @@ function openChest() {
     clickerFloat(rect.left + rect.width / 2, rect.top + 100, `${buff.emoji} ${buff.name}! ${buff.desc}`, '#ffd166', 22);
     showToast(`🎁 Сундук: ${buff.emoji} ${buff.name} — ${buff.desc} (${buff.duration}сек)`, 'success');
   } else {
-    showToast('🎁 Сундук пуст... Попробуйте ещё раз!', 'error');
+    // пусто — цена НЕ меняется
+    showToast('🎁 Сундук пуст... Цена не изменилась!', 'error');
   }
   saveClicker();
   renderClicker();
@@ -6322,6 +6346,22 @@ function renderClicker() {
   document.getElementById('clicker-score').textContent = Math.floor(clickerData.score).toLocaleString('ru-RU');
   document.getElementById('clicker-rate').textContent =
     `+${clickerClickPower()} за клик · ${clickerAutoRate()}/сек авто${clickerData.prestige ? ' · 👑 x' + clickerPrestigeMult() : ''}${clickerGlobalMult() > 1 ? ' · 🌈 x2' : ''}`;
+
+  // Применяем визуал выбранного скина: фон оверлея + кнопка клика
+  const ov = document.getElementById('clicker-overlay');
+  const clickBtn = document.getElementById('clicker-btn');
+  const activeSkin = getActiveSkin();
+  if (activeSkin) {
+    ov.style.background = activeSkin.bg;
+    clickBtn.style.background = activeSkin.btnGrad;
+    clickBtn.style.borderColor = activeSkin.btn;
+    clickBtn.style.boxShadow = `0 0 30px ${activeSkin.btn}66`;
+  } else {
+    ov.style.background = 'rgba(4,7,15,.96)';
+    clickBtn.style.background = 'radial-gradient(circle at 40% 40%, #fff5c0, #ffd166)';
+    clickBtn.style.borderColor = '#ffd166';
+    clickBtn.style.boxShadow = '0 0 30px rgba(255,209,102,.4)';
+  }
 
   // вкладки магазина
   const tabsBox = document.getElementById('clicker-tabs');
@@ -6365,18 +6405,36 @@ function renderClicker() {
   if (clickerShopTab === 'skins') {
     CLICKER_SKINS.forEach(s => {
       const owned = hasSkin(s.id);
+      const isSelected = clickerData.selectedSkin === s.id;
       const canBuy = !owned && clickerData.score >= s.cost;
       const row = document.createElement('button');
-      row.disabled = owned || !canBuy;
-      row.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; border:1px solid ${owned ? 'rgba(63,185,80,.4)' : (canBuy ? 'rgba(255,209,102,.5)' : 'rgba(255,255,255,.1)')}; background:${owned ? 'rgba(63,185,80,.08)' : (canBuy ? 'rgba(255,209,102,.1)' : 'rgba(255,255,255,.03)')}; color:${owned ? '#3fb950' : (canBuy ? '#fff' : '#666')}; cursor:${owned ? 'default' : (canBuy ? 'pointer' : 'default')}; font-size:13px; text-align:left; transition:all .15s;`;
+      row.disabled = !owned && !canBuy;
+      const borderCol = isSelected ? 'rgba(63,185,80,.6)' : (owned ? 'rgba(255,209,102,.4)' : (canBuy ? 'rgba(255,209,102,.5)' : 'rgba(255,255,255,.1)'));
+      const bgCol = isSelected ? 'rgba(63,185,80,.12)' : (owned ? 'rgba(255,209,102,.08)' : (canBuy ? 'rgba(255,209,102,.1)' : 'rgba(255,255,255,.03)'));
+      row.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; border:1px solid ${borderCol}; background:${bgCol}; color:${isSelected ? '#3fb950' : (owned ? '#fff' : (canBuy ? '#fff' : '#666'))}; cursor:${owned || canBuy ? 'pointer' : 'default'}; font-size:13px; text-align:left; transition:all .15s;`;
       row.innerHTML = `
         <span style="font-size:28px;">${s.emoji}</span>
         <div style="flex:1; min-width:0;">
-          <div style="font-weight:700;">${s.name} ${owned ? '<span style="color:#3fb950;font-size:11px;">✅ Куплен</span>' : ''}</div>
-          <div style="font-size:11px; color:${canBuy ? 'var(--text-dim)' : '#555'}; margin-top:2px;">${s.buff}</div>
+          <div style="font-weight:700;">${s.name} ${isSelected ? '<span style="color:#3fb950;font-size:11px;">✅ Надет</span>' : (owned ? '<span style="color:#ffd166;font-size:11px;">📦 Куплен</span>' : '')}</div>
+          <div style="font-size:11px; color:${canBuy || owned ? 'var(--text-dim)' : '#555'}; margin-top:2px;">${s.buff}</div>
         </div>
-        ${owned ? '' : `<div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${s.cost.toLocaleString('ru-RU')} 👆</div>`}`;
-      if (canBuy) row.onclick = () => { clickerData.score -= s.cost; clickerData.skins.push(s.id); saveClicker(); renderClicker(); };
+        ${owned
+          ? `<span style="font-weight:700; font-size:11px; color:${isSelected ? '#3fb950' : '#ffd166'}; white-space:nowrap;">${isSelected ? 'Снять' : 'Надеть'}</span>`
+          : `<div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${s.cost.toLocaleString('ru-RU')} 👆</div>`}`;
+      if (owned) {
+        row.onclick = () => {
+          // надеть/снять — только один скин одновременно
+          clickerData.selectedSkin = isSelected ? null : s.id;
+          saveClicker(); renderClicker();
+        };
+      } else if (canBuy) {
+        row.onclick = () => {
+          clickerData.score -= s.cost;
+          clickerData.skins.push(s.id);
+          clickerData.selectedSkin = s.id; // автоматически надеваем купленный
+          saveClicker(); renderClicker();
+        };
+      }
       box.appendChild(row);
     });
   }
@@ -6391,8 +6449,9 @@ function renderClicker() {
       <span style="font-size:52px; ${canBuy ? 'animation:pulse 1.5s infinite' : 'opacity:.4'};">🎁</span>
       <div style="font-weight:900; font-size:16px;">Открыть сундук</div>
       <div style="font-size:12px; color:var(--text-dim);">50% шанс на временный бафф (15 сек)</div>
-      <div style="font-size:12px; color:var(--text-dim);">Следующий: ${(cost).toLocaleString('ru-RU')} 👆 (+3000 за каждое открытие)</div>
-      <div style="font-size:11px; color:#ffd166;">Открыто: ${clickerData.chestOpens}</div>`;
+      <div style="font-size:12px; color:var(--text-dim);">Цена: ${(cost).toLocaleString('ru-RU')} 👆</div>
+      <div style="font-size:11px; color:#ffd166;">Цена растёт (+3000) только при выпадении баффа</div>
+      <div style="font-size:11px; color:var(--text-dim);">Открыто: ${clickerData.chestOpens}</div>`;
     if (canBuy) chestBtn.onclick = openChest;
     box.appendChild(chestBtn);
 

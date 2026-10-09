@@ -955,6 +955,15 @@
             document.getElementById('hud').appendChild(uiContainer);
             
             hittableObjects.push(charParts.torso, charParts.head);
+            // Расширенный невидимый хитбокс — чтобы попадания работали на расстоянии
+            const bigHitbox = new THREE.Mesh(
+                new THREE.BoxGeometry(1.0, 1.8, 0.8),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            bigHitbox.position.set(0, 1.1, 0);
+            botGroup.add(bigHitbox);
+            charParts.bigHitbox = bigHitbox;
+            hittableObjects.push(bigHitbox);
 
             // Начальное 3D-оружие в руках бота
             const initialWpn = 1;
@@ -1118,7 +1127,7 @@
         }
 
         function checkTargetDamage(obj, damage) {
-            let hitBot = bots.find(b => b.torso === obj || b.head === obj);
+            let hitBot = bots.find(b => b.torso === obj || b.head === obj || (b.parts && b.parts.bigHitbox === obj));
             if (hitBot && hitBot.team === 'enemy') {
                 hitBot.hp -= damage; if(hitBot.hp < 0) hitBot.hp = 0; 
                 hitBot.bar.style.width = (hitBot.hp / hitBot.maxHp * 100) + '%'; 
@@ -1129,7 +1138,7 @@
             // PvP: попадание по сопернику
             if (pvpActive && pvpOppMesh && pvpOppMesh.userData && pvpOppMesh.userData.parts) {
                 const pp = pvpOppMesh.userData.parts;
-                if (obj === pp.torso || obj === pp.head) {
+                if (obj === pp.torso || obj === pp.head || obj === pp.bigHitbox) {
                     pvpDamageOpponent(damage);
                     return;
                 }
@@ -2906,7 +2915,11 @@
                             if (bot.diff === 'noob') {
                                 aimDir.x += (Math.random()-0.5)*0.16;
                                 aimDir.z += (Math.random()-0.5)*0.16;
+                            } else if (bot.diff === 'mid') {
+                                aimDir.x += (Math.random()-0.5)*0.06;
+                                aimDir.z += (Math.random()-0.5)*0.06;
                             }
+                            // PRO почти без разброса — точный прицел
 
                             raycaster.set(startRay, aimDir);
                             let hits = raycaster.intersectObjects(wallMeshes.concat(hittableObjects), true);
@@ -3157,6 +3170,15 @@
             pvpOppMesh.add(nameSprite);
             scene.add(pvpOppMesh);
             hittableObjects.push(parts.torso, parts.head);
+            // Расширенный невидимый хитбокс соперника
+            const oppBigHit = new THREE.Mesh(
+                new THREE.BoxGeometry(1.0, 1.8, 0.8),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            oppBigHit.position.set(0, 1.1, 0);
+            pvpOppMesh.add(oppBigHit);
+            parts.bigHitbox = oppBigHit;
+            hittableObjects.push(oppBigHit);
             let ui = document.createElement('div'); ui.className = 'target-hp';
             let bar = document.createElement('div'); bar.className = 'target-hp-bar red';
             let txt = document.createElement('div'); txt.className = 'target-hp-text'; txt.innerText = '100';
@@ -3169,8 +3191,9 @@
             if (pvpOppMesh) {
                 if (pvpOppMesh.userData && pvpOppMesh.userData.ui) pvpOppMesh.userData.ui.remove();
                 if (pvpOppMesh.userData && pvpOppMesh.userData.parts) {
+                    const pp = pvpOppMesh.userData.parts;
                     hittableObjects = hittableObjects.filter(h =>
-                        h !== pvpOppMesh.userData.parts.torso && h !== pvpOppMesh.userData.parts.head);
+                        h !== pp.torso && h !== pp.head && h !== pp.bigHitbox);
                 }
                 scene.remove(pvpOppMesh);
                 pvpOppMesh = null;

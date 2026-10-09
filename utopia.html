@@ -1621,7 +1621,7 @@ function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
         moveDirX = Math.cos(ang + Math.PI / 2);
         moveDirY = Math.sin(ang + Math.PI / 2);
       }
-      if (enemyDist < 520 && bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.08 + diff * 0.15) {
+      if (enemyDist < 520 && bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.12 + diff * 0.20) {
         bot.shootRequest = true;
       }
     }
@@ -2395,9 +2395,22 @@ const p2Btn = document.getElementById('p2-type-btn');
 
 p1Btn.addEventListener('click', () => {
   sfx.init();
-  p1.isBot = !p1.isBot;
-  p1Btn.textContent = p1.isBot ? '🤖 Бот' : '👤 Человек';
-  p1.name = p1.isBot ? 'Бот Лёгкий' : (localStorage.getItem('utopia_nickname') || 'Игрок 1');
+  // цикл: Бот Лёгкий → Бот Средний → Бот Сложный → Человек → ...
+  if (p1.isBot && p1.name === 'Бот Лёгкий') {
+    p1.name = 'Бот Средний';
+    p1Btn.textContent = '🤖 Бот Средний';
+  } else if (p1.isBot && p1.name === 'Бот Средний') {
+    p1.name = 'Бот Сложный';
+    p1Btn.textContent = '🤖 Бот Сложный';
+  } else if (p1.isBot) {
+    p1.isBot = false;
+    p1.name = localStorage.getItem('utopia_nickname') || 'Игрок 1';
+    p1Btn.textContent = '👤 Человек';
+  } else {
+    p1.isBot = true;
+    p1.name = 'Бот Лёгкий';
+    p1Btn.textContent = '🤖 Бот Лёгкий';
+  }
 });
 
 p2Btn.addEventListener('click', () => {
