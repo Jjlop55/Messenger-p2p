@@ -1115,6 +1115,8 @@
 
 <!-- 👆 Кликер: простая игра с прокачкой и автоматизацией -->
 <div id="clicker-overlay" style="display:none; position:fixed; inset:0; z-index:10600; background:rgba(4,7,15,.96); backdrop-filter:blur(4px); overflow:auto;">
+  <!-- Активные временные баффы (правый верхний угол) -->
+  <div id="clicker-active-buffs" style="display:none; position:fixed; top:12px; right:12px; z-index:10700; gap:6px;"></div>
   <div style="max-width:480px; margin:0 auto; padding:20px 16px 40px; display:flex; flex-direction:column; gap:14px; font-family:Arial, sans-serif;">
     <div style="display:flex; align-items:center; gap:10px;">
       <span style="font-size:20px;">👆</span>
@@ -1133,7 +1135,10 @@
       <button id="clicker-btn" style="width:120px; height:120px; border-radius:50%; border:3px solid #ffd166; background:radial-gradient(circle at 40% 40%, #fff5c0, #ffd166); font-size:48px; cursor:pointer; box-shadow:0 0 30px rgba(255,209,102,.4); transition:transform .08s; user-select:none; -webkit-tap-highlight-color:transparent;">👆</button>
     </div>
 
-    <!-- Прокачки -->
+    <!-- Вкладки магазина -->
+    <div id="clicker-tabs" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;"></div>
+
+    <!-- Прокачки / Скины / Сундук -->
     <div id="clicker-upgrades" style="display:flex; flex-direction:column; gap:8px;"></div>
 
     <!-- Достижения -->
@@ -6173,7 +6178,7 @@ document.getElementById('lb-game-select').onchange = loadLeaderboard;
 }
 
 // ═══════════════════════════════════════════════════════════
-//  👆 КЛИКЕР: прокачка + автоматизация
+//  👆 КЛИКЕР: прокачка + магазин + сундуки + временные баффы
 // ═══════════════════════════════════════════════════════════
 const CLICKER_UPGRADES = [
   { id: 'click',    name: '💪 Сила клика',       desc: '+1 за клик',              base: 15,     mult: 1.5 },
@@ -6184,67 +6189,262 @@ const CLICKER_UPGRADES = [
   { id: 'prestige', name: '👑 Престиж',          desc: 'x2 ко всему (навсегда)',  base: 10000,  mult: 3.0 },
 ];
 
-let clickerData = { score: 0, total: 0, levels: {}, prestige: 0 };
+// ── Скины для магазина (постоянные пассивные баффы) ──
+const CLICKER_SKINS = [
+  { id: 'skin_gold',   emoji: '🪙', name: 'Золотой',      cost: 500,    buff: '+10% к шансу крита',            type: 'crit_chance', val: 0.10 },
+  { id: 'skin_diamond',emoji: '💎', name: 'Алмазный',     cost: 2000,   buff: '+15% к шансу двойного клика',   type: 'double_chance', val: 0.15 },
+  { id: 'skin_fire',   emoji: '🔥', name: 'Огненный',     cost: 5000,   buff: 'x1.5 к силе клика',             type: 'click_mult', val: 1.5 },
+  { id: 'skin_shadow', emoji: '🌑', name: 'Теневой',      cost: 8000,   buff: '+2 автокликера',                type: 'auto_bonus', val: 2 },
+  { id: 'skin_rainbow',emoji: '🌈', name: 'Радужный',     cost: 15000,  buff: 'x2 ко всему',                   type: 'global_mult', val: 2 },
+  { id: 'skin_cosmic', emoji: '🌌', name: 'Космический',  cost: 30000,  buff: 'x3 к силе клика + крит x2',     type: 'cosmic', val: 3 },
+];
+
+// ── Временные баффы из сундука ──
+const CLICKER_CHEST_BUFFS = [
+  { id: 'rush',    emoji: '⚡', name: 'Ярость',       desc: 'x5 к силе клика',       mult: 5,   duration: 15 },
+  { id: 'mega',    emoji: '💥', name: 'Мега-крит',    desc: 'каждый клик — крит x20', mult: 20, duration: 15 },
+  { id: 'auto2x',  emoji: '🤖', name: 'Супер-авто',   desc: 'автоклик x10',          auto: 10,  duration: 15 },
+  { id: 'lucky',   emoji: '🍀', name: 'Удача',        desc: 'все шансы x3',          lucky: 3,  duration: 15 },
+  { id: 'gold',    emoji: '💰', name: 'Золотой дождь', desc: 'авто +50/сек',         auto: 50,  duration: 15 },
+  { id: 'nuke',    emoji: '☢️', name: 'Ядерный клик', desc: 'x100 к одному клику',   mult: 100, duration: 5 },
+];
+
+let clickerData = { score: 0, total: 0, levels: {}, prestige: 0, skins: [], chestBase: 3000, chestOpens: 0 };
 try { const s = JSON.parse(localStorage.getItem('utopia_clicker') || '{}'); if (s && typeof s.score === 'number') clickerData = s; } catch (_) {}
 if (!clickerData.levels) clickerData.levels = {};
+if (!Array.isArray(clickerData.skins)) clickerData.skins = [];
 if (typeof clickerData.prestige !== 'number') clickerData.prestige = 0;
+if (!clickerData.chestBase) clickerData.chestBase = 3000;
+if (!clickerData.chestOpens) clickerData.chestOpens = 0;
+
+// Активные временные баффы: {id, expires, data}
+let clickerActiveBuffs = [];
+let clickerShopTab = 'upgrades'; // upgrades | skins | chest
 
 function saveClicker() { try { localStorage.setItem('utopia_clicker', JSON.stringify(clickerData)); } catch (_) {} }
 function clickerLevel(id) { return clickerData.levels[id] || 0; }
 function clickerCost(u) { return Math.ceil(u.base * Math.pow(u.mult, clickerLevel(u.id))); }
-function clickerClickPower() { return (1 + clickerLevel('click')) * Math.pow(2, clickerData.prestige); }
-function clickerAutoRate() { return clickerLevel('auto') * Math.pow(2, clickerData.prestige); }
 function clickerPrestigeMult() { return Math.pow(2, clickerData.prestige); }
+function hasSkin(id) { return clickerData.skins.indexOf(id) >= 0; }
+
+// Итоговые множители (с учётом скинов и временных баффов)
+function clickerClickPower() {
+  let p = (1 + clickerLevel('click')) * clickerPrestigeMult();
+  if (hasSkin('skin_fire')) p *= 1.5;
+  if (hasSkin('skin_cosmic')) p *= 3;
+  // временные баффы
+  clickerActiveBuffs.forEach(b => { if (b.data.mult) p *= b.data.mult; });
+  return Math.floor(p);
+}
+function clickerAutoRate() {
+  let a = clickerLevel('auto') * clickerPrestigeMult();
+  if (hasSkin('skin_shadow')) a += 2;
+  clickerActiveBuffs.forEach(b => { if (b.data.auto) a += b.data.auto; });
+  return Math.floor(a);
+}
+function clickerCritChance() {
+  let c = 0.05;
+  if (hasSkin('skin_gold')) c += 0.10;
+  if (hasSkin('skin_cosmic')) c *= 2;
+  clickerActiveBuffs.forEach(b => { if (b.data.lucky) c *= b.data.lucky; });
+  return Math.min(c, 1);
+}
+function clickerDoubleChance() {
+  let d = 0.20;
+  if (hasSkin('skin_diamond')) d += 0.15;
+  clickerActiveBuffs.forEach(b => { if (b.data.lucky) d *= b.data.lucky; });
+  return Math.min(d, 1);
+}
+function clickerGlobalMult() {
+  let g = 1;
+  if (hasSkin('skin_rainbow')) g *= 2;
+  return g;
+}
+
+// ── Всплывающий текст на экране ──
+function clickerFloat(x, y, text, color, size) {
+  const f = document.createElement('div');
+  f.textContent = text;
+  f.style.cssText = `position:fixed;left:${x}px;top:${y}px;font-size:${size||16}px;font-weight:900;color:${color||'#fff'};pointer-events:none;z-index:99999;transition:all .6s ease-out;opacity:1;text-shadow:0 0 6px rgba(0,0,0,.6);`;
+  document.body.appendChild(f);
+  setTimeout(() => { f.style.transform = 'translateY(-50px)'; f.style.opacity = '0'; }, 20);
+  setTimeout(() => f.remove(), 700);
+}
+
+// ── Открытие сундука ──
+function openChest() {
+  const cost = clickerData.chestBase;
+  if (clickerData.score < cost) return;
+  clickerData.score -= cost;
+  clickerData.chestOpens++;
+  clickerData.chestBase += 3000;
+  // 50% шанс получить бафф
+  if (Math.random() < 0.5) {
+    const buff = CLICKER_CHEST_BUFFS[Math.floor(Math.random() * CLICKER_CHEST_BUFFS.length)];
+    // проверяем, нет ли уже такого же активного — если есть, увеличиваем время
+    const existing = clickerActiveBuffs.find(b => b.id === buff.id);
+    if (existing) {
+      existing.expires = Date.now() + buff.duration * 1000;
+    } else {
+      clickerActiveBuffs.push({ id: buff.id, expires: Date.now() + buff.duration * 1000, data: buff });
+    }
+    // эффект на экране
+    const ov = document.getElementById('clicker-overlay');
+    const rect = ov.getBoundingClientRect();
+    clickerFloat(rect.left + rect.width / 2, rect.top + 100, `${buff.emoji} ${buff.name}! ${buff.desc}`, '#ffd166', 22);
+    showToast(`🎁 Сундук: ${buff.emoji} ${buff.name} — ${buff.desc} (${buff.duration}сек)`, 'success');
+  } else {
+    showToast('🎁 Сундук пуст... Попробуйте ещё раз!', 'error');
+  }
+  saveClicker();
+  renderClicker();
+}
+
+// ── Рендер активных баффов (правый верхний угол) ──
+function renderActiveBuffs() {
+  const box = document.getElementById('clicker-active-buffs');
+  if (!box) return;
+  // чистим истёкшие
+  const now = Date.now();
+  clickerActiveBuffs = clickerActiveBuffs.filter(b => b.expires > now);
+  if (!clickerActiveBuffs.length) { box.innerHTML = ''; box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  box.innerHTML = clickerActiveBuffs.map(b => {
+    const sec = Math.ceil((b.expires - now) / 1000);
+    return `<div title="${b.data.name}: ${b.data.desc}" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;border-radius:10px;background:rgba(255,209,102,.15);border:1px solid rgba(255,209,102,.4);min-width:56px;">
+      <span style="font-size:22px;">${b.data.emoji}</span>
+      <span style="font-size:10px; font-weight:700; color:#ffd166;">${sec}с</span>
+    </div>`;
+  }).join('');
+}
 
 function renderClicker() {
   document.getElementById('clicker-score').textContent = Math.floor(clickerData.score).toLocaleString('ru-RU');
   document.getElementById('clicker-rate').textContent =
-    `+${clickerClickPower()} за клик · ${clickerAutoRate()}/сек авто${clickerData.prestige ? ' · 👑 x' + clickerPrestigeMult() : ''}`;
+    `+${clickerClickPower()} за клик · ${clickerAutoRate()}/сек авто${clickerData.prestige ? ' · 👑 x' + clickerPrestigeMult() : ''}${clickerGlobalMult() > 1 ? ' · 🌈 x2' : ''}`;
+
+  // вкладки магазина
+  const tabsBox = document.getElementById('clicker-tabs');
+  tabsBox.innerHTML = '';
+  const tabs = [
+    { id: 'upgrades', label: '⬆️ Прокачка' },
+    { id: 'skins',    label: '🎨 Магазин скинов' },
+    { id: 'chest',    label: '🎁 Сундук' },
+  ];
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.textContent = t.label;
+    btn.style.cssText = `padding:6px 14px;border-radius:8px;border:1px solid ${clickerShopTab === t.id ? 'rgba(255,209,102,.6)' : 'rgba(255,255,255,.15)'};background:${clickerShopTab === t.id ? 'rgba(255,209,102,.2)' : 'rgba(255,255,255,.04)'};color:${clickerShopTab === t.id ? '#ffd166' : '#aaa'};font-size:12px;font-weight:700;cursor:pointer;`;
+    btn.onclick = () => { clickerShopTab = t.id; renderClicker(); };
+    tabsBox.appendChild(btn);
+  });
+
   const box = document.getElementById('clicker-upgrades');
   box.innerHTML = '';
-  CLICKER_UPGRADES.forEach(u => {
-    const lvl = clickerLevel(u.id);
-    const cost = clickerCost(u);
+
+  // ── Вкладка: Прокачка ──
+  if (clickerShopTab === 'upgrades') {
+    CLICKER_UPGRADES.forEach(u => {
+      const lvl = clickerLevel(u.id);
+      const cost = clickerCost(u);
+      const canBuy = clickerData.score >= cost;
+      const row = document.createElement('button');
+      row.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; border:1px solid ${canBuy ? 'rgba(255,209,102,.5)' : 'rgba(255,255,255,.1)'}; background:${canBuy ? 'rgba(255,209,102,.1)' : 'rgba(255,255,255,.03)'}; color:${canBuy ? '#fff' : '#666'}; cursor:${canBuy ? 'pointer' : 'default'}; font-size:13px; text-align:left; transition:all .15s;`;
+      row.innerHTML = `
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700;">${u.name} <span style="color:#ffd166; font-size:11px;">ур. ${lvl}</span></div>
+          <div style="font-size:11px; color:${canBuy ? 'var(--text-dim)' : '#555'}; margin-top:2px;">${u.desc}</div>
+        </div>
+        <div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${cost.toLocaleString('ru-RU')} 👆</div>`;
+      if (canBuy) row.onclick = () => { clickerData.score -= cost; clickerData.levels[u.id] = lvl + 1; saveClicker(); renderClicker(); };
+      box.appendChild(row);
+    });
+  }
+
+  // ── Вкладка: Магазин скинов ──
+  if (clickerShopTab === 'skins') {
+    CLICKER_SKINS.forEach(s => {
+      const owned = hasSkin(s.id);
+      const canBuy = !owned && clickerData.score >= s.cost;
+      const row = document.createElement('button');
+      row.disabled = owned || !canBuy;
+      row.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; border:1px solid ${owned ? 'rgba(63,185,80,.4)' : (canBuy ? 'rgba(255,209,102,.5)' : 'rgba(255,255,255,.1)')}; background:${owned ? 'rgba(63,185,80,.08)' : (canBuy ? 'rgba(255,209,102,.1)' : 'rgba(255,255,255,.03)')}; color:${owned ? '#3fb950' : (canBuy ? '#fff' : '#666')}; cursor:${owned ? 'default' : (canBuy ? 'pointer' : 'default')}; font-size:13px; text-align:left; transition:all .15s;`;
+      row.innerHTML = `
+        <span style="font-size:28px;">${s.emoji}</span>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700;">${s.name} ${owned ? '<span style="color:#3fb950;font-size:11px;">✅ Куплен</span>' : ''}</div>
+          <div style="font-size:11px; color:${canBuy ? 'var(--text-dim)' : '#555'}; margin-top:2px;">${s.buff}</div>
+        </div>
+        ${owned ? '' : `<div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${s.cost.toLocaleString('ru-RU')} 👆</div>`}`;
+      if (canBuy) row.onclick = () => { clickerData.score -= s.cost; clickerData.skins.push(s.id); saveClicker(); renderClicker(); };
+      box.appendChild(row);
+    });
+  }
+
+  // ── Вкладка: Сундук ──
+  if (clickerShopTab === 'chest') {
+    const cost = clickerData.chestBase;
     const canBuy = clickerData.score >= cost;
-    const row = document.createElement('button');
-    row.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; border:1px solid ${canBuy ? 'rgba(255,209,102,.5)' : 'rgba(255,255,255,.1)'}; background:${canBuy ? 'rgba(255,209,102,.1)' : 'rgba(255,255,255,.03)'}; color:${canBuy ? '#fff' : '#666'}; cursor:${canBuy ? 'pointer' : 'default'}; font-size:13px; text-align:left; transition:all .15s;`;
-    row.innerHTML = `
-      <div style="flex:1; min-width:0;">
-        <div style="font-weight:700;">${u.name} <span style="color:#ffd166; font-size:11px;">ур. ${lvl}</span></div>
-        <div style="font-size:11px; color:${canBuy ? 'var(--text-dim)' : '#555'}; margin-top:2px;">${u.desc}</div>
-      </div>
-      <div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${cost.toLocaleString('ru-RU')} 👆</div>`;
-    if (canBuy) row.onclick = () => { clickerData.score -= cost; clickerData.levels[u.id] = lvl + 1; saveClicker(); renderClicker(); };
-    box.appendChild(row);
-  });
+    const chestBtn = document.createElement('button');
+    chestBtn.style.cssText = `display:flex; flex-direction:column; align-items:center; gap:8px; padding:20px; border-radius:14px; border:1px solid ${canBuy ? 'rgba(255,209,102,.5)' : 'rgba(255,255,255,.1)'}; background:${canBuy ? 'rgba(255,209,102,.08)' : 'rgba(255,255,255,.03)'}; color:${canBuy ? '#fff' : '#666'}; cursor:${canBuy ? 'pointer' : 'default'}; font-size:14px; text-align:center; width:100%;`;
+    chestBtn.innerHTML = `
+      <span style="font-size:52px; ${canBuy ? 'animation:pulse 1.5s infinite' : 'opacity:.4'};">🎁</span>
+      <div style="font-weight:900; font-size:16px;">Открыть сундук</div>
+      <div style="font-size:12px; color:var(--text-dim);">50% шанс на временный бафф (15 сек)</div>
+      <div style="font-size:12px; color:var(--text-dim);">Следующий: ${(cost).toLocaleString('ru-RU')} 👆 (+3000 за каждое открытие)</div>
+      <div style="font-size:11px; color:#ffd166;">Открыто: ${clickerData.chestOpens}</div>`;
+    if (canBuy) chestBtn.onclick = openChest;
+    box.appendChild(chestBtn);
+
+    // список возможных баффов
+    const hint = document.createElement('div');
+    hint.style.cssText = 'margin-top:8px; padding:10px; border-radius:10px; background:rgba(255,255,255,.03); font-size:11px; color:var(--text-dim); line-height:1.8;';
+    hint.innerHTML = '<b style="color:#ffd166;">Возможные баффы:</b><br>' +
+      CLICKER_CHEST_BUFFS.map(b => `${b.emoji} <b>${b.name}</b> — ${b.desc} (${b.duration}сек)`).join('<br>');
+    box.appendChild(hint);
+  }
+
   // достижения
   const ach = [];
   if (clickerData.total >= 100) ach.push('✅ 100 кликов');
   if (clickerData.total >= 1000) ach.push('✅ 1 000 кликов');
   if (clickerData.total >= 10000) ach.push('✅ 10 000 кликов');
   if (clickerData.prestige >= 1) ach.push('✅ Престиж x1');
-  if (clickerData.prestige >= 3) ach.push('✅ Престиж x3');
+  if (clickerData.skins.length >= 1) ach.push('✅ Первый скин');
+  if (clickerData.skins.length >= 6) ach.push('✅ Все скины');
+  if (clickerData.chestOpens >= 10) ach.push('✅ 10 сундуков');
   document.getElementById('clicker-achievements').textContent = ach.length ? 'Достижения: ' + ach.join(' · ') : '';
+
+  renderActiveBuffs();
 }
 
+// ── Фикс бага: Enter/Space на кнопке не должен спамить ──
+document.getElementById('clicker-btn').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+});
+// blur после клика — чтобы Enter не повторял
+document.getElementById('clicker-btn').addEventListener('blur', () => {});
+
 document.getElementById('clicker-btn').addEventListener('click', (e) => {
+  document.getElementById('clicker-btn').blur(); // фикс: снимаем фокус, Enter больше не спамит
   let mult = 1;
   // двойной клик
-  if (clickerLevel('double') && Math.random() < 0.2) mult *= 2;
+  if (Math.random() < clickerDoubleChance()) mult *= 2;
   // критический удар
-  if (clickerLevel('crit') && Math.random() < 0.05) mult *= 10;
+  if (Math.random() < clickerCritChance()) mult *= 10;
   // комбо: каждый 10-й клик x5
   clickerData.total++;
   if (clickerLevel('combo') && clickerData.total % 10 === 0) mult *= 5;
-  const gained = clickerClickPower() * mult * clickerPrestigeMult();
+  // временный бафф "мега-крит" — каждый клик крит
+  clickerActiveBuffs.forEach(b => { if (b.data.id === 'mega') mult *= 20; });
+  // временный бафф "ядреный клик" — x100
+  clickerActiveBuffs.forEach(b => { if (b.data.id === 'nuke') mult *= 100; });
+  const gained = Math.floor(clickerClickPower() * mult * clickerGlobalMult());
   clickerData.score += gained;
-  // всплывающее число
-  const float = document.createElement('div');
-  float.textContent = `+${gained}`;
-  float.style.cssText = `position:fixed; left:${e.clientX}px; top:${e.clientY - 10}px; font-size:${mult > 1 ? '22' : '16'}px; font-weight:900; color:${mult > 5 ? '#ff5555' : (mult > 1 ? '#ffd166' : '#fff')}; pointer-events:none; z-index:99999; transition:all .6s ease-out; opacity:1;`;
-  document.body.appendChild(float);
-  setTimeout(() => { float.style.transform = 'translateY(-50px)'; float.style.opacity = '0'; }, 20);
-  setTimeout(() => float.remove(), 700);
+  // цвет числа по размеру
+  const color = gained >= 1000 ? '#ff5555' : (gained > 1 ? '#ffd166' : '#fff');
+  const size = gained >= 1000 ? 26 : (mult > 1 ? 22 : 16);
+  clickerFloat(e.clientX, e.clientY - 10, `+${gained}`, color, size);
   // кнопка — анимация нажатия
   const btn = document.getElementById('clicker-btn');
   btn.style.transform = 'scale(0.9)';
@@ -6255,13 +6455,18 @@ document.getElementById('clicker-btn').addEventListener('click', (e) => {
 
 // авто-клик каждую секунду
 setInterval(() => {
+  // чистим истёкшие баффы
+  const now = Date.now();
+  if (clickerActiveBuffs.some(b => b.expires <= now)) {
+    clickerActiveBuffs = clickerActiveBuffs.filter(b => b.expires > now);
+  }
   const rate = clickerAutoRate();
-  if (rate > 0 && clickerData.score >= 0) {
+  if (rate > 0) {
     clickerData.score += rate;
     clickerData.total += rate;
     saveClicker();
-    if (document.getElementById('clicker-overlay').style.display === 'block') renderClicker();
   }
+  if (document.getElementById('clicker-overlay').style.display === 'block') renderClicker();
 }, 1000);
 
 // открытие/закрытие
