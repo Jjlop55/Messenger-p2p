@@ -3109,6 +3109,10 @@
 
         function pvpStart() {
             document.getElementById('pvpStatus').style.display = 'none';
+            // полноэкранный режим
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
             teamConfig.allies = 0; teamConfig.enemies = 0;
             changeScreen('mainMenu', 'none');
             playBattleTransition(() => {

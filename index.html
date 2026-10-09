@@ -1331,6 +1331,8 @@ async function login(nickname, password) {
       switchChat('general', '🌐 Общий чат');
       checkFriendRequests();
       checkInvites();
+      // подключаем игровой WS сразу — чтобы дуэли приходили всегда
+      setTimeout(() => gameConnect(), 1500);
       loadSettingsFromServer(); // загружаем настройки с сервера
 
       setInterval(() => {
@@ -2444,15 +2446,22 @@ function wireMessageInteractions(el, msg) {
 // Отправка текста
 const msgInput = document.getElementById('msg-input');
 const sendBtn = document.getElementById('send-btn');
-msgInput.oninput = () => { sendBtn.style.display = msgInput.value.trim() ? 'block' : 'none'; };
+let pendingFile = null; // {url, type, name} — загруженный файл перед отправкой
+
+msgInput.oninput = () => { sendBtn.style.display = (msgInput.value.trim() || pendingFile) ? 'block' : 'none'; };
 
 function sendMsg() {
     const text = msgInput.value.trim();
-    if (!text || !activeWs) return;
+    if (!text && !pendingFile) return;
+    if (!activeWs) return;
     const payload = {
       action: 'send', sender: currentUser, text: text,
       time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
     };
+    if (pendingFile) {
+      payload.file_url = pendingFile.url;
+      payload.file_type = pendingFile.type;
+    }
     if (replyTarget) {
       payload.reply_to_id = replyTarget.id;
       payload.reply_to_text = (replyTarget.text || '').slice(0, 160);
@@ -2461,16 +2470,43 @@ function sendMsg() {
     activeWs.send(JSON.stringify(payload));
     msgInput.value = '';
     sendBtn.style.display = 'none';
+    clearPendingFile();
     clearReplyTo();
   }
 sendBtn.onclick = sendMsg;
 msgInput.onkeydown = e => { if (e.key === 'Enter') sendMsg(); };
 
-// Отправка файлов через скрепку 📎
-const fileInput = document.getElementById('file-input');
-document.getElementById('attach-btn').onclick = () => fileInput.click();
-fileInput.onchange = async () => {
-  const file = fileInput.files[0];
+// ── Превью загруженного файла ──
+function showPendingFile(file) {
+  pendingFile = file;
+  let prev = document.getElementById('pending-file-preview');
+  if (!prev) {
+    prev = document.createElement('div');
+    prev.id = 'pending-file-preview';
+    prev.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;margin:0 12px 4px;border-radius:10px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);font-size:12px;color:var(--neon-cyan);';
+    const inputArea = msgInput.closest('[class]') || msgInput.parentElement;
+    inputArea.insertBefore(prev, msgInput.parentElement);
+  }
+  const img = file.type === 'image'
+    ? `<img src="${BACKEND_URL}${file.url}" style="height:48px;border-radius:6px;">`
+    : `<span style="font-size:20px;">${file.type === 'audio' ? '🎵' : '📁'}</span>`;
+  prev.innerHTML = `
+    ${img}
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(file.name || 'файл')}</span>
+    <button onclick="clearPendingFile()" style="background:none;border:none;color:#ff5555;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>`;
+  prev.style.display = 'flex';
+  sendBtn.style.display = 'block';
+}
+
+function clearPendingFile() {
+  pendingFile = null;
+  const prev = document.getElementById('pending-file-preview');
+  if (prev) prev.remove();
+  sendBtn.style.display = msgInput.value.trim() ? 'block' : 'none';
+}
+
+// ── Загрузка файла (сначала на сервер, потом отправка) ──
+async function uploadAndPreview(file) {
   if (!file) return;
   if (file.size > 10 * 1024 * 1024) return showToast('Лимит файла — 10 МБ!');
 
@@ -2478,25 +2514,63 @@ fileInput.onchange = async () => {
   if (file.type.startsWith('image/')) fType = 'image';
   else if (file.type.startsWith('audio/')) fType = 'audio';
 
-  const res = await fetch(`${BACKEND_URL}/upload?filename=${encodeURIComponent(file.name)}`, {
-    method: 'POST',
-    body: file
-  });
+  // блокируем кнопку на время загрузки
+  sendBtn.style.display = 'block';
+  sendBtn.style.opacity = '0.4';
+  sendBtn.style.pointerEvents = 'none';
+  sendBtn.textContent = '⏳';
+  showToast('⏳ Загрузка файла...');
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/upload?filename=${encodeURIComponent(file.name || ('file_' + Date.now()))}`, {
+      method: 'POST',
+      body: file
+    });
     const d = await res.json();
-    if (d.status === 'ok' && activeWs) {
-      activeWs.send(JSON.stringify({
-        action: 'send',
-        sender: currentUser,
-        text: '',
-        file_url: d.url,
-        file_type: fType,
-        time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-      }));
+    if (d.status === 'ok') {
+      showPendingFile({ url: d.url, type: fType, name: file.name });
+      showToast('✅ Файл загружен! Нажмите ➤ чтобы отправить', 'success');
     } else {
-      showToast(d.detail || d.msg || 'Не удалось загрузить файл');
+      showToast(d.detail || d.msg || 'Ошибка загрузки файла');
     }
-    fileInput.value = '';
+  } catch (_) {
+    showToast('Ошибка загрузки файла');
+  }
+
+  // разблокируем кнопку
+  sendBtn.style.opacity = '';
+  sendBtn.style.pointerEvents = '';
+  sendBtn.textContent = '➤';
+}
+
+// Отправка файлов через скрепку 📎
+const fileInput = document.getElementById('file-input');
+document.getElementById('attach-btn').onclick = () => fileInput.click();
+fileInput.onchange = async () => {
+  const file = fileInput.files[0];
+  fileInput.value = '';
+  await uploadAndPreview(file);
 };
+
+// ── Вставка из буфера обмена (Ctrl+V) ──
+msgInput.addEventListener('paste', async (e) => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) {
+        // даём понятное имя
+        if (!file.name || file.name === 'image.png') {
+          try { file = new File([file], `paste_${Date.now()}.png`, { type: file.type }); } catch(_){}
+        }
+        await uploadAndPreview(file);
+      }
+      return;
+    }
+  }
+});
 
 document.getElementById('back-btn').onclick = () => {
   document.getElementById('chat-main').style.display = 'none';
@@ -5202,6 +5276,7 @@ async function openUserProfile(nick, memberData) {
 
   if (!isMe) {
     mkBtn('💬 Написать', () => openChatWith(nick));
+    mkBtn('⚔️ Дуэль', () => openDuelPicker(nick), 'background:rgba(129,140,248,.2);color:#818cf8;border:1px solid rgba(129,140,248,.5);');
     if (d.friend_status === 'friends') {
       mkBtn('📞 Позвонить', () => callUser(nick), 'background:rgba(35,165,90,.2);color:var(--success);');
     } else if (d.friend_status === 'none') {
@@ -5222,8 +5297,8 @@ async function openUserProfile(nick, memberData) {
 // ═══════════════════════════════════════════════════════════
 //  ИГРОВОЙ ЗАЛ: поиск соперника, три игры, лидеры
 // ═══════════════════════════════════════════════════════════
-const GAME_TITLES = { rps: '✊ Камень-ножницы-бумага', ttt: '❌ Крестики-нолики', sea: '🚢 Морской бой', utopia: '⚔️ Утопия (арена)' };
-const GAME_EMOJI = { rps: '✊', ttt: '❌', sea: '🚢', utopia: '⚔️' };
+const GAME_TITLES = { rps: '✊ Камень-ножницы-бумага', ttt: '❌ Крестики-нолики', sea: '🚢 Морской бой', utopia: '⚔️ Утопия (2D)', greenu: '🌿 Green Valley (3D)' };
+const GAME_EMOJI = { rps: '✊', ttt: '❌', sea: '🚢', utopia: '⚔️', greenu: '🌿' };
 let gameWs = null;
 let gamePhase = 'idle';          // idle | searching | playing | over
 let gameMatchId = null;
@@ -5259,6 +5334,8 @@ function gameSend(obj) {
 }
 
 function handleGameEvent(m) {
+  // дуэль-события обрабатываются отдельно
+  if (handleDuelEvent(m)) return;
   switch (m.action) {
     case 'lobby_state':
       gameLobby = m;
@@ -5328,6 +5405,106 @@ async function openGames() {
     const st = await fetch(`${BACKEND_URL}/games/stats/${encodeURIComponent(currentUser)}`).then(r => r.json());
     renderMyStats((st && st.stats) || {});
   } catch (_) {}
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ДУЭЛИ: бросить вызов конкретному игроку из чата/профиля
+// ═══════════════════════════════════════════════════════════
+let duelPendingTarget = null; // кому бросаем вызов
+
+function openDuelPicker(nick) {
+  duelPendingTarget = nick;
+  const games = [
+    { id: 'rps', emoji: '✊', name: 'Камень-ножницы-бумага' },
+    { id: 'ttt', emoji: '❌', name: 'Крестики-нолики' },
+    { id: 'sea', emoji: '🚢', name: 'Морской бой' },
+    { id: 'utopia', emoji: '⚔️', name: 'Утопия (2D)' },
+    { id: 'greenu', emoji: '🌿', name: 'Green Valley (3D)' },
+  ];
+  // модалка
+  let modal = document.getElementById('duel-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'duel-modal';
+    modal.className = 'modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:12000;';
+    modal.innerHTML = `
+      <div style="background:var(--bg-card,#1a1d28);border-radius:16px;padding:20px;max-width:380px;width:90%;border:1px solid rgba(129,140,248,.4);">
+        <div style="font-size:18px;font-weight:800;color:#fff;text-align:center;margin-bottom:6px;">⚔️ Бросить дуэль</div>
+        <div id="duel-target-label" style="font-size:13px;color:#a5b4fc;text-align:center;margin-bottom:14px;"></div>
+        <div id="duel-games-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button onclick="document.getElementById('duel-modal').style.display='none'" style="margin-top:14px;width:100%;padding:10px;border-radius:10px;border:1px solid #555;background:rgba(255,255,255,.06);color:#aaa;font-size:13px;cursor:pointer;">Отмена</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  document.getElementById('duel-target-label').textContent = `Вызов: @${nick}`;
+  const list = document.getElementById('duel-games-list');
+  list.innerHTML = '';
+  games.forEach(g => {
+    const btn = document.createElement('button');
+    btn.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid rgba(129,140,248,.3);background:rgba(129,140,248,.08);color:#fff;font-size:14px;font-weight:600;cursor:pointer;text-align:left;';
+    btn.innerHTML = `<span style="font-size:20px;">${g.emoji}</span> ${g.name}`;
+    btn.onclick = () => sendDuelChallenge(g.id);
+    list.appendChild(btn);
+  });
+}
+
+function sendDuelChallenge(gameId) {
+  if (!gameWs || gameWs.readyState !== 1) {
+    gameConnect();
+    setTimeout(() => sendDuelChallenge(gameId), 500);
+    return;
+  }
+  gameWs.send(JSON.stringify({ action: 'duel_challenge', target: duelPendingTarget, game: gameId }));
+  document.getElementById('duel-modal').style.display = 'none';
+  showToast(`⚔️ Вызов брошен @${duelPendingTarget}!`, 'success');
+}
+
+// обработка duel-событий в game WS
+function handleDuelEvent(d) {
+  if (d.action === 'duel_sent') {
+    showToast(`⚔️ Вызов отправлен @${d.to} (${d.game_title})`, 'success');
+    return true;
+  }
+  if (d.action === 'duel_declined') {
+    showToast(`💀 @${d.by} отклонил дуэль`, 'error');
+    return true;
+  }
+  if (d.action === 'duel_request') {
+    showDuelRequest(d);
+    return true;
+  }
+  return false;
+}
+
+function showDuelRequest(d) {
+  // всплывающее окно принятия
+  let box = document.getElementById('duel-request-box');
+  if (box) box.remove();
+  box = document.createElement('div');
+  box.id = 'duel-request-box';
+  box.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--bg-card,#1a1d28);border-radius:14px;padding:16px;max-width:320px;z-index:15000;border:2px solid #818cf8;box-shadow:0 8px 30px rgba(129,140,248,.3);';
+  box.innerHTML = `
+    <div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px;">⚔️ Дуэль!</div>
+    <div style="font-size:13px;color:#a5b4fc;margin-bottom:12px;">@${escapeHtml(d.from)} вызывает на «${escapeHtml(d.game_title)}»</div>
+    <div style="display:flex;gap:8px;">
+      <button id="duel-accept-btn" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(63,185,80,.25);color:#3fb950;font-weight:700;cursor:pointer;">✅ Принять</button>
+      <button id="duel-decline-btn" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(255,85,85,.2);color:#ff5555;font-weight:700;cursor:pointer;">❌ Отказ</button>
+    </div>`;
+  document.body.appendChild(box);
+  // авто-скрытие через 30 сек
+  setTimeout(() => { if (box.parentNode) box.remove(); }, 30000);
+
+  document.getElementById('duel-accept-btn').onclick = () => {
+    box.remove();
+    gameWs.send(JSON.stringify({ action: 'duel_accept', from: d.from, game: d.game }));
+    showToast('⚔️ Дуэль принята! Матч создаётся...', 'success');
+  };
+  document.getElementById('duel-decline-btn').onclick = () => {
+    box.remove();
+    gameWs.send(JSON.stringify({ action: 'duel_decline', from: d.from }));
+  };
 }
 
 function renderGamesLobby(d) {
@@ -5522,6 +5699,28 @@ function renderGame() {
   else if (s.game === 'ttt') renderTtt(body, foot, s);
   else if (s.game === 'sea') renderSea(body, foot, s);
   else if (s.game === 'utopia') renderUtopia(body, foot, s);
+  else if (s.game === 'greenu') renderGreenU(body, foot, s);
+}
+
+// ── 🌿 Green Valley 3D ──
+function renderGreenU(body, foot, s) {
+  const myColor = s.my_color || 'red';
+  body.innerHTML = `
+    <div style="font-size:52px;">🌿</div>
+    <div style="font-size:22px; font-weight:900; color:#3fb950;">GREEN VALLEY — 3D</div>
+    <div style="font-size:13px; color:var(--text-dim); text-align:center; line-height:1.6; max-width:420px;">
+      Соперник: <b style="color:#fff;">@${escapeHtml(s.opp)}</b><br>
+      Игра загружается...
+    </div>
+    <div style="margin-top:10px; width:100%; height:420px; border-radius:12px; overflow:hidden; border:1px solid rgba(63,185,80,.4);">
+      <iframe src="greenu.html?match=${s.id}&opp=${encodeURIComponent(s.opp)}&color=${myColor}" 
+        style="width:100%; height:100%; border:none; background:#111;" allow="autoplay; fullscreen"></iframe>
+    </div>`;
+  const cancel = document.createElement('button');
+  cancel.className = 'pill-btn';
+  cancel.textContent = 'Сдался';
+  cancel.onclick = () => gameSend({ action: 'forfeit', match_id: gameMatchId });
+  foot.appendChild(cancel);
 }
 
 // ── ⚔️ Утопия: PvP-арена ──

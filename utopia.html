@@ -716,7 +716,8 @@ class PowerUpItem {
     for (const p of players) {
       if (!p.alive) continue;
       if (Math.hypot(this.x - p.x, this.y - p.y) < this.radius + p.radius) {
-        p.applyBuff(this.type, 600);
+        // щит: 90 кадров (~1.5с), остальные баффы: 300 кадров (~5с)
+        p.applyBuff(this.type, this.type === 'shield' ? 90 : 300);
         this.alive = false;
         sfx.playPowerup();
         particles.spark(this.x, this.y, this.getColor(), 14);
@@ -1266,7 +1267,7 @@ class Stickman {
     this.buff = null;
     this.portalCooldown = 0;
   }
-  applyBuff(type, duration = 600) {
+  applyBuff(type, duration = 90) { // щит: 90 кадров ≈ 1.5 сек
     this.buff = { type, timeLeft: duration, totalTime: duration };
     if (type === 'ammo') this.ammo = this.maxAmmo;
   }
@@ -1299,7 +1300,7 @@ class Stickman {
 
     if (this.ammo < this.maxAmmo && (!this.buff || this.buff.type !== 'ammo')) {
       this.reloadTimer++;
-      if (this.reloadTimer >= 75) {
+      if (this.reloadTimer >= 150) { // патроны восстанавливаются каждые 2.5 секунды
         this.ammo++;
         this.reloadTimer = 0;
       }
@@ -1830,7 +1831,8 @@ function handleKeyboardInput() {
   }
 
   // 2. Игрок 2 (Синий): Numpad 8, 4, 5/2, 6 + Numpad Enter (и обычный Enter / Стрелки)
-  if (!p2.isBot) {
+  // В PvP p2 управляется ТОЛЬКО удалённо — локальный ввод игнорируется
+  if (!p2.isBot && !pvpActive) {
     let mx = 0, my = 0;
     if (keys['Numpad8'] || keys['ArrowUp']) my -= 1;
     if (keys['Numpad5'] || keys['Numpad2'] || keys['ArrowDown']) my += 1;
@@ -1919,7 +1921,7 @@ canvas.addEventListener('touchstart', (e) => {
       }
     }
 
-    if (!p2.isBot) {
+    if (!p2.isBot && !pvpActive) {
       if (Math.hypot(pos.x - fireP2.x, pos.y - fireP2.y) < fireP2.r + 20) {
         fireP2.touchId = t.identifier;
         p2.shootRequest = true;
@@ -2122,7 +2124,7 @@ function drawHUD(c) {
       drawJoystick(c, padP1.anchorX, padP1.anchorY, padP1.stickX, padP1.stickY, '#e52d2d');
       drawFireBtn(c, fireP1.x, fireP1.y, fireP1.r, '#ff3333', fireP1.touchId !== null);
     }
-    if (!p2.isBot) {
+    if (!p2.isBot && !pvpActive) {
       drawJoystick(c, padP2.anchorX, padP2.anchorY, padP2.stickX, padP2.stickY, '#2679e8');
       drawFireBtn(c, fireP2.x, fireP2.y, fireP2.r, '#3388ff', fireP2.touchId !== null);
     }
@@ -2131,7 +2133,7 @@ function drawHUD(c) {
     if (!p1.isBot) {
       drawKeyBadge(c, 24, V_HEIGHT - 64, '#ff3333', 'КРАСНЫЙ', 'WASD', 'ПРОБЕЛ');
     }
-    if (!p2.isBot) {
+    if (!p2.isBot && !pvpActive) {
       drawKeyBadge(c, V_WIDTH - 240, V_HEIGHT - 64, '#3388ff', 'СИНИЙ', 'NUMPAD 8,4,5,6', 'NUM ENTER');
     }
   }
@@ -2296,9 +2298,11 @@ function loop() {
         if (!p1.buff || p1.buff.type !== 'shield') {
           p1.die(particles);
           if (currentGameMode !== 'flag') p2.score++;
-          // PvP: отправляем смерть серверу
+          // PvP: смерть = конец матча
           if (pvpActive && pvpWs && pvpWs.readyState === 1) {
+            pvpActive = false;
             pvpWs.send(JSON.stringify({ action: 'utopia_state', match_id: pvpMatchId, state: { alive: false, hp: 0 } }));
+            pvpShowResult(false, 'Ты погиб!');
           }
         }
         b.alive = false;
@@ -2307,6 +2311,7 @@ function loop() {
         if (!p2.buff || p2.buff.type !== 'shield') {
           p2.die(particles);
           if (currentGameMode !== 'flag') p1.score++;
+          // PvP: НЕ показываем победу — соперник сам отправит alive:false со своего клиента
         }
         b.alive = false;
       }
@@ -2433,6 +2438,13 @@ document.querySelectorAll('#theme-group .select-btn').forEach(btn => {
 
 startBtn.addEventListener('click', () => {
   sfx.init();
+  // полноэкранный режим при старте
+  const el = document.documentElement;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+  }
   menuOverlay.style.display = 'none';
   gameRunning = true;
   p1.score = 0;
@@ -2591,6 +2603,13 @@ function pvpShowResult(won, reason) {
 }
 
 function pvpStartMatch() {
+  // полноэкранный режим
+  const el = document.documentElement;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+  }
   menuOverlay.style.display = 'none';
   currentGameMode = 'duel';
   pvpActive = true;
@@ -2645,12 +2664,19 @@ function pvpSendState() {
 function pvpApplyOpp() {
   if (!pvpOppState || !pvpActive) return;
   const s = pvpOppState;
-  p2.x += (s.x - p2.x) * 0.35;
-  p2.y += (s.y - p2.y) * 0.35;
+  // плавная интерполяция (работает стабильно между ПК и телефоном)
+  const lerp = 0.25;
+  p2.x += (s.x - p2.x) * lerp;
+  p2.y += (s.y - p2.y) * lerp;
   if (typeof s.angle === 'number') p2.angle = s.angle;
   if (typeof s.score === 'number') p2.score = s.score;
   if (s.alive === false && p2.alive) {
     p2.die(particles);
+    // соперник умер — победа!
+    if (pvpActive) {
+      pvpActive = false;
+      pvpShowResult(true, 'Соперник убит!');
+    }
   } else if (s.alive === true && !p2.alive) {
     p2.reset();
   }

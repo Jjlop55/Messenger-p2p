@@ -2622,7 +2622,8 @@ GAMES = {
     "rps": "✊ Камень-ножницы-бумага",
     "ttt": "❌ Крестики-нолики",
     "sea": "🚢 Морской бой",
-    "utopia": "⚔️ Утопия (арена)",
+    "utopia": "⚔️ Утопия (2D арена)",
+    "greenu": "🌿 Green Valley (3D)",
 }
 RPS_TARGET = 3  # до скольких побед идёт матч
 
@@ -2768,14 +2769,14 @@ def _init_match(game: str, p1: str, p2: str) -> dict:
             "turn": p1,
             "last": None,                    # последний выстрел: {"cell","hit","by"}
         }
-    elif game == "utopia":
+    elif game in ("utopia", "greenu"):
         # реалтайм-арена: сервер релеит стейт, цвета назначаются случайно
         import random as _rnd
         colors = _rnd.choice([("red", "blue"), ("blue", "red")])
         state = {
             "phase": "fighting",
             "hp": {p1: 100, p2: 100},
-            "colors": {p1: colors[0], p2: colors[1]},  # случайный цвет для каждого
+            "colors": {p1: colors[0], p2: colors[1]},
             "last_state": {},
         }
     return {"id": None, "game": game, "p1": p1, "p2": p2, "over": False, "state": state}
@@ -3151,7 +3152,7 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                 except (TypeError, ValueError):
                     continue
                 m = _matches.get(mid)
-                if not m or m["over"] or m["game"] != "utopia" or nickname not in (m["p1"], m["p2"]):
+                if not m or m["over"] or m["game"] not in ("utopia", "greenu") or nickname not in (m["p1"], m["p2"]):
                     continue
                 opp = m["p2"] if nickname == m["p1"] else m["p1"]
                 payload = data.get("state") or {}
@@ -3182,6 +3183,39 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                     await _finish_match(m, opp, "forfeit")
             elif action == "lobby":
                 await websocket.send_json(_lobby_state())
+            elif action == "duel_challenge":
+                # бросить дуэль конкретному игроку
+                target = (data.get("target") or "").strip()
+                game = (data.get("game") or "").strip()
+                if target and game in GAMES and target.lower() != nickname.lower():
+                    # отправляем вызов цели
+                    await _gsend(target, {
+                        "action": "duel_request",
+                        "from": nickname,
+                        "game": game,
+                        "game_title": GAMES[game],
+                    })
+                    await websocket.send_json({"action": "duel_sent", "to": target, "game_title": GAMES.get(game, game)})
+            elif action == "duel_accept":
+                # принять дуэль — создаём матч напрямую
+                challenger = (data.get("from") or "").strip()
+                game = (data.get("game") or "").strip()
+                if challenger and game in GAMES:
+                    # оба должны быть онлайн
+                    if challenger in _game_sockets and nickname in _game_sockets:
+                        # убираем из очередей
+                        await _drop_queue(challenger)
+                        await _drop_queue(nickname)
+                        await _create_match(game, challenger, nickname)
+                    else:
+                        await _gsend(nickname, {"action": "error", "msg": "Соперник оффлайн"})
+            elif action == "duel_decline":
+                challenger = (data.get("from") or "").strip()
+                if challenger:
+                    await _gsend(challenger, {
+                        "action": "duel_declined",
+                        "by": nickname,
+                    })
             elif action == "stats":
                 await websocket.send_json({"action": "my_stats", "stats": _stats_payload(nickname)})
             elif action == "ping":
