@@ -195,9 +195,11 @@
 
         <div style="display:flex; gap:10px;">
             <button class="menu-btn" onclick="startGame(event)">В БОЙ</button>
+            <button class="menu-btn" style="border-color:#818cf8; color:#a5b4fc;" onclick="pvpSearch(event)">🔍 PvP</button>
             <button class="menu-btn" style="border-color:#ffd700;" onclick="openGuide(event)">📖 СПРАВОЧНИК</button>
             <button class="menu-btn" onclick="openSettings('mainMenu', event)">⚙️ НАСТРОЙКИ</button>
         </div>
+        <div id="pvpStatus" style="color:#a5b4fc; font-size:13px; margin-top:8px; display:none; text-align:center;"></div>
     </div>
 
     <!-- СПРАВОЧНИК -->
@@ -1122,6 +1124,15 @@
                 hitBot.bar.style.width = (hitBot.hp / hitBot.maxHp * 100) + '%'; 
                 hitBot.text.innerText = Math.round(hitBot.hp); 
                 return;
+            }
+
+            // PvP: попадание по сопернику
+            if (pvpActive && pvpOppMesh && pvpOppMesh.userData && pvpOppMesh.userData.parts) {
+                const pp = pvpOppMesh.userData.parts;
+                if (obj === pp.torso || obj === pp.head) {
+                    pvpDamageOpponent(damage);
+                    return;
+                }
             }
 
             let hitCrate = destructibleCrates.find(c => c.mesh === obj || c.mesh.children.includes(obj));
@@ -2287,6 +2298,13 @@
 
             // ПРОВЕРКА ГИБЕЛИ ИГРОКА И ПЕРЕХОД В РЕЖИМ СПЕКТАТОРА
             if (playerHp <= 0 && !isSpectator) {
+                // PvP: отправляем смерть серверу
+                if (pvpActive && pvpWs && pvpWs.readyState === 1) {
+                    pvpWs.send(JSON.stringify({
+                        action: 'utopia_state', match_id: pvpMatchId,
+                        state: { hp: 0, alive: false, x: 0, z: 0, yaw: 0 }
+                    }));
+                }
                 const aliveAllies = bots.filter(b => b.team === 'ally' && b.hp > 0).length;
                 if (aliveAllies > 0) {
                     isSpectator = true;
@@ -2945,6 +2963,14 @@
             }
 
             bots.forEach(b => { if(b.hp > 0) { projectToScreen(b.mesh.position, b.ui, 2.3); } });
+
+            // PvP: отправка стейта и позиционирование HP-бара соперника
+            if (pvpActive) {
+                pvpSendState();
+                if (pvpOppMesh && pvpOppMesh.visible && pvpOppMesh.userData && pvpOppMesh.userData.ui) {
+                    projectToScreen(pvpOppMesh.position, pvpOppMesh.userData.ui, 2.3);
+                }
+            }
             
             const floatHP = document.getElementById('playerFloatingHP');
             if (cameraMode === 1 && !isSpectator) {
@@ -2971,6 +2997,189 @@
         window.addEventListener('DOMContentLoaded', () => {
             initEngine();
         });
+
+        // ═══════════════════════════════════════════════════════
+        //  PvP: поиск соперника через WebSocket мессенджера
+        // ═══════════════════════════════════════════════════════
+        const PVP_BACKEND = 'https://utopia-messenger-api.onrender.com';
+        let pvpWs = null, pvpMatchId = null, pvpOppNick = null, pvpActive = false;
+        let pvpLastSend = 0, pvpOppMesh = null, pvpOppHp = 100, pvpOppAlive = true;
+
+        function pvpSearch(e) {
+            if (e) e.preventDefault();
+            initAudio();
+            if (pvpActive || (pvpWs && pvpWs.readyState === 1)) { pvpCancel(); return; }
+            const status = document.getElementById('pvpStatus');
+            status.style.display = 'block';
+            status.textContent = '⏳ Подключаемся...';
+            const saved = JSON.parse(localStorage.getItem('utopia_saved_user') || '{}');
+            const nick = saved.nickname;
+            const token = localStorage.getItem('utopia_session_token');
+            if (!nick || !token) {
+                status.textContent = '⚠️ Войдите в мессенджер для PvP';
+                return;
+            }
+            const wsUrl = PVP_BACKEND.replace('https', 'wss').replace('http', 'ws')
+                + `/ws/games/${encodeURIComponent(nick)}?token=${encodeURIComponent(token)}`;
+            pvpWs = new WebSocket(wsUrl);
+            pvpWs.onopen = () => {
+                pvpWs.send(JSON.stringify({ action: 'queue', game: 'utopia' }));
+                status.textContent = '⏳ Ищем соперника...';
+            };
+            pvpWs.onmessage = (ev) => { try { pvpHandle(JSON.parse(ev.data)); } catch (_) {} };
+            pvpWs.onclose = () => { status.textContent = '❌ Соединение потеряно'; };
+            pvpWs.onerror = () => { status.textContent = '❌ Ошибка соединения'; };
+        }
+
+        function pvpCancel() {
+            if (pvpWs) { try { pvpWs.send(JSON.stringify({ action: 'unqueue' })); } catch(_){} pvpWs.close(); pvpWs = null; }
+            pvpActive = false; pvpMatchId = null;
+            document.getElementById('pvpStatus').style.display = 'none';
+        }
+
+        function pvpHandle(d) {
+            const status = document.getElementById('pvpStatus');
+            if (d.action === 'lobby_state' || d.action === 'my_stats') return;
+            if (d.action === 'queued') { status.textContent = `⏳ Ищем... (${d.title || 'Утопия'})`; return; }
+            if (d.action === 'game_found') {
+                pvpMatchId = d.id; pvpOppNick = d.opp;
+                status.textContent = `⚔️ Соперник: ${d.opp}!`;
+                setTimeout(() => pvpStart(), 600);
+                return;
+            }
+            if (d.action === 'utopia_state' && d.id === pvpMatchId) {
+                pvpApplyState(d.state);
+                return;
+            }
+            if (d.action === 'game_over' && d.id === pvpMatchId) {
+                pvpActive = false;
+                status.textContent = d.you_won ? '🏆 ПОБЕДА!' : '💀 Поражение...';
+                setTimeout(() => { pvpCleanup(); status.style.display = 'none'; }, 4000);
+                return;
+            }
+            if (d.action === 'error') { status.textContent = `⚠️ ${d.msg}`; }
+        }
+
+        function pvpStart() {
+            document.getElementById('pvpStatus').style.display = 'none';
+            // очищаем ботов, ставим 1v1
+            teamConfig.allies = 0; teamConfig.enemies = 0;
+            changeScreen('mainMenu', 'none');
+            playBattleTransition(() => {
+                // убираем всех ботов
+                bots.forEach(b => { scene.remove(b.mesh); b.ui.remove(); });
+                bots = [];
+                // спавним соперника как меш
+                pvpSpawnOpponent();
+                // стартуем раунд
+                currentRound = 1; blueRoundWins = 0; redRoundWins = 0;
+                document.getElementById('blueWins').innerText = 0;
+                document.getElementById('redWins').innerText = 0;
+                document.getElementById('roundText').innerText = 'PvP';
+                document.getElementById('teamScoreUI').style.display = 'block';
+                playerHp = maxPlayerHp; updateHPUI();
+                pvpOppHp = 100; pvpOppAlive = true;
+                playerContainer.position.set(0, 0, 50);
+                playerRotation.yaw = 0; playerRotation.pitch = 0;
+                blueMedkitUsed = false; redMedkitUsed = false; centerMedkitUsed = false;
+                if (blueMedkitMesh) blueMedkitMesh.visible = true;
+                if (redMedkitMesh) redMedkitMesh.visible = true;
+                if (centerMedkitMesh) centerMedkitMesh.visible = true;
+                resetAllAmmoAndReload();
+                isSpectator = false;
+                isGameRunning = true;
+                pvpActive = true;
+                clock.getDelta();
+                requestGamePointerLock();
+            });
+        }
+
+        function pvpSpawnOpponent() {
+            if (pvpOppMesh) scene.remove(pvpOppMesh);
+            const parts = createDetailedCharacterMesh(false);
+            pvpOppMesh = parts.group;
+            pvpOppMesh.position.set(0, 1.1, -50);
+            const nameSprite = createNameSprite(pvpOppNick || 'Соперник', '#ff7a7a');
+            pvpOppMesh.add(nameSprite);
+            scene.add(pvpOppMesh);
+            // хитбоксы для пуль
+            hittableObjects.push(parts.torso, parts.head);
+            // HP-бар соперника (HTML)
+            let ui = document.createElement('div'); ui.className = 'target-hp';
+            let bar = document.createElement('div'); bar.className = 'target-hp-bar red';
+            let txt = document.createElement('div'); txt.className = 'target-hp-text'; txt.innerText = '100';
+            ui.appendChild(bar); ui.appendChild(txt);
+            document.getElementById('hud').appendChild(ui);
+            pvpOppMesh.userData = { ui, bar, txt, parts };
+        }
+
+        function pvpCleanup() {
+            if (pvpOppMesh) {
+                if (pvpOppMesh.userData && pvpOppMesh.userData.ui) pvpOppMesh.userData.ui.remove();
+                if (pvpOppMesh.userData && pvpOppMesh.userData.parts) {
+                    hittableObjects = hittableObjects.filter(h =>
+                        h !== pvpOppMesh.userData.parts.torso && h !== pvpOppMesh.userData.parts.head);
+                }
+                scene.remove(pvpOppMesh);
+                pvpOppMesh = null;
+            }
+            if (pvpWs) { try { pvpWs.send(JSON.stringify({ action: 'unqueue' })); } catch(_){} pvpWs.close(); pvpWs = null; }
+            pvpActive = false; pvpMatchId = null;
+        }
+
+        function pvpApplyState(s) {
+            if (!pvpOppMesh) return;
+            if (typeof s.hp === 'number') pvpOppHp = s.hp;
+            if (s.alive === false && pvpOppAlive) { pvpOppAlive = false; pvpOppMesh.visible = false; }
+            if (s.alive === true && !pvpOppAlive) { pvpOppAlive = true; pvpOppMesh.visible = true; pvpOppMesh.position.set(0, 1.1, -50); }
+            if (s.x !== undefined && s.z !== undefined) {
+                // интерполяция
+                pvpOppMesh.position.x += (s.x - pvpOppMesh.position.x) * 0.3;
+                pvpOppMesh.position.z += (s.z - pvpOppMesh.position.z) * 0.3;
+            }
+            if (typeof s.yaw === 'number') pvpOppMesh.rotation.y = s.yaw;
+            // HP-бар
+            if (pvpOppMesh.userData && pvpOppMesh.userData.bar) {
+                pvpOppMesh.userData.bar.style.width = Math.max(0, pvpOppHp) + '%';
+                pvpOppMesh.userData.txt.innerText = Math.round(Math.max(0, pvpOppHp));
+            }
+        }
+
+        function pvpSendState() {
+            if (!pvpWs || pvpWs.readyState !== 1 || !pvpActive || !pvpMatchId) return;
+            const now = performance.now();
+            if (now - pvpLastSend < 60) return; // ~16 раз/сек
+            pvpLastSend = now;
+            pvpWs.send(JSON.stringify({
+                action: 'utopia_state',
+                match_id: pvpMatchId,
+                state: {
+                    x: Math.round(playerContainer.position.x * 10) / 10,
+                    z: Math.round(playerContainer.position.z * 10) / 10,
+                    yaw: Math.round(playerRotation.yaw * 100) / 100,
+                    hp: Math.round(playerHp),
+                    alive: playerHp > 0,
+                    weapon: currentWeapon,
+                }
+            }));
+        }
+
+        // урон по сопернику: вызывается из checkTargetDamage
+        function pvpDamageOpponent(dmg) {
+            if (!pvpActive || !pvpOppAlive) return;
+            pvpOppHp -= dmg;
+            if (pvpOppHp <= 0) {
+                pvpOppHp = 0;
+                // отправляем смерть — сервер завершит матч
+                if (pvpWs && pvpWs.readyState === 1) {
+                    pvpWs.send(JSON.stringify({
+                        action: 'utopia_state', match_id: pvpMatchId,
+                        state: { hp: 0, alive: false, x: 0, z: 0, yaw: 0 }
+                    }));
+                }
+            }
+        }
+
     </script>
 </body>
 </html>

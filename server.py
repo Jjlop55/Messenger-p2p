@@ -2769,12 +2769,14 @@ def _init_match(game: str, p1: str, p2: str) -> dict:
             "last": None,                    # последний выстрел: {"cell","hit","by"}
         }
     elif game == "utopia":
-        # реалтайм-арена: сервер только релеит стейт, боевая логика на клиенте
+        # реалтайм-арена: сервер релеит стейт, цвета назначаются случайно
+        import random as _rnd
+        colors = _rnd.choice([("red", "blue"), ("blue", "red")])
         state = {
             "phase": "fighting",
             "hp": {p1: 100, p2: 100},
-            "pos": {p1: {"x": 0, "z": 60}, "p2": {"x": 0, "z": -60}},
-            "last_state": {},                # последний присланный стейт от каждого
+            "colors": {p1: colors[0], p2: colors[1]},  # случайный цвет для каждого
+            "last_state": {},
         }
     return {"id": None, "game": game, "p1": p1, "p2": p2, "over": False, "state": state}
 
@@ -2784,6 +2786,9 @@ def _public_state(m: dict, nick: str) -> dict:
     game, st, opp = m["game"], m["state"], (m["p2"] if nick == m["p1"] else m["p1"])
     base = {"action": "game_state", "id": m["id"], "game": game,
             "you": nick, "opp": opp, "over": m["over"]}
+    if game == "utopia":
+        colors = st.get("colors", {})
+        base.update({"my_color": colors.get(nick, "red"), "opp_color": colors.get(opp, "blue")})
     if game == "rps":
         base.update({
             "scores": st["scores"], "round": st["round"], "log": st["log"],
@@ -2873,8 +2878,10 @@ async def _create_match(game: str, a: str, b: str):
     m["id"] = _match_seq
     _matches[m["id"]] = m
     for nick in (a, b):
+        colors = m["state"].get("colors", {})
         await _gsend(nick, {"action": "game_found", "id": m["id"], "game": game,
-                            "game_title": GAMES[game], "opp": (b if nick == a else a)})
+                            "game_title": GAMES[game], "opp": (b if nick == a else a),
+                            "my_color": colors.get(nick, "red"), "opp_color": colors.get(b if nick == a else a, "blue")})
     await _send_state(m)
     await _lobby_broadcast()
 

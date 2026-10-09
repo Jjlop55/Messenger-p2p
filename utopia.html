@@ -1163,6 +1163,13 @@ class Bullet {
           break;
         }
       }
+      // чёрный квадрат (яма) — пули отскакивают
+      if (!bounced && this.x > ARENA_PIT.x && this.x < ARENA_PIT.x + ARENA_PIT.w &&
+          this.y > ARENA_PIT.y && this.y < ARENA_PIT.y + ARENA_PIT.h) {
+        this.vx *= -1;
+        this.vy *= -1;
+        bounced = true;
+      }
       if (crateRef && crateRef.alive && Math.hypot(this.x - crateRef.x, this.y - crateRef.y) < crateRef.size * 0.6) {
         crateRef.vx += this.vx * 0.35;
         crateRef.vy += this.vy * 0.35;
@@ -2289,6 +2296,10 @@ function loop() {
         if (!p1.buff || p1.buff.type !== 'shield') {
           p1.die(particles);
           if (currentGameMode !== 'flag') p2.score++;
+          // PvP: отправляем смерть серверу
+          if (pvpActive && pvpWs && pvpWs.readyState === 1) {
+            pvpWs.send(JSON.stringify({ action: 'utopia_state', match_id: pvpMatchId, state: { alive: false, hp: 0 } }));
+          }
         }
         b.alive = false;
       }
@@ -2470,9 +2481,16 @@ let pvpMatchId = null;
 let pvpOppNick = null;
 let pvpActive = false;
 let pvpLastSend = 0;
-let pvpOppState = null; // {x, y, angle, score}
+let pvpOppState = null;
+let pvpMyColor = 'red'; // мой цвет (назначается сервером)
 
 const PVP_BACKEND = 'https://utopia-messenger-api.onrender.com';
+
+// URL-параметры: ?match=ID&opp=NICK&color=red|blue — прямой вход из мессенджера
+const urlParams = new URLSearchParams(window.location.search);
+const urlMatch = urlParams.get('match');
+const urlOpp = urlParams.get('opp');
+const urlColor = urlParams.get('color');
 
 function pvpConnect() {
   const saved = JSON.parse(localStorage.getItem('utopia_saved_user') || '{}');
@@ -2488,19 +2506,32 @@ function pvpConnect() {
     + `/ws/games/${encodeURIComponent(nick)}?token=${encodeURIComponent(token)}`;
   pvpWs = new WebSocket(wsUrl);
   pvpWs.onopen = () => {
-    pvpWs.send(JSON.stringify({ action: 'queue', game: 'utopia' }));
-    pvpStatus.textContent = '⏳ Ищем соперника...';
+    if (urlMatch) {
+      // прямой вход: матч уже создан мессенджером
+      pvpMatchId = parseInt(urlMatch);
+      pvpOppNick = urlOpp || 'Соперник';
+      pvpMyColor = urlColor || 'red';
+      pvpStatus.style.display = 'block';
+      pvpStatus.textContent = `⚔️ Матч #${pvpMatchId} — подключаемся...`;
+      setTimeout(() => pvpStartMatch(), 400);
+    } else {
+      pvpWs.send(JSON.stringify({ action: 'queue', game: 'utopia' }));
+      pvpStatus.textContent = '⏳ Ищем соперника...';
+    }
   };
   pvpWs.onmessage = (e) => {
     try { pvpHandleMsg(JSON.parse(e.data)); } catch (_) {}
   };
   pvpWs.onclose = () => {
-    if (pvpSearching) {
+    if (pvpActive) {
+      // соединение оборвалось во время боя — считаем поражением
+      pvpShowResult(false, 'Связь потеряна');
+      pvpActive = false;
+    } else if (pvpSearching) {
       pvpStatus.textContent = '❌ Соединение потеряно';
       pvpBtn.textContent = '🔍 Найти соперника (PvP)';
       pvpSearching = false;
     }
-    pvpActive = false;
   };
   pvpWs.onerror = () => {
     pvpStatus.textContent = '❌ Ошибка соединения';
@@ -2511,8 +2542,7 @@ function pvpConnect() {
 }
 
 function pvpHandleMsg(d) {
-  if (d.action === 'lobby_state') return;
-  if (d.action === 'my_stats') return;
+  if (d.action === 'lobby_state' || d.action === 'my_stats') return;
   if (d.action === 'queued') {
     pvpStatus.textContent = `⏳ Ищем соперника... (${d.title || 'Утопия'})`;
     return;
@@ -2520,11 +2550,10 @@ function pvpHandleMsg(d) {
   if (d.action === 'game_found') {
     pvpMatchId = d.id;
     pvpOppNick = d.opp;
+    pvpMyColor = d.my_color || 'red';
     pvpSearching = false;
     pvpStatus.textContent = `⚔️ Соперник найден: ${d.opp}!`;
-    pvpBtn.textContent = '⚔️ Бой!';
-    // Запускаем PvP-матч
-    setTimeout(() => pvpStartMatch(), 800);
+    setTimeout(() => pvpStartMatch(), 600);
     return;
   }
   if (d.action === 'utopia_state' && d.id === pvpMatchId) {
@@ -2533,12 +2562,8 @@ function pvpHandleMsg(d) {
   }
   if (d.action === 'game_over' && d.id === pvpMatchId) {
     pvpActive = false;
-    pvpMatchId = null;
-    const msg = d.you_won ? '🏆 Ты победил!' : '💀 Ты проиграл!';
-    pvpStatus.textContent = `${msg} ${d.score || ''}`;
-    pvpBtn.textContent = '🔍 Найти соперника (PvP)';
-    pvpSearching = false;
-    if (pvpWs) { pvpWs.close(); pvpWs = null; }
+    const reason = d.reason === 'forfeit' ? 'Противник вышел из игры!' : '';
+    pvpShowResult(d.you_won, reason);
     return;
   }
   if (d.action === 'error') {
@@ -2548,6 +2573,23 @@ function pvpHandleMsg(d) {
   }
 }
 
+// Экран победы/поражения поверх игры
+function pvpShowResult(won, reason) {
+  gameRunning = false;
+  menuOverlay.style.display = 'flex';
+  menuOverlay.innerHTML = `
+    <div style="text-align:center; color:#fff; font-family:Arial, sans-serif;">
+      <div style="font-size:64px; margin-bottom:16px;">${won ? '🏆' : '💀'}</div>
+      <div style="font-size:28px; font-weight:900; color:${won ? '#3fb950' : '#ff5555'}; margin-bottom:12px;">
+        ${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}
+      </div>
+      ${reason ? `<div style="font-size:15px; color:#ffd166; margin-bottom:8px;">${reason}</div>` : ''}
+      <div style="font-size:13px; color:#aaa; margin-bottom:20px;">Соперник: @${pvpOppNick || '—'}</div>
+      <button onclick="location.reload()" style="padding:12px 28px; border-radius:10px; border:2px solid #818cf8; background:rgba(129,140,248,.2); color:#a5b4fc; font-size:15px; font-weight:700; cursor:pointer;">🔄 Играть ещё</button>
+      ${window.self !== window.top ? '<br><button onclick="window.top.closeGameModal&&window.top.closeGameModal()" style="padding:10px 24px; border-radius:10px; border:1px solid #555; background:rgba(255,255,255,.08); color:#aaa; font-size:13px; margin-top:10px; cursor:pointer;">✕ Выйти в мессенджер</button>' : ''}
+    </div>`;
+}
+
 function pvpStartMatch() {
   menuOverlay.style.display = 'none';
   currentGameMode = 'duel';
@@ -2555,11 +2597,22 @@ function pvpStartMatch() {
   p1.score = 0;
   p2.score = 0;
   p1.isBot = false;
-  p2.isBot = false; // соперник — живой человек
+  p2.isBot = false;
   p1.name = localStorage.getItem('utopia_nickname') || 'Игрок';
   p2.name = pvpOppNick || 'Соперник';
-  p1.spawnX = 250; p1.spawnY = 590;
-  p2.spawnX = 1030; p2.spawnY = 130;
+
+  // цвета: свой цвет от сервера, соперник — противоположный
+  const oppColor = pvpMyColor === 'red' ? 'blue' : 'red';
+  if (pvpMyColor === 'red') {
+    p1.color = '#ff2a2a'; p2.color = '#2a82ff';
+    p1.spawnX = 250; p1.spawnY = 590;
+    p2.spawnX = 1030; p2.spawnY = 130;
+  } else {
+    p1.color = '#2a82ff'; p2.color = '#ff2a2a';
+    p1.spawnX = 1030; p1.spawnY = 130;
+    p2.spawnX = 250; p2.spawnY = 590;
+  }
+
   arenaCrate.respawn();
   p1.reset();
   p2.reset();
@@ -2573,7 +2626,7 @@ function pvpStartMatch() {
 function pvpSendState() {
   if (!pvpWs || pvpWs.readyState !== 1 || !pvpActive || !pvpMatchId) return;
   const now = performance.now();
-  if (now - pvpLastSend < 50) return; // ~20 раз в секунду
+  if (now - pvpLastSend < 50) return;
   pvpLastSend = now;
   pvpWs.send(JSON.stringify({
     action: 'utopia_state',
@@ -2592,7 +2645,6 @@ function pvpSendState() {
 function pvpApplyOpp() {
   if (!pvpOppState || !pvpActive) return;
   const s = pvpOppState;
-  // интерполяция позиции соперника
   p2.x += (s.x - p2.x) * 0.35;
   p2.y += (s.y - p2.y) * 0.35;
   if (typeof s.angle === 'number') p2.angle = s.angle;
@@ -2607,8 +2659,7 @@ function pvpApplyOpp() {
 pvpBtn.addEventListener('click', () => {
   sfx.init();
   if (pvpSearching) {
-    // отмена поиска
-    if (pvpWs) { pvpWs.send(JSON.stringify({ action: 'unqueue' })); pvpWs.close(); pvpWs = null; }
+    if (pvpWs) { try { pvpWs.send(JSON.stringify({ action: 'unqueue' })); } catch(_){} pvpWs.close(); pvpWs = null; }
     pvpSearching = false;
     pvpStatus.style.display = 'none';
     pvpBtn.textContent = '🔍 Найти соперника (PvP)';
@@ -2620,6 +2671,14 @@ pvpBtn.addEventListener('click', () => {
   pvpBtn.textContent = '❌ Отмена';
   pvpConnect();
 });
+
+// если открыто из мессенджера (iframe) — сразу подключаемся
+if (urlMatch) {
+  pvpBtn.style.display = 'none'; // прячем кнопку поиска — матч уже создан
+  pvpStatus.style.display = 'block';
+  pvpStatus.textContent = '⏳ Подключение к матчу...';
+  setTimeout(() => pvpConnect(), 200);
+}
 </script>
 </body>
 </html>
