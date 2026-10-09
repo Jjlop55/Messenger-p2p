@@ -1085,16 +1085,30 @@
   </div>
 </div>
 
-<!-- Игровое поле: отдельный оверлей поверх всего -->
-<div id="game-overlay" style="display:none; position:fixed; inset:0; z-index:10500; background:rgba(4,7,15,.94); backdrop-filter:blur(4px); overflow:auto;">
-  <div style="max-width:900px; margin:0 auto; padding:18px 14px 40px; display:flex; flex-direction:column; gap:14px;">
-    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <span id="game-title" style="font-size:16px; font-weight:800; color:#b392f0;">🎮 Игра</span>
-      <span id="game-status" style="font-size:12.5px; color:var(--text-dim);"></span>
-      <button class="pill-btn" id="game-exit-btn" style="margin-left:auto; padding:6px 12px; font-size:12px; background:rgba(255,51,102,.18); color:var(--danger);">✕ Выйти</button>
+<!-- Игровое поле: полноэкранный оверлей (заменяет браузер, не поверх) -->
+<div id="game-overlay" style="display:none; position:fixed; inset:0; z-index:10500; background:rgba(4,7,15,.96); overflow:hidden;">
+  <!-- Обратный отсчёт перед запуском полноэкранной игры -->
+  <div id="game-countdown" style="display:none; position:absolute; inset:0; z-index:2; background:rgba(0,0,0,.92); flex-direction:column; align-items:center; justify-content:center; gap:18px; font-family:Arial, sans-serif;">
+    <div id="game-countdown-emoji" style="font-size:72px;">🎮</div>
+    <div id="game-countdown-title" style="font-size:22px; font-weight:900; color:#fff;"></div>
+    <div id="game-countdown-num" style="font-size:96px; font-weight:900; color:#818cf8; line-height:1;">3</div>
+    <div style="font-size:14px; color:#888;">Игра откроется на полный экран…</div>
+  </div>
+  <!-- Кнопка выхода в мессенджер (поверх полноэкранной игры) -->
+  <div id="game-return-btn" style="display:none; position:absolute; top:8px; right:8px; z-index:11000; padding:6px 14px; border-radius:8px; border:1px solid rgba(255,255,255,.25); background:rgba(0,0,0,.7); color:#fff; font-size:12px; cursor:pointer; backdrop-filter:blur(4px);">↩ В мессенджер</div>
+  <!-- iframe с полноэкранной игрой (utopia/greenu) -->
+  <iframe id="game-iframe" style="width:100%; height:100%; border:none; display:none; background:#000;" allow="fullscreen; autoplay; microphone; camera"></iframe>
+  <!-- Обычные игры (rps/ttt/sea) — старый интерфейс -->
+  <div id="game-classic-wrap" style="position:absolute; inset:0; overflow:auto;">
+    <div style="max-width:900px; margin:0 auto; padding:18px 14px 40px; display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span id="game-title" style="font-size:16px; font-weight:800; color:#b392f0;">🎮 Игра</span>
+        <span id="game-status" style="font-size:12.5px; color:var(--text-dim);"></span>
+        <button class="pill-btn" id="game-exit-btn" style="margin-left:auto; padding:6px 12px; font-size:12px; background:rgba(255,51,102,.18); color:var(--danger);">✕ Выйти</button>
+      </div>
+      <div id="game-body" style="display:flex; flex-direction:column; gap:12px; align-items:center;"></div>
+      <div id="game-footer" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;"></div>
     </div>
-    <div id="game-body" style="display:flex; flex-direction:column; gap:12px; align-items:center;"></div>
-    <div id="game-footer" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;"></div>
   </div>
 </div>
 
@@ -5416,7 +5430,13 @@ function handleGameEvent(m) {
       gameLastOver = m;
       gamePhase = 'over';
       gameState = null;
-      renderGame();
+      // Для utopia/greenu: закрываем fullscreen-игру, показываем оверлей результата
+      if (gameCurrent === 'utopia' || gameCurrent === 'greenu') {
+        closeGameFullscreen();
+        setTimeout(() => renderGame(), 300);
+      } else {
+        renderGame();
+      }
       refreshGamesData();
       break;
     case 'error':
@@ -5581,8 +5601,16 @@ function renderGamesLobby(d) {
     const btn = document.createElement('button');
     btn.className = 'pill-btn';
     btn.style.cssText = 'background:rgba(179,146,240,.2); color:#b392f0; border:1px solid rgba(179,146,240,.5); font-weight:700;';
-    btn.textContent = '🎮 Играть';
-    btn.onclick = () => gameQueue(g.id);
+    if (g.id === 'utopia') {
+      btn.textContent = '⚔️ Утопия 2D';
+      btn.onclick = () => { closeModal('games-modal'); openGameFullscreen('utopia.html', 'УТОПИЯ — 2D АРЕНА', '⚔️'); };
+    } else if (g.id === 'greenu') {
+      btn.textContent = '🌿 Green Valley 3D';
+      btn.onclick = () => { closeModal('games-modal'); openGameFullscreen('greenu.html', 'GREEN VALLEY — 3D', '🌿'); };
+    } else {
+      btn.textContent = '🎮 Играть';
+      btn.onclick = () => gameQueue(g.id);
+    }
     card.appendChild(btn);
     cards.appendChild(card);
   });
@@ -5635,14 +5663,79 @@ function gameMove(data) {
   gameSend({ action: 'move', match_id: gameMatchId, data });
 }
 
-function showGameOverlay() { document.getElementById('game-overlay').style.display = 'block'; }
-function hideGameOverlay() { document.getElementById('game-overlay').style.display = 'none'; }
+// ── Полноэкранный запуск игры: отсчёт 3 сек → игра на весь экран ──
+let _gameFullscreenCountdown = null;
+function openGameFullscreen(file, title, emoji) {
+  const ov = document.getElementById('game-overlay');
+  const cd = document.getElementById('game-countdown');
+  const iframe = document.getElementById('game-iframe');
+  const retBtn = document.getElementById('game-return-btn');
+  // запрос fullscreen на gesture (до await)
+  const root = ov;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    if (root.requestFullscreen) root.requestFullscreen().catch(() => {});
+    else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
+  }
+  ov.style.display = 'block';
+  document.getElementById('game-classic-wrap').style.display = 'none';
+  iframe.style.display = 'none';
+  iframe.src = 'about:blank';
+  retBtn.style.display = 'none';
+  // обратный отсчёт
+  document.getElementById('game-countdown-emoji').textContent = emoji || '🎮';
+  document.getElementById('game-countdown-title').textContent = title || '';
+  cd.style.display = 'flex';
+  let n = 3;
+  document.getElementById('game-countdown-num').textContent = n;
+  if (_gameFullscreenCountdown) clearInterval(_gameFullscreenCountdown);
+  _gameFullscreenCountdown = setInterval(() => {
+    n--;
+    if (n <= 0) {
+      clearInterval(_gameFullscreenCountdown);
+      _gameFullscreenCountdown = null;
+      cd.style.display = 'none';
+      iframe.src = file;
+      iframe.style.display = 'block';
+      setTimeout(() => { retBtn.style.display = 'block'; }, 500);
+    } else {
+      document.getElementById('game-countdown-num').textContent = n;
+    }
+  }, 1000);
+}
+function closeGameFullscreen() {
+  if (_gameFullscreenCountdown) { clearInterval(_gameFullscreenCountdown); _gameFullscreenCountdown = null; }
+  const ov = document.getElementById('game-overlay');
+  const iframe = document.getElementById('game-iframe');
+  iframe.src = 'about:blank';
+  iframe.style.display = 'none';
+  document.getElementById('game-countdown').style.display = 'none';
+  document.getElementById('game-return-btn').style.display = 'none';
+  // возвращаем классическую часть (result overlay и т.д.)
+  document.getElementById('game-classic-wrap').style.display = 'block';
+  ov.style.display = 'none';
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+}
+document.getElementById('game-return-btn').onclick = () => closeGameModal();
+
+function showGameOverlay() {
+  document.getElementById('game-overlay').style.display = 'block';
+  // классический интерфейс — по умолчанию виден
+  document.getElementById('game-classic-wrap').style.display = 'block';
+  document.getElementById('game-iframe').style.display = 'none';
+  document.getElementById('game-return-btn').style.display = 'none';
+  document.getElementById('game-countdown').style.display = 'none';
+}
+function hideGameOverlay() {
+  document.getElementById('game-overlay').style.display = 'none';
+}
 
 function exitGame() {
   seaPlace = null;
   if (gamePhase === 'searching') {
     gameSend({ action: 'unqueue' });
     gamePhase = 'idle';
+    closeGameFullscreen();
     hideGameOverlay();
     return;
   }
@@ -5651,11 +5744,13 @@ function exitGame() {
     gameSend({ action: 'forfeit', match_id: gameMatchId });
     gamePhase = 'idle';
     gameMatchId = null;
+    closeGameFullscreen();
     hideGameOverlay();
     return;
   }
   gamePhase = 'idle';
   gameMatchId = null;
+  closeGameFullscreen();
   hideGameOverlay();
 }
 
@@ -5666,6 +5761,7 @@ function closeGameModal() {
   }
   gamePhase = 'idle';
   gameMatchId = null;
+  closeGameFullscreen();
   hideGameOverlay();
   refreshGamesData();
 }
@@ -5680,7 +5776,8 @@ function renderGame() {
   title.textContent = `${GAME_EMOJI[gameCurrent] || '🎮'} ${GAME_TITLES[gameCurrent] || 'Игра'}`;
 
   if (gamePhase === 'idle') { hideGameOverlay(); return; }
-  showGameOverlay();
+  // utopia/greenu идут через openGameFullscreen — старый overlay не нужен
+  if (gameCurrent !== 'utopia' && gameCurrent !== 'greenu') showGameOverlay();
 
   if (gamePhase === 'searching') {
     status.textContent = 'Ищем соперника...';
@@ -5699,6 +5796,9 @@ function renderGame() {
   }
 
   if (gamePhase === 'over') {
+    // Для utopia/greenu: если fullscreen-игра ещё не открылась — показываем оверлей
+    if ((gameCurrent === 'utopia' || gameCurrent === 'greenu') && document.getElementById('game-iframe').style.display === 'block') return;
+    showGameOverlay();
     const o = gameLastOver || {};
     const won = o.you_won;
     const isDraw = !o.winner;
@@ -5747,23 +5847,18 @@ function renderGame() {
 
 // ── 🌿 Green Valley 3D ──
 function renderGreenU(body, foot, s) {
+  // Пришло game_found от соперника — сразу полноэкранный запуск
   const myColor = s.my_color || 'red';
   body.innerHTML = `
     <div style="font-size:52px;">🌿</div>
     <div style="font-size:22px; font-weight:900; color:#3fb950;">GREEN VALLEY — 3D</div>
     <div style="font-size:13px; color:var(--text-dim); text-align:center; line-height:1.6; max-width:420px;">
       Соперник: <b style="color:#fff;">@${escapeHtml(s.opp)}</b><br>
-      Игра загружается...
-    </div>
-    <div style="margin-top:10px; width:100%; height:420px; border-radius:12px; overflow:hidden; border:1px solid rgba(63,185,80,.4);">
-      <iframe src="greenu.html?match=${s.id}&opp=${encodeURIComponent(s.opp)}&color=${myColor}" 
-        style="width:100%; height:100%; border:none; background:#111;" allow="autoplay; fullscreen"></iframe>
+      Игра открывается на полный экран…
     </div>`;
-  const cancel = document.createElement('button');
-  cancel.className = 'pill-btn';
-  cancel.textContent = 'Сдался';
-  cancel.onclick = () => gameSend({ action: 'forfeit', match_id: gameMatchId });
-  foot.appendChild(cancel);
+  setTimeout(() => {
+    openGameFullscreen(`greenu.html?match=${s.id}&opp=${encodeURIComponent(s.opp)}&color=${myColor}`, 'GREEN VALLEY — 3D', '🌿');
+  }, 800);
 }
 
 // ── ⚔️ Утопия: PvP-арена ──
@@ -5782,24 +5877,14 @@ function renderUtopia(body, foot, s) {
     <div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">
       <button class="pill-btn" style="background:rgba(129,140,248,.22); color:#818cf8; border:1px solid rgba(129,140,248,.6); font-weight:700;" onclick="openUtopiaGame('utopia.html')">⚔️ 2D Арена</button>
       <button class="pill-btn" style="background:rgba(63,185,80,.22); color:#3fb950; border:1px solid rgba(63,185,80,.6); font-weight:700;" onclick="openUtopiaGame('greenu.html')">🌿 Green Valley 3D</button>
-    </div>
-    <div id="utopia-game-wrap" style="margin-top:10px; width:100%; height:420px; border-radius:12px; overflow:hidden; border:1px solid rgba(129,140,248,.4); display:none;">
-      <iframe id="utopia-frame" src="" style="width:100%; height:100%; border:none; background:#111;" allow="autoplay"></iframe>
     </div>`;
-  const cancel = document.createElement('button');
-  cancel.className = 'pill-btn';
-  cancel.textContent = 'Сдался';
-  cancel.onclick = () => gameSend({ action: 'forfeit', match_id: gameMatchId });
-  foot.appendChild(cancel);
 }
 
 function openUtopiaGame(file) {
-  const wrap = document.getElementById('utopia-game-wrap');
-  const frame = document.getElementById('utopia-frame');
-  if (!wrap || !frame) return;
   const myColor = (gameState && gameState.my_color) || 'red';
-  frame.src = `${file}?match=${gameMatchId}&opp=${encodeURIComponent(gameState?.opp || '')}&color=${myColor}`;
-  wrap.style.display = 'block';
+  const title = file === 'greenu.html' ? 'GREEN VALLEY — 3D' : 'УТОПИЯ — 2D АРЕНА';
+  const emoji = file === 'greenu.html' ? '🌿' : '⚔️';
+  openGameFullscreen(`${file}?match=${gameMatchId}&opp=${encodeURIComponent(gameState?.opp || '')}&color=${myColor}`, title, emoji);
 }
 
 // ── ✊ Камень-ножницы-бумага ──
