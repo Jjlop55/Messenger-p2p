@@ -1567,18 +1567,19 @@ def rename_chat(data: ChatRenameData):
     if not row:
         return {"status": "error", "msg": "Чат не найден!"}
 
+    # ЛС переименовывается только локально (на клиенте) — серверное переименование запрещено
+    if row[0]:
+        return {"status": "error", "msg": "ЛС переименовывается только для себя (локально на вашем устройстве)!"}
+
     # Переименовать может владелец группы, админ с правом rename, либо владелец/супер сайта
     if not can_edit_chat(data.chat_id, data.user):
         return {"status": "error", "msg": "Нет прав: переименовывать может владелец группы или админ с правом!"}
 
-    is_dir = row[0]
     words = data.new_name.strip().split()
-    max_words = 25 if is_dir else 50
-
     if len(words) == 0:
         return {"status": "error", "msg": "Название не может быть пустым!"}
-    if len(words) > max_words:
-        return {"status": "error", "msg": f"Лимит названия: до {max_words} слов!"}
+    if len(words) > 50:
+        return {"status": "error", "msg": "Лимит названия: до 50 слов!"}
 
     final_name = " ".join(words)
     cursor.execute("UPDATE chats SET name=? WHERE id=?", (final_name, data.chat_id))
@@ -1695,6 +1696,8 @@ def get_user_chats(nickname: str):
             "my_role": my_role or ("owner" if cid == "general" else "member"),
             "my_title": my_title or "",
             "members_count": mcount,
+            "direct_user1": u1 or "",
+            "direct_user2": u2 or "",
         })
     chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
     # Личный чат с ботом-помощником — виртуальная запись, сообщения лежат в bot_<ник>
@@ -2877,6 +2880,7 @@ async def _create_match(game: str, a: str, b: str):
     _match_seq += 1
     m = _init_match(game, a, b)
     m["id"] = _match_seq
+    m["created_at"] = time.time()  # grace-период: forfeit не засчитывается первые 15 сек
     _matches[m["id"]] = m
     for nick in (a, b):
         colors = m["state"].get("colors", {})
@@ -3227,8 +3231,16 @@ async def games_websocket(websocket: WebSocket, nickname: str):
             _game_sockets.pop(nickname, None)
         await _drop_queue(nickname)
         # Противник не будет ждать вечно — закрытый игрок проигрывает
+        # Но grace-период 15 сек: если игрок отключился сразу после создания матча — не forfeit
+        now = time.time()
         for m in list(_matches.values()):
             if not m["over"] and nickname in (m["p1"], m["p2"]):
+                created = m.get("created_at", 0)
+                if now - created < 15:
+                    # grace-период — просто закрываем матч без штрафа
+                    m["over"] = True
+                    _matches.pop(m["id"], None)
+                    continue
                 opp = m["p2"] if nickname == m["p1"] else m["p1"]
                 await _finish_match(m, opp, "forfeit")
         await _lobby_broadcast()

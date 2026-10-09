@@ -1850,12 +1850,14 @@ async function loadChats() {
       : (c.chat_type === 'bot' ? '<span style="font-size:10px; color:#b392f0;">БОТ</span>'
         : (c.is_direct ? '<span style="font-size:10px; color:var(--text-dim);">ЛС</span>'
                        : `<span style="font-size:10px; color:#58a6ff;">ГРУППА</span>`));
+    // ЛС: показываем локальное имя, если задано
+    const displayName = (c.is_direct && c.chat_type !== 'bot') ? (getLocalDmName(c.id) || c.name) : c.name;
     d.innerHTML = `
-      <span style="font-weight:${isGen ? '700' : '500'}; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
+      <span style="font-weight:${isGen ? '700' : '500'}; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${displayName}</span>
       ${tag}
     `;
     d.onclick = () => {
-      switchChat(c.id, c.name, c.is_direct);
+      switchChat(c.id, displayName, c.is_direct);
       if (window.innerWidth <= 768) {
         document.getElementById('chat-aside').style.display = 'none';
         document.getElementById('chat-main').style.display = 'flex';
@@ -1915,6 +1917,11 @@ async function switchChat(chatId, chatName, isDirect = null) {
     activeChatId = chatId;
     if (typeof clearReplyTo === 'function') clearReplyTo();
     if (typeof closeMsgMenu === 'function') closeMsgMenu();
+    // ЛС: подставляем локальное имя, если задано
+    if (chatId.startsWith('dm_')) {
+      const localName = getLocalDmName(chatId);
+      if (localName) chatName = localName;
+    }
     document.getElementById('chat-title').innerText = chatName;
   window.activeChatName = chatName;
 
@@ -1941,7 +1948,9 @@ async function switchChat(chatId, chatName, isDirect = null) {
     archBtn.innerText = isChatArchived(chatId) ? '📦↩ Вернуть' : '📦 В архив';
   }
   document.getElementById('chat-rename-btn').style.display = (isGen || isBot) ? 'none' : 'block';
-  document.getElementById('chat-invite-btn').style.display = (isGen || isBot) ? 'none' : 'block';
+  // В ЛС никого нельзя добавить — кнопка приглашения только для групп
+  const inviteBtn = document.getElementById('chat-invite-btn');
+  inviteBtn.style.display = (isGen || isBot || isDMChat(chatId)) ? 'none' : 'block';
   updateChatHeader(chatId);
   updateDmBanner(chatId);
 
@@ -2142,14 +2151,41 @@ async function switchChat(chatId, chatName, isDirect = null) {
 // Переименование чата
 document.getElementById('chat-rename-btn').onclick = () => {
   const isDirect = activeChatId.startsWith('dm_');
-  document.getElementById('rename-limit-hint').innerText = isDirect ? "Лимит для личных диалогов: до 25 слов" : "Лимит для групп: до 50 слов";
-  document.getElementById('rename-chat-input').value = document.getElementById('chat-title').innerText.replace('💬 @', '');
+  document.getElementById('rename-limit-hint').innerText = isDirect
+    ? "ЛС: переименование только для себя (до 35 символов)"
+    : "Лимит для групп: до 50 слов";
+  document.getElementById('rename-chat-input').value = getLocalDmName(activeChatId)
+    || document.getElementById('chat-title').innerText.replace('💬 @', '');
   openModal('rename-chat-modal');
 };
+
+// ЛС: локальное переименование (только для себя)
+function getLocalDmName(chatId) {
+  try { return JSON.parse(localStorage.getItem('utopia_dm_renames') || '{}')[chatId] || ''; } catch (_) { return ''; }
+}
+function setLocalDmName(chatId, name) {
+  try {
+    const m = JSON.parse(localStorage.getItem('utopia_dm_renames') || '{}');
+    if (name) m[chatId] = name; else delete m[chatId];
+    localStorage.setItem('utopia_dm_renames', JSON.stringify(m));
+  } catch (_) {}
+}
 
 document.getElementById('submit-rename-btn').onclick = async () => {
   const val = document.getElementById('rename-chat-input').value.trim();
   if (!val) return;
+  const isDirect = activeChatId.startsWith('dm_');
+  if (isDirect) {
+    // ЛС — переименование только для себя, до 35 символов
+    if (val.length > 35) { showToast('⚠️ Лимит для ЛС: до 35 символов!'); return; }
+    setLocalDmName(activeChatId, val);
+    document.getElementById('chat-title').innerText = val;
+    closeModal('rename-chat-modal');
+    showToast('✅ ЛС переименован (только для вас)');
+    loadChats();
+    return;
+  }
+  // Группа — серверное переименование
   const res = await fetch(`${BACKEND_URL}/chats/rename`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -3964,10 +4000,17 @@ document.getElementById('fab-end').onclick = () => document.getElementById('btn-
 
 // Определяем, кому звоним: в ЛС — собеседник, в группе — выбор из друзей
 function resolveCallTarget() {
-  const title = (document.getElementById('chat-title').innerText || '').trim();
-  if (activeChatId.startsWith('dm_') || title.startsWith('💬 @')) {
-    const t = title.replace('💬', '').replace('@', '').trim();
-    if (t) return t;
+  if (activeChatId.startsWith('dm_')) {
+    // Для ЛС берём ник собеседника из метаданных чата (не из заголовка — он может быть переименован локально)
+    const meta = (window.chatsMeta || {})[activeChatId];
+    if (meta && meta.direct_user1 && meta.direct_user2) {
+      return meta.direct_user1 === currentUser ? meta.direct_user2 : meta.direct_user1;
+    }
+    // fallback: из серверного списка chats
+    const srv = (window._allChats || []).find(c => c.id === activeChatId);
+    if (srv && srv.direct_user1 && srv.direct_user2) {
+      return srv.direct_user1 === currentUser ? srv.direct_user2 : srv.direct_user1;
+    }
   }
   return null;
 }
