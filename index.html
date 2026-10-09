@@ -983,6 +983,25 @@
   </div>
 </div>
 
+<!-- Модалка выдачи клыкер-монет -->
+<div class="modal-overlay" id="give-coins-modal">
+  <div class="modal-card" style="max-width:340px;">
+    <h3 class="modal-title">💰 Выдать монеты</h3>
+    <div id="give-coins-target" style="font-size:13px; color:var(--neon-cyan); font-weight:700;"></div>
+    <div id="give-coins-balance" style="font-size:11px; color:var(--text-dim);"></div>
+    <input type="number" id="give-coins-amount" placeholder="Сколько монет..." value="1000" min="1" class="modal-input">
+    <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center;">
+      <button class="pill-btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('give-coins-amount').value=1000">+1к</button>
+      <button class="pill-btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('give-coins-amount').value=5000">+5к</button>
+      <button class="pill-btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('give-coins-amount').value=10000">+10к</button>
+      <button class="pill-btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('give-coins-amount').value=50000">+50к</button>
+      <button class="pill-btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('give-coins-amount').value=100000">+100к</button>
+    </div>
+    <button class="pill-btn" id="save-give-coins-btn" style="background:#ffd166; color:#000;">Выдать</button>
+    <button class="pill-btn" onclick="closeModal('give-coins-modal')">Отмена</button>
+  </div>
+</div>
+
 <!-- Модалка прав -->
 <div class="modal-overlay" id="grant-modal">
   <div class="modal-card">
@@ -1095,8 +1114,6 @@
     <div id="game-countdown-num" style="font-size:96px; font-weight:900; color:#818cf8; line-height:1;">3</div>
     <div style="font-size:14px; color:#888;">Игра откроется на полный экран…</div>
   </div>
-  <!-- Кнопка выхода в мессенджер (поверх полноэкранной игры) — всегда видна -->
-  <div id="game-return-btn" style="display:none; position:fixed; top:8px; right:8px; z-index:11000; padding:8px 16px; border-radius:8px; border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.85); color:#fff; font-size:13px; font-weight:700; cursor:pointer; backdrop-filter:blur(4px); box-shadow:0 0 12px rgba(0,0,0,.8);">↩ В мессенджер</div>
   <!-- iframe с полноэкранной игрой (utopia/greenu) -->
   <iframe id="game-iframe" style="width:100%; height:100%; border:none; display:none; background:#000;" allow="fullscreen; autoplay; microphone; camera"></iframe>
   <!-- Обычные игры (rps/ttt/sea) — старый интерфейс -->
@@ -1143,6 +1160,12 @@
 
     <!-- Достижения -->
     <div id="clicker-achievements" style="font-size:11px; color:var(--text-dim); text-align:center;"></div>
+
+    <!-- Сброс прокачки -->
+    <div id="clicker-reset-section" style="border-top:1px solid rgba(255,255,255,.08); padding-top:12px; text-align:center;">
+      <button id="clicker-reset-btn" style="padding:10px 24px; border-radius:10px; border:1px solid rgba(255,100,100,.4); background:rgba(255,50,50,.1); color:#ff6666; font-size:13px; font-weight:700; cursor:pointer;">🔄 Сбросить прокачку</button>
+      <div id="clicker-reset-info" style="font-size:11px; color:var(--text-dim); margin-top:6px;"></div>
+    </div>
   </div>
 </div>
 
@@ -4423,6 +4446,7 @@ async function loadAdminUsers(query = '') {
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
         <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>
         <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="viewUserSessions('${u.nickname}')">📱 Сессии</button>
+        <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,209,102,.15); color:#ffd166;" onclick="openGiveCoinsModal('${u.nickname}')">💰 Монеты</button>
         ${!isSuperTarget ? `
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>
@@ -4472,6 +4496,37 @@ async function adminKillSpecificSession(sid, nick) {
   showToast(d.msg);
   viewUserSessions(nick);
 }
+
+// ── Выдача клыкер-монет из админки ──
+let targetGiveCoinsUser = null;
+async function openGiveCoinsModal(nick) {
+  targetGiveCoinsUser = nick;
+  document.getElementById('give-coins-target').innerText = `Кому: @${nick}`;
+  document.getElementById('give-coins-balance').innerText = 'Загрузка баланса...';
+  document.getElementById('give-coins-amount').value = 1000;
+  openModal('give-coins-modal');
+  try {
+    const res = await fetch(`${BACKEND_URL}/admin/clicker-coins?admin=${encodeURIComponent(currentUser)}&target=${encodeURIComponent(nick)}`);
+    const d = await res.json();
+    document.getElementById('give-coins-balance').innerText =
+      `Текущий грант: ${Number(d.bonus_coins || 0).toLocaleString('ru-RU')} 🪙` +
+      (d.granted_by ? ` · выдал: @${d.granted_by}` : '');
+  } catch (_) {
+    document.getElementById('give-coins-balance').innerText = '';
+  }
+}
+document.getElementById('save-give-coins-btn').onclick = async () => {
+  const amount = parseInt(document.getElementById('give-coins-amount').value, 10);
+  if (!targetGiveCoinsUser || !amount || amount <= 0) { showToast('Укажите сумму!'); return; }
+  const res = await fetch(`${BACKEND_URL}/admin/give-coins`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: targetGiveCoinsUser, amount })
+  });
+  const d = await res.json();
+  showToast(d.msg || 'Готово');
+  if (d.status === 'ok') closeModal('give-coins-modal');
+};
 
 function openGrantModal(nick, perms) {
   targetGrantUser = nick;
@@ -5703,12 +5758,11 @@ function openGameFullscreen(file, title, emoji) {
   const ov = document.getElementById('game-overlay');
   const cd = document.getElementById('game-countdown');
   const iframe = document.getElementById('game-iframe');
-  const retBtn = document.getElementById('game-return-btn');
   ov.style.display = 'block';
   document.getElementById('game-classic-wrap').style.display = 'none';
   iframe.style.display = 'none';
   iframe.src = 'about:blank';
-  retBtn.style.display = 'none';
+  // плавающей кнопки больше нет — «В мессенджер» теперь в меню самих игр (utopia/greenu)
   // обратный отсчёт (fullscreen НЕ запрашиваем — он будет после отсчёта)
   document.getElementById('game-countdown-emoji').textContent = emoji || '🎮';
   document.getElementById('game-countdown-title').textContent = title || '';
@@ -5729,7 +5783,6 @@ function openGameFullscreen(file, title, emoji) {
       }
       iframe.src = file;
       iframe.style.display = 'block';
-      retBtn.style.display = 'block';
     } else {
       document.getElementById('game-countdown-num').textContent = n;
     }
@@ -5742,34 +5795,22 @@ function closeGameFullscreen() {
   iframe.src = 'about:blank';
   iframe.style.display = 'none';
   document.getElementById('game-countdown').style.display = 'none';
-  document.getElementById('game-return-btn').style.display = 'none';
   // возвращаем классическую часть (result overlay и т.д.)
   document.getElementById('game-classic-wrap').style.display = 'block';
   ov.style.display = 'none';
   if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
   else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
 }
-document.getElementById('game-return-btn').onclick = () => closeGameModal();
+// Выход в мессенджер теперь — кнопка внутри самих игр (utopia/greenu), не плавающая снаружи
+function exitGameFromIframe() { closeGameModal(); }
 
-// При выходе из fullscreen (ESC) — кнопка возврата остаётся видимой
-document.addEventListener('fullscreenchange', () => {
-  const iframe = document.getElementById('game-iframe');
-  const retBtn = document.getElementById('game-return-btn');
-  // если iframe виден (игра открыта) — кнопка всегда видна
-  if (iframe.style.display === 'block') retBtn.style.display = 'block';
-});
-document.addEventListener('webkitfullscreenchange', () => {
-  const iframe = document.getElementById('game-iframe');
-  const retBtn = document.getElementById('game-return-btn');
-  if (iframe.style.display === 'block') retBtn.style.display = 'block';
-});
+// При выходе из fullscreen (ESC) — игра остаётся открытой; выход через меню игры
 
 function showGameOverlay() {
   document.getElementById('game-overlay').style.display = 'block';
   // классический интерфейс — по умолчанию виден
   document.getElementById('game-classic-wrap').style.display = 'block';
   document.getElementById('game-iframe').style.display = 'none';
-  document.getElementById('game-return-btn').style.display = 'none';
   document.getElementById('game-countdown').style.display = 'none';
 }
 function hideGameOverlay() {
@@ -6475,7 +6516,50 @@ function renderClicker() {
   document.getElementById('clicker-achievements').textContent = ach.length ? 'Достижения: ' + ach.join(' · ') : '';
 
   renderActiveBuffs();
+
+  // ── Кнопка сброса: показываем сколько монет получишь ──
+  const resetBtn = document.getElementById('clicker-reset-btn');
+  const resetInfo = document.getElementById('clicker-reset-info');
+  if (resetBtn && resetInfo) {
+    const reward = calcResetReward();
+    if (reward > 0) {
+      resetBtn.style.display = 'inline-block';
+      resetBtn.textContent = `🔄 Сбросить → +${reward.toLocaleString('ru-RU')} 🪙`;
+      resetInfo.textContent = 'Сброс обнулит прокачку, но даст монеты на покупку оружия в Green Valley';
+    } else {
+      resetBtn.style.display = 'none';
+      resetInfo.textContent = '';
+    }
+  }
 }
+
+// ── Расчёт награды за сброс: по сумме уровней прокачки ──
+function calcResetReward() {
+  // награда = сумма (уровень × базовая цена прокачки) + бонус за престиж
+  let total = 0;
+  CLICKER_UPGRADES.forEach(u => {
+    const lvl = clickerLevel(u.id);
+    // считаем сколько было потрачено на эту прокачку
+    let spent = 0;
+    for (let i = 0; i < lvl; i++) spent += Math.ceil(u.base * Math.pow(u.mult, i));
+    total += Math.floor(spent * 0.5); // возвращаем 50% потраченного
+  });
+  total += clickerData.prestige * 500; // бонус за престиж
+  return total;
+}
+
+// кнопка сброса
+document.getElementById('clicker-reset-btn').onclick = () => {
+  const reward = calcResetReward();
+  if (reward <= 0) return;
+  if (!confirm(`Сбросить прокачку? Получите +${reward.toLocaleString('ru-RU')} 🪙. Прокачка обнулится.`)) return;
+  clickerData.score += reward;
+  clickerData.levels = {}; // обнуляем все уровни
+  // престиж сохраняется — он навсегда
+  saveClicker();
+  showToast(`🔄 Прокачка сброшена! +${reward.toLocaleString('ru-RU')} 🪙`, 'success');
+  renderClicker();
+};
 
 // ── Фикс бага: Enter/Space на кнопке не должен спамить ──
 document.getElementById('clicker-btn').addEventListener('keydown', (e) => {
@@ -6529,9 +6613,24 @@ setInterval(() => {
 }, 1000);
 
 // открытие/закрытие
-document.getElementById('open-clicker-btn').onclick = () => {
+document.getElementById('open-clicker-btn').onclick = async () => {
   document.getElementById('clicker-overlay').style.display = 'block';
   renderClicker();
+  // Забираем монеты, выданные админкой
+  try {
+    const res = await fetch(`${BACKEND_URL}/clicker/sync`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken })
+    });
+    const d = await res.json();
+    if (d.status === 'ok' && d.bonus > 0) {
+      clickerData.score += d.bonus;
+      saveClicker();
+      renderClicker();
+      showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 🪙!`);
+    }
+  } catch (_) {}
 };
 document.getElementById('clicker-close-btn').onclick = () => {
   document.getElementById('clicker-overlay').style.display = 'none';

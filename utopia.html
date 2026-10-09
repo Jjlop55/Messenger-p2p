@@ -305,6 +305,8 @@
       <button class="start-btn" id="start-btn">В бой! ⚔️</button>
       <button class="start-btn" id="pvp-btn" style="background: linear-gradient(180deg, #818cf8, #6366f1); border-color: #a5b4fc; margin-top:10px; box-shadow: 0 6px 20px rgba(99,102,241,0.4);">🔍 Найти соперника (PvP)</button>
       <div id="pvp-status" style="color:#a5b4fc; font-size:13px; margin-top:8px; display:none;">⏳ Ищем соперника...</div>
+      <button id="exit-messenger-btn" style="display:none; margin-top:10px; padding:8px 18px; border-radius:10px; border:1px solid #555; background:rgba(255,255,255,.08); color:#ccc; font-size:13px; font-weight:700; cursor:pointer;">↩ В МЕССЕНДЖЕР</button>
+      <button id="mouse-mode-btn" style="margin-top:10px; padding:8px 18px; border-radius:10px; border:1px solid #ffd700; background:rgba(255,215,0,.12); color:#ffd700; font-size:13px; font-weight:700; cursor:pointer;">🖱 Управление: WASD+мышь</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -315,6 +317,12 @@
  * СИСТЕМА ОПРЕДЕЛЕНИЯ УСТРОЙСТВА (ПК VS СЕНСОРНЫЙ ТЕЛЕФОН)
  */
 let isTouchMode = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
+// Режим управления P1 на ПК: both | wasd | mouse
+var mouseControlMode = localStorage.getItem('utopia_mouse_mode') || 'both';
+function setMouseControlMode(mode) {
+  mouseControlMode = mode;
+  localStorage.setItem('utopia_mouse_mode', mode);
+}
 
 // Если игрок нажал любую клавишу клавиатуры — сразу фиксируем режим ПК
 window.addEventListener('keydown', () => {
@@ -329,6 +337,38 @@ window.addEventListener('touchstart', () => {
 /**
  * ПОЛНОЭКРАННЫЙ РЕЖИМ (ТОЛЬКО В МЕНЮ)
  */
+// ── Выход в мессенджер (кнопка в меню, только внутри iframe) ──
+function exitToMessenger() {
+  if (window.top !== window.self) {
+    if (window.top.closeGameFullscreen) window.top.closeGameFullscreen();
+    else if (window.top.closeGameModal) window.top.closeGameModal();
+  }
+}
+if (window.top !== window.self) {
+  const emBtn = document.getElementById('exit-messenger-btn');
+  if (emBtn) { emBtn.style.display = 'inline-block'; emBtn.onclick = exitToMessenger; }
+}
+
+// Кнопка режима управления P1
+(function initMouseModeBtn() {
+  const labels = {
+    both:  '🖱 Управление: WASD+мышь',
+    wasd:  '⌨️ Управление: только WASD',
+    mouse: '🖱 Управление: только мышка',
+  };
+  const btn = document.getElementById('mouse-mode-btn');
+  if (!btn) return;
+  function refresh() { btn.textContent = labels[mouseControlMode] || labels.both; }
+  btn.onclick = () => {
+    sfx.init();
+    const order = ['both', 'wasd', 'mouse'];
+    const i = order.indexOf(mouseControlMode);
+    setMouseControlMode(order[(i + 1) % order.length]);
+    refresh();
+  };
+  refresh();
+})();
+
 function toggleFullscreen() {
   const elem = document.documentElement;
   const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
@@ -1809,13 +1849,27 @@ window.addEventListener('keyup', (e) => {
 });
 
 function handleKeyboardInput() {
-  // 1. Игрок 1 (Красный): WASD + Пробел
+  // 1. Игрок 1 (Красный): WASD + Пробел | мышиный режим
   if (!p1.isBot) {
     let mx = 0, my = 0;
-    if (keys['KeyW']) my -= 1;
-    if (keys['KeyS']) my += 1;
-    if (keys['KeyA']) mx -= 1;
-    if (keys['KeyD']) mx += 1;
+
+    if (mouseControlMode !== 'wasd' && mouseP1.over && !isTouchMode) {
+      // курсор = взгляд: angle всегда на курсор
+      const dx = mouseP1.x - p1.x, dy = mouseP1.y - p1.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 4) p1.angle = Math.atan2(dy, dx);
+      // W = вперёд к курсору, S = назад, A/D = стрейф относительно курсора
+      if (keys['KeyW']) { mx += dx / (dist || 1); my += dy / (dist || 1); }
+      if (keys['KeyS']) { mx -= dx / (dist || 1); my -= dy / (dist || 1); }
+      if (keys['KeyA']) { mx += dy / (dist || 1); my -= dx / (dist || 1); }
+      if (keys['KeyD']) { mx -= dy / (dist || 1); my += dx / (dist || 1); }
+    } else if (mouseControlMode !== 'mouse') {
+      // классика: WASD
+      if (keys['KeyW']) my -= 1;
+      if (keys['KeyS']) my += 1;
+      if (keys['KeyA']) mx -= 1;
+      if (keys['KeyD']) mx += 1;
+    }
 
     if (mx !== 0 || my !== 0) {
       p1.moveX = mx;
@@ -1898,6 +1952,30 @@ function getTouchPos(t) {
     y: ((t.clientY - r.top) / r.height) * V_HEIGHT
   };
 }
+
+// ── Мышиное управление P1 (PC): курсор = взгляд, W = вперёд к курсору ──
+// mouseControlMode объявлен вверху файла (у isTouchMode)
+const mouseP1 = { x: V_WIDTH / 2, y: V_HEIGHT / 2, over: false };
+function getCanvasMousePos(e) {
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: ((e.clientX - r.left) / r.width) * V_WIDTH,
+    y: ((e.clientY - r.top) / r.height) * V_HEIGHT
+  };
+}
+canvas.addEventListener('mousemove', (e) => {
+  if (isTouchMode) return;
+  const pos = getCanvasMousePos(e);
+  mouseP1.x = pos.x; mouseP1.y = pos.y; mouseP1.over = true;
+});
+canvas.addEventListener('mouseleave', () => { mouseP1.over = false; });
+canvas.addEventListener('mousedown', (e) => {
+  if (isTouchMode) return;
+  sfx.init();
+  if (e.button === 0 && !p1.isBot) {
+    if (mouseControlMode !== 'wasd') p1.shootRequest = true;
+  }
+});
 
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
@@ -2129,12 +2207,13 @@ function drawHUD(c) {
       drawFireBtn(c, fireP2.x, fireP2.y, fireP2.r, '#3388ff', fireP2.touchId !== null);
     }
   } else {
-    // НА ПК: Сенсорные круги скрыты! Рисуем аккуратные клавиши управления
-    if (!p1.isBot) {
+    // НА ПК: аккуратные бейджи клавиш — только для живых игроков-людей
+    if (!p1.isBot && !pvpActive) {
       drawKeyBadge(c, 24, V_HEIGHT - 64, '#ff3333', 'КРАСНЫЙ', 'WASD', 'ПРОБЕЛ');
     }
     if (!p2.isBot && !pvpActive) {
-      drawKeyBadge(c, V_WIDTH - 240, V_HEIGHT - 64, '#3388ff', 'СИНИЙ', 'NUMPAD 8,4,5,6', 'NUM ENTER');
+      // компактный бейдж — не лезет на счёт и не сливается
+      drawKeyBadge(c, V_WIDTH - 190, V_HEIGHT - 64, '#3388ff', 'СИНИЙ', '8,4,5,6', 'ENTER');
     }
   }
 
@@ -2198,7 +2277,7 @@ function drawKeyBadge(c, x, y, col, player, moveKey, shootKey) {
   c.strokeStyle = col;
   c.lineWidth = 2;
   c.beginPath();
-  c.roundRect(x, y, 216, 52, 10);
+  c.roundRect(x, y, 175, 52, 10);
   c.fill();
   c.stroke();
 
@@ -2208,9 +2287,8 @@ function drawKeyBadge(c, x, y, col, player, moveKey, shootKey) {
   c.fillText(`🎮 ${player}:`, x + 10, y + 18);
 
   c.fillStyle = '#ffffff';
-  c.font = '700 12px Nunito';
-  c.fillText(`Ход: [${moveKey}]`, x + 10, y + 38);
-  c.fillText(`Огонь: [${shootKey}]`, x + 105, y + 38);
+  c.font = '700 11px Nunito';
+  c.fillText(`Ход: [${moveKey}]  Огонь: [${shootKey}]`, x + 10, y + 38);
   c.restore();
 }
 

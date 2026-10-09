@@ -251,6 +251,15 @@ CREATE TABLE IF NOT EXISTS mutes (
 """)
 
 cursor.execute("""
+CREATE TABLE IF NOT EXISTS clicker_grants (
+    nickname TEXT PRIMARY KEY,
+    bonus_coins INTEGER DEFAULT 0,
+    granted_by TEXT DEFAULT '',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS user_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nickname TEXT NOT NULL,
@@ -1096,6 +1105,15 @@ class AdminPermsData(BaseModel):
     admin_nick: str
     target_nick: str
     perms: dict
+
+class GiveCoinsData(BaseModel):
+    admin_nick: str
+    target_nick: str
+    amount: int
+
+class ClickerSyncData(BaseModel):
+    nickname: str
+    session_token: str
 
 class SupportTicketData(BaseModel):
     from_user: str
@@ -2453,6 +2471,50 @@ async def set_admin_permissions(data: AdminPermsData):
         conn.commit()
         await manager.send_to_user(data.target_nick, {"action": "admin_revoked", "revoked_by": data.admin_nick})
         return {"status": "ok", "msg": f"Все права у @{data.target_nick} отозваны!"}
+
+@app.post("/admin/give-coins")
+async def admin_give_coins(data: GiveCoinsData):
+    """Выдача клыкер-монет (грант) из админ-панели."""
+    require_admin(data.admin_nick)
+    if not data.target_nick or not data.amount:
+        return {"status": "error", "msg": "Укажите юзера и сумму!"}
+    amount = max(1, min(int(data.amount), 10**9))
+    cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
+    row = cursor.fetchone()
+    new_total = (row[0] if row else 0) + amount
+    if row:
+        cursor.execute("UPDATE clicker_grants SET bonus_coins=?, granted_by=?, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)",
+                       (new_total, data.admin_nick, data.target_nick))
+    else:
+        cursor.execute("INSERT INTO clicker_grants (nickname, bonus_coins, granted_by) VALUES (?,?,?)",
+                       (data.target_nick, new_total, data.admin_nick))
+    conn.commit()
+    return {"status": "ok", "msg": f"@{data.target_nick} получает {amount} 🪙 (всего грант: {new_total})."}
+
+@app.get("/admin/clicker-coins")
+def admin_get_clicker_coins(admin: str, target: str):
+    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute("SELECT bonus_coins, granted_by FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (target,))
+    r = cursor.fetchone()
+    return {"bonus_coins": (r[0] if r else 0), "granted_by": (r[1] if r else "")}
+
+@app.post("/clicker/sync")
+async def clicker_sync(data: ClickerSyncData):
+    """Клиент при открытии кликера забирает выданные админкой монеты."""
+    cursor.execute("SELECT session_token, nickname FROM user_sessions WHERE session_token=?", (data.session_token,))
+    sess = cursor.fetchone()
+    if not sess or sess[1].lower() != data.nickname.lower():
+        return {"status": "error", "bonus": 0}
+    cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
+    r = cursor.fetchone()
+    bonus = r[0] if r else 0
+    if bonus > 0:
+        cursor.execute("UPDATE clicker_grants SET bonus_coins=0, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
+        conn.commit()
+    return {"status": "ok", "bonus": bonus}
 
 # ═══════════════════════════════════════════════════════════
 #  ПОДДЕРЖКА (SUPPORT)

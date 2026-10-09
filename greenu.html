@@ -141,6 +141,59 @@
 
         #pcHintsBar { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.75); border: 1px solid rgba(255,255,255,0.25); border-radius: 20px; padding: 4px 18px; color: #ccc; font-size: 11px; display: flex; gap: 10px; z-index: 20; backdrop-filter: blur(4px); }
         .key-badge { background: #222; border: 1px solid #777; border-radius: 4px; padding: 1px 4px; color: #ffd700; font-weight: bold; }
+
+        /* ── Мобильные сенсорные кнопки ── */
+        #mobileControls { position: fixed; inset: 0; pointer-events: none; z-index: 200; display: none; }
+        #mobileControls.active { display: block; }
+        .mob-btn {
+            position: absolute; pointer-events: auto;
+            width: 64px; height: 64px; border-radius: 50%;
+            border: 2px solid rgba(0,255,170,0.7); background: rgba(0,0,0,0.55);
+            color: #fff; font-size: 22px; font-weight: 900;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 14px rgba(0,0,0,0.7); touch-action: none; user-select: none;
+        }
+        .mob-btn:active, .mob-btn.on { background: rgba(0,255,170,0.45); border-color: #fff; }
+        #mobJump { right: 18px; bottom: 110px; }
+        #mobFire { right: 100px; bottom: 46px; width: 80px; height: 80px; font-size: 30px; border-color: rgba(255,80,80,0.8); background: rgba(120,0,0,0.5); }
+        #mobFire.on { background: rgba(255,60,60,0.55); }
+        #mobSprint { right: 100px; bottom: 140px; font-size: 16px; }
+        #mobReload { right: 18px; bottom: 30px; font-size: 18px; }
+        #mobWeapon { right: 190px; bottom: 46px; font-size: 15px; width: 72px; height: 72px; }
+        #mobPause { left: 12px; top: 12px; width: 48px; height: 48px; font-size: 16px; z-index: 210; }
+        /* левый джойстик */
+        #mobJoyBase {
+            position: absolute; left: 24px; bottom: 28px; width: 120px; height: 120px;
+            border-radius: 50%; border: 2px solid rgba(255,255,255,0.35);
+            background: rgba(0,0,0,0.35); pointer-events: auto; touch-action: none;
+        }
+        #mobJoyStick {
+            position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+            border-radius: 50%; background: rgba(0,255,170,0.55); border: 2px solid #fff;
+            transform: translate(-50%, -50%); pointer-events: none;
+        }
+
+        /* ── Мобильный CSS: меню не «зумится» ── */
+        @media (max-width: 820px), (max-height: 500px) {
+            h1 { font-size: 1.7rem; letter-spacing: 3px; }
+            h2 { font-size: 1.35rem; }
+            .menu-btn { padding: 9px 18px; font-size: 11px; margin: 4px; letter-spacing: 1px; }
+            .wpn-card { padding: 7px 4px; font-size: 9px; }
+            .weapon-selector { max-width: 96%; gap: 5px; margin-bottom: 10px; }
+            .match-setup { flex-wrap: wrap; justify-content: center; gap: 10px; padding: 8px 12px; margin-bottom: 10px; }
+            .preset-btn { padding: 8px 14px; font-size: 13px; }
+            .count-btn, .ai-btn { width: 36px; height: 30px; font-size: 12px; }
+            .ai-btn { width: auto; padding: 0 7px; font-size: 10px; }
+            .match-badge { font-size: 13px; padding: 4px 10px; }
+            .settings-row { width: 92vw; font-size: 11px; padding: 7px 12px; }
+            .audio-status-box { width: 92vw; }
+            input[type="range"] { width: 90px; }
+            #staminaContainer { width: 55vw; bottom: 30px; }
+            #pcHintsBar { display: none; }
+            #minimap { width: 84px; height: 84px; top: 12px; left: 12px; }
+            #teamScoreUI { top: 88px; font-size: 11px; padding: 3px 12px; }
+            .guide-box { padding: 12px 14px; max-height: 92vh; }
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -193,11 +246,13 @@
             <div class="wpn-card" id="menuWpn7" onclick="selectWeapon(7)">[8] ПЛАЗМОГАН</div>
         </div>
 
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
             <button class="menu-btn" onclick="startGame(event)">В БОЙ</button>
             <button class="menu-btn" style="border-color:#818cf8; color:#a5b4fc;" onclick="pvpSearch(event)">🔍 PvP</button>
+            <button class="menu-btn" style="border-color:#3fb950; color:#3fb950;" onclick="openWeaponShop()">🛒 МАГАЗИН ОРУЖИЯ</button>
             <button class="menu-btn" style="border-color:#ffd700;" onclick="openGuide(event)">📖 СПРАВОЧНИК</button>
             <button class="menu-btn" onclick="openSettings('mainMenu', event)">⚙️ НАСТРОЙКИ</button>
+            <button class="menu-btn" id="exitMessengerBtn" style="display:none; border-color:#555; color:#ccc;" onclick="exitToMessenger()">↩ В МЕССЕНДЖЕР</button>
         </div>
         <div id="pvpStatus" style="color:#a5b4fc; font-size:13px; margin-top:8px; display:none; text-align:center;"></div>
     </div>
@@ -337,6 +392,7 @@
         <button class="menu-btn" style="border-color:#ffd700;" onclick="openGuide(event)">📖 СПРАВОЧНИК</button>
         <button class="menu-btn" onclick="openSettings('pauseMenu', event)">⚙️ НАСТРОЙКИ</button>
         <button class="menu-btn" style="border-color:#ff4444;" onclick="exitToMenu(event)">В ГЛАВНОЕ МЕНЮ</button>
+        <button class="menu-btn" id="pauseExitMessengerBtn" style="display:none; border-color:#555; color:#ccc;" onclick="exitToMessenger()">↩ В МЕССЕНДЖЕР</button>
     </div>
 
     <!-- ЭКРАН МАТЧА -->
@@ -348,6 +404,17 @@
     </div>
 
     <div id="crosshair"></div>
+
+    <!-- Мобильные сенсорные кнопки -->
+    <div id="mobileControls">
+        <div class="mob-btn" id="mobPause" ontouchstart="event.preventDefault(); pauseGame()">⏸</div>
+        <div id="mobJoyBase"><div id="mobJoyStick"></div></div>
+        <div class="mob-btn" id="mobJump">⬆</div>
+        <div class="mob-btn" id="mobSprint">💨</div>
+        <div class="mob-btn" id="mobFire">🔥</div>
+        <div class="mob-btn" id="mobReload">🔄</div>
+        <div class="mob-btn" id="mobWeapon">🔫</div>
+    </div>
 
     <div id="hud">
         <canvas id="minimap" width="130" height="130"></canvas>
@@ -563,6 +630,123 @@
         let reloadDuration = 0;
         let isFireBtnPressed = false; 
         let semiAutoLock = false;
+
+        // ── Разблокировка оружия: только пистолет (0) и плазмоган (7) по умолчанию ──
+        let gvOwnedWeapons = [0, 7]; // индексы купленного оружия
+        try {
+            const saved = JSON.parse(localStorage.getItem('gv_weapons') || 'null');
+            if (Array.isArray(saved) && saved.length) gvOwnedWeapons = saved;
+        } catch (_) {}
+        function gvSaveWeapons() { try { localStorage.setItem('gv_weapons', JSON.stringify(gvOwnedWeapons)); } catch (_) {} }
+        function gvHasWeapon(idx) { return gvOwnedWeapons.indexOf(idx) >= 0; }
+        // Монеты Green Valley (синхронизируются с кликером через localStorage)
+        function gvGetCoins() { return parseInt(localStorage.getItem('utopia_clicker_score') || '0', 10) || 0; }
+        function gvAddCoins(n) {
+            // читаем текущий счёт кликера
+            try {
+                const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}');
+                c.score = (c.score || 0) + n;
+                localStorage.setItem('utopia_clicker', JSON.stringify(c));
+            } catch (_) {}
+        }
+        function gvSpendCoins(n) {
+            try {
+                const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}');
+                if ((c.score || 0) < n) return false;
+                c.score -= n;
+                localStorage.setItem('utopia_clicker', JSON.stringify(c));
+                return true;
+            } catch (_) { return false; }
+        }
+
+        // Каталог оружия для магазина
+        const GV_WEAPON_SHOP = [
+            { idx: 1, name: 'АВТОМАТ',     emoji: '🔫', cost: 2000,  desc: '30 патронов, средний урон, автоогонь' },
+            { idx: 2, name: 'ДРОБОВИК',    emoji: '💥', cost: 3500,  desc: '8 патронов, огромный урон вблизи' },
+            { idx: 4, name: 'НОЖИ',        emoji: '🔪', cost: 1500,  desc: 'Бесконечные ножи, метание' },
+            { idx: 5, name: 'СНАЙПЕРКА',   emoji: '🎯', cost: 8000,  desc: '1 патрон, x10 урона, перезарядка 15с' },
+            { idx: 6, name: 'РПГ',         emoji: '🚀', cost: 12000, desc: '1 ракета, взрывной урон, перезарядка 15с' },
+        ];
+
+        // ── Магазин оружия ──
+        function openWeaponShop() {
+            let ov = document.getElementById('weaponShopOverlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'weaponShopOverlay';
+                ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;z-index:301;font-family:Arial,sans-serif;';
+                document.body.appendChild(ov);
+            }
+            renderWeaponShop();
+            ov.style.display = 'flex';
+        }
+        function closeWeaponShop() {
+            const ov = document.getElementById('weaponShopOverlay');
+            if (ov) ov.style.display = 'none';
+        }
+        function renderWeaponShop() {
+            const ov = document.getElementById('weaponShopOverlay');
+            if (!ov) return;
+            const coins = gvGetCoins();
+            let html = '<div style="background:#0d1a12;border:2px solid #3fb950;border-radius:14px;padding:18px 20px;max-width:440px;width:92%;max-height:86vh;overflow-y:auto;">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+                + '<div style="color:#3fb950;font-weight:900;font-size:17px;">🛒 МАГАЗИН ОРУЖИЯ</div>'
+                + '<div style="color:#ffd700;font-weight:800;font-size:14px;">🪙 ' + coins.toLocaleString('ru-RU') + '</div>'
+                + '</div>'
+                + '<div style="color:#888;font-size:11px;margin-bottom:12px;">Пистолет и плазмоган бесплатны. Остальное — за монеты клыкера. Монеты общие с клыкером.</div>';
+            GV_WEAPON_SHOP.forEach(w => {
+                const owned = gvHasWeapon(w.idx);
+                const canBuy = !owned && coins >= w.cost;
+                const short = !owned ? w.cost - coins : 0;
+                html += '<div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);border:1px solid ' + (owned ? '#3fb950' : 'rgba(255,255,255,.15)') + ';border-radius:10px;padding:10px 12px;margin-bottom:8px;">'
+                    + '<div style="font-size:26px;">' + w.emoji + '</div>'
+                    + '<div style="flex:1;">'
+                    + '<div style="color:#fff;font-weight:800;font-size:13px;">' + w.name + '</div>'
+                    + '<div style="color:#999;font-size:11px;">' + w.desc + '</div>';
+                if (owned) {
+                    html += '<div style="color:#3fb950;font-size:12px;font-weight:700;margin-top:3px;">✔ Куплено</div>';
+                } else {
+                    html += '<div style="color:' + (canBuy ? '#ffd700' : '#ff7070') + ';font-size:12px;font-weight:700;margin-top:3px;">'
+                        + '🪙 ' + w.cost.toLocaleString('ru-RU')
+                        + (canBuy ? '' : ' <span style="color:#ff7070;">(не хватает ' + short.toLocaleString('ru-RU') + ')</span>')
+                        + '</div>';
+                }
+                html += '</div>';
+                if (!owned) {
+                    html += '<button data-widx="' + w.idx + '" class="gv-shop-buy" style="padding:7px 12px;border-radius:8px;border:2px solid ' + (canBuy ? '#3fb950' : '#555') + ';background:' + (canBuy ? 'rgba(63,185,80,.25)' : 'rgba(80,80,80,.3)') + ';color:' + (canBuy ? '#3fb950' : '#777') + ';font-weight:800;font-size:12px;cursor:' + (canBuy ? 'pointer' : 'not-allowed') + ';" ' + (canBuy ? '' : 'disabled') + '>Купить</button>';
+                }
+                html += '</div>';
+            });
+            html += '<button onclick="closeWeaponShop()" style="width:100%;padding:10px;margin-top:8px;border-radius:10px;border:1px solid #555;background:rgba(255,255,255,.08);color:#ccc;font-weight:700;cursor:pointer;">✕ Закрыть</button></div>';
+            ov.innerHTML = html;
+            ov.querySelectorAll('.gv-shop-buy').forEach(btn => {
+                btn.onclick = () => buyWeapon(parseInt(btn.dataset.widx, 10));
+            });
+        }
+        function buyWeapon(idx) {
+            const w = GV_WEAPON_SHOP.find(x => x.idx === idx);
+            if (!w || gvHasWeapon(idx)) return;
+            if (!gvSpendCoins(w.cost)) { renderWeaponShop(); return; }
+            gvOwnedWeapons.push(idx);
+            gvSaveWeapons();
+            // подсветка в меню оружия
+            const card = document.getElementById('menuWpn' + idx);
+            if (card) { card.style.borderColor = '#3fb950'; card.style.opacity = '1'; }
+            showNotify('🛒 ' + w.name + ' КУПЛЕНО!');
+            renderWeaponShop();
+            updateWeaponMenuLocks();
+        }
+        function updateWeaponMenuLocks() {
+            for (let i = 0; i < 8; i++) {
+                const card = document.getElementById('menuWpn' + i);
+                if (!card) continue;
+                if (gvHasWeapon(i)) { card.style.opacity = '1'; card.style.filter = 'none'; }
+                else { card.style.opacity = '0.45'; card.style.filter = 'grayscale(.7)'; }
+            }
+        }
+        // блокировка незакупленного оружия при загрузке
+        document.addEventListener('DOMContentLoaded', updateWeaponMenuLocks);
+        if (document.readyState !== 'loading') updateWeaponMenuLocks();
 
         let playerHp = 100; const maxPlayerHp = 100;
         let velocityY = 0; let isGrounded = true; const gravity = -24; const jumpForce = 10;
@@ -1034,9 +1218,9 @@
             isReloading = true; 
             reloadTimer = 0; 
             
-            // ВИНТОВКА 20 СЕК, РПГ 70 СЕК
-            if (currentWeapon === 5) reloadDuration = 20.0;
-            else if (currentWeapon === 6) reloadDuration = 70.0;
+            // СНАЙПЕРКА 15 СЕК, РПГ 15 СЕК, НОЖИ 6 СЕК
+            if (currentWeapon === 5) reloadDuration = 15.0;
+            else if (currentWeapon === 6) reloadDuration = 15.0;
             else if (currentWeapon === 4) reloadDuration = 6.0;
             else reloadDuration = 2.0;
 
@@ -1866,6 +2050,7 @@
             isSpectator = false;
             document.getElementById('spectatorHUD').style.display = 'none';
             document.getElementById('crosshair').style.display = (currentWeapon !== 3 && currentWeapon !== 4) ? 'block' : 'none';
+            mobControls(true);
 
             playerHp = maxPlayerHp;
             stamina = maxStamina;
@@ -1895,6 +2080,8 @@
 
         function checkRoundEnd() {
             if (roundEnding) return;
+            // PvP: раунды и «победа по отсутствию ботов» не действуют
+            if (pvpActive) return;
 
             let aliveBlues = (playerHp > 0 ? 1 : 0) + bots.filter(b => b.team === 'ally' && b.hp > 0).length;
             let aliveReds = bots.filter(b => b.team === 'enemy' && b.hp > 0).length;
@@ -1995,8 +2182,14 @@
                 showNotify(`ИДЁТ ПЕРЕЗАРЯДКА! ПОДОЖДИТЕ ЕЩЁ ${remaining} СЕК.`);
                 return;
             }
-
-            currentWeapon = (index + 8) % 8;
+            // Проверка разблокировки оружия
+            const wIdx = (index + 8) % 8;
+            if (!gvHasWeapon(wIdx)) {
+                showNotify(`${weaponNames[wIdx]} ЗАБЛОКИРОВАНО! КУПИТЕ В МАГАЗИНЕ ОРУЖИЯ.`);
+                openWeaponShop();
+                return;
+            }
+            currentWeapon = wIdx;
             for(let i=0; i<8; i++) {
                 let m = document.getElementById('menuWpn'+i); if(m) m.classList.remove('active');
             }
@@ -2054,6 +2247,7 @@
 
             changeScreen('mainMenu', 'none'); 
             changeScreen('hud', 'block'); 
+            mobControls(true);
             document.getElementById('crosshair').style.display = (currentWeapon !== 3 && currentWeapon !== 4) ? 'block' : 'none'; 
             document.getElementById('playerUIHPContainer').style.display = 'block'; 
             document.getElementById('teamScoreUI').style.display = 'block';
@@ -2115,6 +2309,7 @@
             changeScreen('matchEndScreen', 'none');
             changeScreen('pauseMenu', 'none'); 
             changeScreen('hud', 'none'); 
+            mobControls(false);
             document.getElementById('crosshair').style.display='none'; 
             document.getElementById('playerUIHPContainer').style.display = 'none'; 
             if (document.exitPointerLock) document.exitPointerLock();
@@ -2254,6 +2449,135 @@
                 }
             });
 
+            // ── Сенсорное управление (телефоны/планшеты) ──
+            (function setupTouchControls() {
+                const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+                if (!isTouch) return;
+                const mc = document.getElementById('mobileControls');
+                const joyBase = document.getElementById('mobJoyBase');
+                const joyStick = document.getElementById('mobJoyStick');
+                if (!mc) return;
+                mc.classList.add('active');
+                let joyTouchId = null, joyCX = 0, joyCY = 0, joyDX = 0, joyDY = 0;
+                const JOY_R = 44;
+                let lookTouchId = null, lookLastX = 0, lookLastY = 0;
+                let sprintOn = false;
+
+                function setKey(code, down) { keys[code] = down; }
+
+                joyBase.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const t = e.changedTouches[0];
+                    joyTouchId = t.identifier;
+                    const r = joyBase.getBoundingClientRect();
+                    joyCX = r.left + r.width / 2; joyCY = r.top + r.height / 2;
+                }, { passive: false });
+
+                joyBase.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    for (const t of e.changedTouches) {
+                        if (t.identifier !== joyTouchId) continue;
+                        joyDX = Math.max(-1, Math.min(1, (t.clientX - joyCX) / JOY_R));
+                        joyDY = Math.max(-1, Math.min(1, (t.clientY - joyCY) / JOY_R));
+                        joyStick.style.transform = `translate(calc(-50% + ${joyDX * JOY_R}px), calc(-50% + ${joyDY * JOY_R}px))`;
+                        setKey('KeyW', joyDY < -0.25);
+                        setKey('KeyS', joyDY > 0.25);
+                        setKey('KeyA', joyDX < -0.25);
+                        setKey('KeyD', joyDX > 0.25);
+                    }
+                }, { passive: false });
+
+                function joyEnd(e) {
+                    for (const t of e.changedTouches) {
+                        if (t.identifier !== joyTouchId) continue;
+                        joyTouchId = null; joyDX = 0; joyDY = 0;
+                        joyStick.style.transform = 'translate(-50%, -50%)';
+                        setKey('KeyW', false); setKey('KeyS', false);
+                        setKey('KeyA', false); setKey('KeyD', false);
+                    }
+                }
+                joyBase.addEventListener('touchend', joyEnd);
+                joyBase.addEventListener('touchcancel', joyEnd);
+
+                // Обзор: свайп по экрану (кроме кнопок и джойстика)
+                const lookArea = document.body;
+                lookArea.addEventListener('touchstart', (e) => {
+                    if (!isGameRunning || isSpectator) return;
+                    const tgt = e.target;
+                    if (tgt.closest && (tgt.closest('.mob-btn') || tgt.closest('#mobJoyBase'))) return;
+                    const t = e.changedTouches[0];
+                    if (lookTouchId === null) {
+                        lookTouchId = t.identifier;
+                        lookLastX = t.clientX; lookLastY = t.clientY;
+                    }
+                }, { passive: true });
+
+                lookArea.addEventListener('touchmove', (e) => {
+                    if (lookTouchId === null) return;
+                    for (const t of e.changedTouches) {
+                        if (t.identifier !== lookTouchId) continue;
+                        const dx = t.clientX - lookLastX, dy = t.clientY - lookLastY;
+                        lookLastX = t.clientX; lookLastY = t.clientY;
+                        if (isGameRunning && !isSpectator) {
+                            playerRotation.yaw -= dx * 0.005;
+                            playerRotation.pitch -= dy * 0.005;
+                            playerRotation.pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, playerRotation.pitch));
+                        }
+                    }
+                }, { passive: true });
+
+                lookArea.addEventListener('touchend', (e) => {
+                    for (const t of e.changedTouches) {
+                        if (t.identifier === lookTouchId) { lookTouchId = null; break; }
+                    }
+                });
+                lookArea.addEventListener('touchcancel', (e) => {
+                    for (const t of e.changedTouches) {
+                        if (t.identifier === lookTouchId) { lookTouchId = null; break; }
+                    }
+                });
+
+                // Прыжок
+                const jb = document.getElementById('mobJump');
+                jb.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); }, { passive: false });
+
+                // Спринт — тумблер (нажал — бежит, нажал — стоп)
+                const sb = document.getElementById('mobSprint');
+                sb.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    sprintOn = !sprintOn;
+                    setKey('ShiftLeft', sprintOn);
+                    sb.classList.toggle('on', sprintOn);
+                }, { passive: false });
+
+                // Огонь — зажатая кнопка
+                const fb = document.getElementById('mobFire');
+                fb.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (!isGameRunning || isSpectator) return;
+                    isFireBtnPressed = true; semiAutoLock = false;
+                    fb.classList.add('on');
+                    processShooting();
+                }, { passive: false });
+                function fireOff() { isFireBtnPressed = false; semiAutoLock = false; fb.classList.remove('on'); }
+                fb.addEventListener('touchend', fireOff);
+                fb.addEventListener('touchcancel', fireOff);
+
+                // Перезарядка
+                document.getElementById('mobReload').addEventListener('touchstart', (e) => {
+                    e.preventDefault(); startReload();
+                }, { passive: false });
+
+                // Смена оружия — цикл по купленному
+                document.getElementById('mobWeapon').addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    for (let i = 1; i <= 8; i++) {
+                        const nxt = (currentWeapon + i) % 8;
+                        if (gvHasWeapon(nxt)) { selectWeapon(nxt); break; }
+                    }
+                }, { passive: false });
+            })();
+
             document.addEventListener('pointerlockchange', () => {
                 if (document.pointerLockElement !== document.body && isGameRunning) {
                     pauseGame();
@@ -2323,6 +2647,7 @@
                     document.getElementById('reloadBarContainer').style.display = 'none';
                     document.getElementById('crosshair').style.display = 'none';
                     document.getElementById('spectatorHUD').style.display = 'block';
+                    mobControls(false);
                     showNotify("ВЫ ПОГИБЛИ! РЕЖИМ НАБЛЮДАТЕЛЯ");
                 }
             }
@@ -2944,7 +3269,7 @@
                             if (bot.ammo <= 0) {
                                 bot.isReloading = true;
                                 bot.reloadTimer = 0;
-                                bot.reloadDuration = (bot.currentWeapon === 5) ? 20.0 : ((bot.currentWeapon === 6) ? 70.0 : 2.2);
+                                bot.reloadDuration = (bot.currentWeapon === 5) ? 20.0 : ((bot.currentWeapon === 6) ? 15.0 : 2.2);
                             }
                         }
                     }
@@ -3051,7 +3376,7 @@
                     status.textContent = `⚔️ Матч #${pvpMatchId} — подключаемся...`;
                     setTimeout(() => pvpStart(), 400);
                 } else {
-                    pvpWs.send(JSON.stringify({ action: 'queue', game: 'utopia' }));
+                    pvpWs.send(JSON.stringify({ action: 'queue', game: 'greenu' }));
                     status.textContent = '⏳ Ищем соперника...';
                 }
             };
@@ -3072,7 +3397,7 @@
         function pvpHandle(d) {
             const status = document.getElementById('pvpStatus');
             if (d.action === 'lobby_state' || d.action === 'my_stats') return;
-            if (d.action === 'queued') { status.textContent = `⏳ Ищем... (${d.title || 'Утопия'})`; return; }
+            if (d.action === 'queued') { status.textContent = `⏳ Ищем соперника... (${d.title || 'Green Valley'})`; return; }
             if (d.action === 'game_found') {
                 pvpMatchId = d.id; pvpOppNick = d.opp;
                 pvpMyColor = d.my_color || 'red';
@@ -3154,6 +3479,7 @@
                 isSpectator = false;
                 isGameRunning = true;
                 pvpActive = true;
+                mobControls(true);
                 clock.getDelta();
                 requestGamePointerLock();
             });
@@ -3252,6 +3578,26 @@
                     }));
                 }
             }
+        }
+
+        // ── Выход в мессенджер: кнопка в меню/паузе, только внутри iframe ──
+        function exitToMessenger() {
+            isGameRunning = false;
+            try { pvpCancel(); } catch (_) {}
+            if (window.top !== window.self) {
+                if (window.top.closeGameFullscreen) window.top.closeGameFullscreen();
+                else if (window.top.closeGameModal) window.top.closeGameModal();
+            }
+        }
+        function mobControls(show) {
+            const mc = document.getElementById('mobileControls');
+            if (mc) mc.classList.toggle('active', !!show);
+        }
+        if (window.top !== window.self) {
+            const em = document.getElementById('exitMessengerBtn');
+            const pem = document.getElementById('pauseExitMessengerBtn');
+            if (em) em.style.display = 'inline-block';
+            if (pem) pem.style.display = 'inline-block';
         }
 
         // если открыто из мессенджера (iframe) — сразу подключаемся
