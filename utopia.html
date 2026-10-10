@@ -1918,8 +1918,9 @@ function handleKeyboardInput() {
     let mx = 0, my = 0;
 
     if (mouseControlMode !== 'wasd' && mouseP1.over && !isTouchMode) {
-      // курсор = взгляд: angle всегда на курсор
-      const dx = mouseP1.x - p1.x, dy = mouseP1.y - p1.y;
+      // курсор = взгляд: angle всегда на курсор (в flag-режиме — конвертация экран → мир)
+      const m = mouseScreenToWorld(mouseP1.x, mouseP1.y);
+      const dx = m.x - p1.x, dy = m.y - p1.y;
       const dist = Math.hypot(dx, dy);
       if (dist > 4) p1.angle = Math.atan2(dy, dx);
       // W = вперёд к курсору, S = назад, A/D = стрейф относительно курсора
@@ -2020,6 +2021,13 @@ function getTouchPos(t) {
 // ── Мышиное управление P1 (PC): курсор = взгляд, W = вперёд к курсору ──
 // mouseControlMode объявлен вверху файла (у isTouchMode)
 const mouseP1 = { x: V_WIDTH / 2, y: V_HEIGHT / 2, over: false };
+// Камера левой половины сплит-скрина (режим flag) — для конвертации экранных координат мыши в мировые
+const FLAG_ZOOM = 0.85;
+let flagCamX1 = 0, flagCamY1 = 0;
+function mouseScreenToWorld(sx, sy) {
+  if (currentGameMode !== 'flag') return { x: sx, y: sy };
+  return { x: flagCamX1 + sx / FLAG_ZOOM, y: flagCamY1 + sy / FLAG_ZOOM };
+}
 function getCanvasMousePos(e) {
   const r = canvas.getBoundingClientRect();
   return {
@@ -2487,6 +2495,7 @@ function loop() {
     let camY1 = p1.y - viewH / 2;
     camX1 = Math.max(0, Math.min(MAZE_BOUNDS.w - viewW, camX1));
     camY1 = Math.max(0, Math.min(MAZE_BOUNDS.h - viewH, camY1));
+    flagCamX1 = camX1; flagCamY1 = camY1;
 
     ctx.scale(zoom, zoom);
     ctx.translate(-camX1, -camY1);

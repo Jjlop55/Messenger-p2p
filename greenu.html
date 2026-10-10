@@ -546,7 +546,13 @@
             document.getElementById('matchBadge').innerText = `${n} VS ${n}`;
             // Оружие по умолчанию для пресета: 1v1 → дробовик, 2v2 → автомат, 3v3 → плазмоган
             const defaultWpn = (n === 1) ? 2 : (n === 2) ? 1 : 7;
-            selectWeapon(defaultWpn);
+            if (gvHasWeapon(defaultWpn)) {
+                selectWeapon(defaultWpn);
+            } else {
+                let fallback = -1;
+                for (let i = 0; i < 8; i++) if (gvHasWeapon(i)) { fallback = i; break; }
+                if (fallback >= 0) selectWeapon(fallback);
+            }
         }
 
         function setPresetRandom() {
@@ -1247,7 +1253,8 @@
                 hasHealed: false, pathTarget: null, pathUpdateTimer: 0,
                 doorOpenCooldown: 0, doorHaltTimer: 0,
                 energy: 100, maxEnergy: 100, waitingForEnergy: false,
-                velocity: new THREE.Vector3(), prevPos: botGroup.position.clone()
+                velocity: new THREE.Vector3(), prevPos: botGroup.position.clone(),
+                velocityY: 0, jumpCooldown: 0
             });
         }
 
@@ -2272,8 +2279,7 @@
             // Проверка разблокировки оружия
             const wIdx = (index + 8) % 8;
             if (!gvHasWeapon(wIdx)) {
-                showNotify(`${weaponNames[wIdx]} ЗАБЛОКИРОВАНО! КУПИТЕ В МАГАЗИНЕ ОРУЖИЯ.`);
-                openWeaponShop();
+                showNotify(`${weaponNames[wIdx]} ЗАБЛОКИРОВАНО! ОТКРОЙТЕ «🛒 МАГАЗИН ОРУЖИЯ».`);
                 return;
             }
             currentWeapon = wIdx;
@@ -2367,6 +2373,7 @@
             isGameRunning = false; 
             changeScreen('pauseMenu', 'flex'); 
             document.getElementById('crosshair').style.display='none';
+            mobControls(false);
             if (document.exitPointerLock) document.exitPointerLock();
         }
 
@@ -2375,6 +2382,7 @@
             changeScreen('pauseMenu', 'none'); 
             document.getElementById('crosshair').style.display = (currentWeapon !== 3 && currentWeapon !== 4) ? 'block' : 'none'; 
             isGameRunning = true; 
+            mobControls(true);
             clock.getDelta(); 
             requestGamePointerLock();
         }
@@ -2550,7 +2558,7 @@
 
             // ── Сенсорное управление (телефоны/планшеты) ──
             (function setupTouchControls() {
-                const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+                const isTouch = window.matchMedia('(pointer: coarse)').matches;
                 if (!isTouch) return;
                 const mc = document.getElementById('mobileControls');
                 const joyBase = document.getElementById('mobJoyBase');
@@ -3054,7 +3062,11 @@
             bots.forEach((bot) => {
                 if (bot.hp <= 0) return;
 
-                bot.mesh.position.y = 1.1;
+                // ГРАВИТАЦИЯ/ПРЫЖКИ (pro-боты прыгают при стрейфе и уклонении от ракет)
+                if (bot.jumpCooldown > 0) bot.jumpCooldown -= delta;
+                bot.velocityY += gravity * delta;
+                bot.mesh.position.y += bot.velocityY * delta;
+                if (bot.mesh.position.y <= 1.1) { bot.mesh.position.y = 1.1; bot.velocityY = 0; }
                 if (bot.doorOpenCooldown > 0) bot.doorOpenCooldown -= delta;
 
                 if (delta > 0.001) {
@@ -3086,6 +3098,11 @@
                     const side = new THREE.Vector3(-rdir.z, 0, rdir.x);
                     const dodgeSpd = (bot.diff === 'noob' ? 4 : (bot.diff === 'mid' ? 7.5 : 10));
                     moveBotBy(bot.mesh.position, side, dodgeSpd * delta);
+                    // PRO дополнительно перепрыгивает ракету
+                    if (bot.diff === 'pro' && bot.velocityY === 0 && bot.jumpCooldown <= 0) {
+                        bot.velocityY = 9;
+                        bot.jumpCooldown = 1.5;
+                    }
                 }
 
                 // ЭНЕРГИЯ БОТА: восстановление как у игрока (100/15 сек)
@@ -3356,6 +3373,11 @@
                         } else {
                             // Оптимальная дистанция — стрейф с переменным ритмом
                             moveBotBy(bot.mesh.position, rightVec, bot.strafeDir * (strSpd + 1.5) * delta);
+                            // PRO: случайные прыжки при стрейфе — сложнее попасть
+                            if (bot.diff === 'pro' && bot.velocityY === 0 && bot.jumpCooldown <= 0 && Math.random() < delta * 0.7) {
+                                bot.velocityY = 8.5;
+                                bot.jumpCooldown = 1.2 + Math.random() * 1.5;
+                            }
                         }
 
                         // Скорострельность: PRO быстрее стреляет. mid/noob — подурезано
@@ -3436,7 +3458,7 @@
                 }
 
                 resolveEntityCollisions(bot.mesh.position, 0.6);
-                bot.mesh.position.y = 1.1; 
+                if (bot.mesh.position.y < 1.1) bot.mesh.position.y = 1.1;
             });
 
             for (let i = bots.length - 1; i >= 0; i--) {
@@ -3464,6 +3486,7 @@
 
             // PvP: отправка стейта и позиционирование HP-бара соперника
             if (pvpActive) {
+                updatePvPInterpolation(delta);
                 pvpSendState();
                 if (pvpOppMesh && pvpOppMesh.visible && pvpOppMesh.userData && pvpOppMesh.userData.ui) {
                     projectToScreen(pvpOppMesh.position, pvpOppMesh.userData.ui, 2.3);
@@ -3686,23 +3709,64 @@
             }
             if (pvpWs) { try { pvpWs.send(JSON.stringify({ action: 'unqueue' })); } catch(_){} pvpWs.close(); pvpWs = null; }
             pvpActive = false; pvpMatchId = null;
+            pvpOppTarget = null; pvpOppTargetYaw = null;
         }
 
+        let pvpOppTarget = null; // {x, z} — целевая позиция для интерполяции
+        let pvpOppTargetYaw = null;
+        // Смена 3D-оружия у модели соперника (данные приходят из pvpSendState)
+        function updatePvPOpponentWeapon(idx) {
+            if (!pvpOppMesh || !pvpOppMesh.userData || !pvpOppMesh.userData.parts) return;
+            const ud = pvpOppMesh.userData;
+            if (ud.weaponIdx === idx) return;
+            ud.weaponIdx = idx;
+            if (ud.wpnMesh) ud.parts.rightHandMount.remove(ud.wpnMesh);
+            ud.wpnMesh = createWeaponMesh(idx);
+            ud.wpnMesh.position.set(0, 0, 0);
+            ud.parts.rightHandMount.add(ud.wpnMesh);
+        }
         function pvpApplyState(s) {
             if (!pvpOppMesh) return;
             if (typeof s.hp === 'number') pvpOppHp = s.hp;
-            if (s.alive === false && pvpOppAlive) { pvpOppAlive = false; pvpOppMesh.visible = false; }
-            if (s.alive === true && !pvpOppAlive) { pvpOppAlive = true; pvpOppMesh.visible = true; pvpOppMesh.position.set(0, 1.1, -50); }
-            if (s.x !== undefined && s.z !== undefined) {
-                // интерполяция
-                pvpOppMesh.position.x += (s.x - pvpOppMesh.position.x) * 0.3;
-                pvpOppMesh.position.z += (s.z - pvpOppMesh.position.z) * 0.3;
+            if (s.alive === false && pvpOppAlive) { pvpOppAlive = false; pvpOppMesh.visible = false; pvpOppTarget = null; }
+            if (s.alive === true && !pvpOppAlive) {
+                pvpOppAlive = true; pvpOppMesh.visible = true;
+                pvpOppMesh.position.set(0, 1.1, -50);
+                pvpOppTarget = null;
             }
-            if (typeof s.yaw === 'number') pvpOppMesh.rotation.y = s.yaw;
+            if (s.x !== undefined && s.z !== undefined) {
+                // запоминаем цель — плавно двигаем в игровом цикле (см. updatePvPInterpolation)
+                if (!pvpOppTarget) {
+                    pvpOppTarget = { x: s.x, z: s.z };
+                    pvpOppMesh.position.x = s.x;
+                    pvpOppMesh.position.z = s.z;
+                } else {
+                    pvpOppTarget.x = s.x;
+                    pvpOppTarget.z = s.z;
+                }
+            }
+            if (typeof s.yaw === 'number') pvpOppTargetYaw = s.yaw;
+            if (typeof s.weapon === 'number') updatePvPOpponentWeapon(s.weapon);
             // HP-бар
             if (pvpOppMesh.userData && pvpOppMesh.userData.bar) {
                 pvpOppMesh.userData.bar.style.width = Math.max(0, pvpOppHp) + '%';
                 pvpOppMesh.userData.txt.innerText = Math.round(Math.max(0, pvpOppHp));
+            }
+        }
+
+        // Плавная интерполяция позиции/поворота соперника в каждом кадре
+        function updatePvPInterpolation(delta) {
+            if (!pvpOppMesh || !pvpOppAlive) return;
+            if (pvpOppTarget) {
+                const k = Math.min(1, delta * 12);
+                pvpOppMesh.position.x += (pvpOppTarget.x - pvpOppMesh.position.x) * k;
+                pvpOppMesh.position.z += (pvpOppTarget.z - pvpOppMesh.position.z) * k;
+            }
+            if (typeof pvpOppTargetYaw === 'number') {
+                // нормировка угла по ±π — берём кратчайший путь, без «перекручивания»
+                let diff = pvpOppTargetYaw - pvpOppMesh.rotation.y;
+                diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+                pvpOppMesh.rotation.y += diff * Math.min(1, delta * 14);
             }
         }
 
@@ -3752,7 +3816,7 @@
         function mobControls(show) {
             const mc = document.getElementById('mobileControls');
             if (!mc) return;
-            const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            const isTouch = window.matchMedia('(pointer: coarse)').matches;
             if (!isTouch) { mc.classList.remove('active'); return; }
             mc.classList.toggle('active', !!show);
         }
