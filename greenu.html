@@ -556,8 +556,10 @@
             document.querySelectorAll('#presetSelector .preset-btn').forEach(b => b.classList.remove('active'));
             document.querySelector('#presetSelector .random').classList.add('active');
             document.getElementById('matchBadge').innerText = `${n} VS ${n}`;
-            // Случайное оружие
-            selectWeapon(Math.floor(Math.random() * 8));
+            // Случайное оружие — только из купленного
+            const owned = [];
+            for (let i = 0; i < 8; i++) if (gvHasWeapon(i)) owned.push(i);
+            if (owned.length) selectWeapon(owned[Math.floor(Math.random() * owned.length)]);
         }
 
         function setAiDiff(team, diff) {
@@ -804,8 +806,17 @@
         function changeScreen(id, displayType) { document.getElementById(id).style.display = displayType; }
         
         function toggleFullScreen() { 
-            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(()=>{}); } 
-            else { if (document.exitFullscreen) document.exitFullscreen(); } 
+            const inIframe = window.top !== window.self;
+            const topDoc = inIframe ? window.top.document : document;
+            const isFs = Boolean(topDoc.fullscreenElement || topDoc.webkitFullscreenElement);
+            if (!isFs) {
+                const el = inIframe ? window.top.document.documentElement : document.documentElement;
+                if (el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+                else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            } else {
+                if (topDoc.exitFullscreen) topDoc.exitFullscreen().catch(()=>{});
+                else if (topDoc.webkitExitFullscreen) topDoc.webkitExitFullscreen();
+            }
         }
 
         function requestGamePointerLock() {
@@ -1139,12 +1150,12 @@
             document.getElementById('hud').appendChild(uiContainer);
             
             hittableObjects.push(charParts.torso, charParts.head);
-            // Расширенный невидимый хитбокс — чтобы попадания работали на расстоянии
+            // Точный хитбокс под модель персонажа
             const bigHitbox = new THREE.Mesh(
-                new THREE.BoxGeometry(1.0, 1.8, 0.8),
+                new THREE.BoxGeometry(0.7, 1.7, 0.5),
                 new THREE.MeshBasicMaterial({ visible: false })
             );
-            bigHitbox.position.set(0, 1.1, 0);
+            bigHitbox.position.set(0, 1.0, 0);
             botGroup.add(bigHitbox);
             charParts.bigHitbox = bigHitbox;
             hittableObjects.push(bigHitbox);
@@ -1809,17 +1820,17 @@
             });
         }
 
-        function toggleBunkerDoor(door) {
+        function toggleBunkerDoor(door, silent) {
             door.isOpen = !door.isOpen;
             playDoorSound();
             if (door.isOpen) {
                 staticColliders = staticColliders.filter(c => c !== door.collider);
                 wallMeshes = wallMeshes.filter(m => m !== door.mesh);
-                showNotify("ДВЕРЬ ОТКРЫТА (-15% ЭНЕРГИИ)!");
+                if (!silent) showNotify("ДВЕРЬ ОТКРЫТА (-15% ЭНЕРГИИ)!");
             } else {
                 staticColliders.push(door.collider);
                 wallMeshes.push(door.mesh);
-                showNotify("ДВЕРЬ ЗАКРЫТА (-15% ЭНЕРГИИ)!");
+                if (!silent) showNotify("ДВЕРЬ ЗАКРЫТА (-15% ЭНЕРГИИ)!");
             }
         }
 
@@ -2296,6 +2307,14 @@
             if(e) e.preventDefault(); 
             isGameRunning = false; 
 
+            // Сброс эффектов энергии — чтобы не оставались в меню
+            stamina = maxStamina;
+            isExhausted = false;
+            const sBar = document.getElementById('staminaBar');
+            if (sBar) { sBar.style.width = '100%'; sBar.style.background = ''; }
+            const sText = document.getElementById('staminaText');
+            if (sText) sText.innerText = 'ВЫНОСЛИВОСТЬ: 100%';
+
             battleAudio.pause();
             battleAudio.currentTime = 0;
             if (audioConfig.masterEnabled) {
@@ -2437,8 +2456,12 @@
 
             window.addEventListener('wheel', (e) => {
                 if (!isGameRunning || isSpectator) return;
-                if (e.deltaY > 0) selectWeapon(currentWeapon + 1);
-                else if (e.deltaY < 0) selectWeapon(currentWeapon - 1);
+                // цикл только по купленному оружию
+                const dir = e.deltaY > 0 ? 1 : -1;
+                for (let i = 1; i <= 8; i++) {
+                    const nxt = ((currentWeapon + dir * i) % 8 + 8) % 8;
+                    if (gvHasWeapon(nxt)) { selectWeapon(nxt); break; }
+                }
             });
 
             window.addEventListener('mousemove', (e) => {
@@ -2457,7 +2480,7 @@
                 const joyBase = document.getElementById('mobJoyBase');
                 const joyStick = document.getElementById('mobJoyStick');
                 if (!mc) return;
-                mc.classList.add('active');
+                // контролы показываются только через mobControls(true) при старте игры
                 let joyTouchId = null, joyCX = 0, joyCY = 0, joyDX = 0, joyDY = 0;
                 const JOY_R = 44;
                 let lookTouchId = null, lookLastX = 0, lookLastY = 0;
@@ -3001,7 +3024,7 @@
                         if (bot.mesh.position.distanceTo(dwp) < 3.5) {
                             bot.doorOpenCooldown = 3.0;
                             bot.doorHaltTimer = (bot.diff === 'pro') ? 0.25 : 0.55;
-                            toggleBunkerDoor(d);
+                            toggleBunkerDoor(d, true);
                         }
                     }
                 });
@@ -3253,7 +3276,14 @@
                                 let hitPoint = hits[0].point;
                                 createBotTracer(startRay, hitPoint, bot.currentWeapon === 7 ? 0x00ffff : 0xffcc00);
 
-                                let hitWall = wallMeshes.some(w => w === hits[0].object);
+                                // Проверяем и сам объект, и всех его родителей (дочерние мешы стен)
+                                let hitObj = hits[0].object;
+                                let hitWall = false;
+                                let chk = hitObj;
+                                while (chk) {
+                                    if (wallMeshes.indexOf(chk) !== -1) { hitWall = true; break; }
+                                    chk = chk.parent;
+                                }
                                 if (!hitWall) {
                                     if (target.isPlayer && !isSpectator) {
                                         playerHp -= dmg; if (playerHp < 0) playerHp = 0;
@@ -3496,12 +3526,12 @@
             pvpOppMesh.add(nameSprite);
             scene.add(pvpOppMesh);
             hittableObjects.push(parts.torso, parts.head);
-            // Расширенный невидимый хитбокс соперника
+            // Точный хитбокс соперника
             const oppBigHit = new THREE.Mesh(
-                new THREE.BoxGeometry(1.0, 1.8, 0.8),
+                new THREE.BoxGeometry(0.7, 1.7, 0.5),
                 new THREE.MeshBasicMaterial({ visible: false })
             );
-            oppBigHit.position.set(0, 1.1, 0);
+            oppBigHit.position.set(0, 1.0, 0);
             pvpOppMesh.add(oppBigHit);
             parts.bigHitbox = oppBigHit;
             hittableObjects.push(oppBigHit);
@@ -3591,7 +3621,10 @@
         }
         function mobControls(show) {
             const mc = document.getElementById('mobileControls');
-            if (mc) mc.classList.toggle('active', !!show);
+            if (!mc) return;
+            const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            if (!isTouch) { mc.classList.remove('active'); return; }
+            mc.classList.toggle('active', !!show);
         }
         if (window.top !== window.self) {
             const em = document.getElementById('exitMessengerBtn');

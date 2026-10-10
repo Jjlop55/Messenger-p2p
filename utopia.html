@@ -354,14 +354,15 @@ if (window.top !== window.self) {
   const labels = {
     both:  '🖱 Управление: WASD+мышь',
     wasd:  '⌨️ Управление: только WASD',
-    mouse: '🖱 Управление: только мышка',
   };
   const btn = document.getElementById('mouse-mode-btn');
   if (!btn) return;
+  // старый режим «только мышка» убран — сбрасываем на оба
+  if (mouseControlMode === 'mouse') setMouseControlMode('both');
   function refresh() { btn.textContent = labels[mouseControlMode] || labels.both; }
   btn.onclick = () => {
     sfx.init();
-    const order = ['both', 'wasd', 'mouse'];
+    const order = ['both', 'wasd'];
     const i = order.indexOf(mouseControlMode);
     setMouseControlMode(order[(i + 1) % order.length]);
     refresh();
@@ -1651,23 +1652,43 @@ function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
       moveDirY = Math.sin(ang + Math.PI / 2);
     } else {
       const ang = Math.atan2(enemy.y - bot.y, enemy.x - bot.x);
-      if (enemyDist > 250) {
+      const los = hasLineOfSight2D(bot.x, bot.y, enemy.x, enemy.y);
+      if (!los) {
+        // Не вижу игрока — иду к нему через лабиринт
+        const nextStep = findMazePath(bot.x, bot.y, enemy.x, enemy.y, null);
+        if (nextStep) {
+          const pathAng = Math.atan2(nextStep.y - bot.y, nextStep.x - bot.x);
+          moveDirX = Math.cos(pathAng);
+          moveDirY = Math.sin(pathAng);
+          bot.angle = ang;
+        } else {
+          moveDirX = Math.cos(ang);
+          moveDirY = Math.sin(ang);
+          bot.angle = ang;
+        }
+      } else if (enemyDist > 250) {
+        // Вижу, но далеко — приближаюсь и стреляю
         moveDirX = Math.cos(ang);
         moveDirY = Math.sin(ang);
+        if (bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.12 + diff * 0.20) {
+          bot.shootRequest = true;
+        }
       } else if (enemyDist < 140) {
         moveDirX = -Math.cos(ang);
         moveDirY = -Math.sin(ang);
+        if (bot.shootCooldown <= 0 && bot.ammo > 0) bot.shootRequest = true;
       } else {
+        // Оптимальная дистанция — стрейф + огонь
         moveDirX = Math.cos(ang + Math.PI / 2);
         moveDirY = Math.sin(ang + Math.PI / 2);
+        if (bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.12 + diff * 0.20) {
+          bot.shootRequest = true;
+        }
       }
-      if (enemyDist < 520 && bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.12 + diff * 0.20) {
-        bot.shootRequest = true;
-      }
+      bot.angle = Math.atan2(enemy.y - bot.y, enemy.x - bot.x);
+      // лёгкий бот стреляет мимо, сложный — точно
+      if (diff < 0.9) bot.angle += (Math.random() - 0.5) * (1 - diff) * 0.6;
     }
-    bot.angle = Math.atan2(enemy.y - bot.y, enemy.x - bot.x);
-    // лёгкий бот стреляет мимо, сложный — точно
-    if (diff < 0.9) bot.angle += (Math.random() - 0.5) * (1 - diff) * 0.6;
   }
 
   // 3. ЗАХВАТ ФЛАГА (FLAG)
@@ -1784,6 +1805,29 @@ function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
 /**
  * BFS ПОИСК ПУТИ
  */
+function hasLineOfSight2D(x1, y1, x2, y2) {
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  if (dist < 1) return true;
+  const steps = Math.max(2, Math.ceil(dist / 12));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const px = x1 + (x2 - x1) * t;
+    const py = y1 + (y2 - y1) * t;
+    // стены лабиринта (только в режиме flag)
+    if (currentGameMode === 'flag') {
+      const c = Math.floor(px / CELL_SIZE);
+      const r = Math.floor(py / CELL_SIZE);
+      if (c < 0 || c >= MAZE_COLS || r < 0 || r >= MAZE_ROWS) return false;
+      if (MAZE_GRID[r][c] !== 0) return false;
+    }
+    // столбы — всегда
+    for (const p of ARENA_PILLARS) {
+      if (Math.hypot(px - p.x, py - p.y) < p.size / 2) return false;
+    }
+  }
+  return true;
+}
+
 function findMazePath(startX, startY, targetX, targetY, enemyObstacle = null) {
   const startC = Math.floor(startX / CELL_SIZE);
   const startR = Math.floor(startY / CELL_SIZE);
@@ -1972,9 +2016,8 @@ canvas.addEventListener('mouseleave', () => { mouseP1.over = false; });
 canvas.addEventListener('mousedown', (e) => {
   if (isTouchMode) return;
   sfx.init();
-  if (e.button === 0 && !p1.isBot) {
-    if (mouseControlMode !== 'wasd') p1.shootRequest = true;
-  }
+  // ЛКМ = огонь в любом режиме управления
+  if (e.button === 0 && !p1.isBot) p1.shootRequest = true;
 });
 
 canvas.addEventListener('touchstart', (e) => {
@@ -2372,7 +2415,7 @@ function loop() {
       const b = bullets[i];
       b.update(currentWalls, particles, arenaCrate, powerups, barrels, [p1, p2]);
 
-      if (p1.alive && b.shooterId !== 1 && Math.hypot(b.x - p1.x, b.y - p1.y) < p1.radius + 6) {
+      if (p1.alive && b.shooterId !== 1 && Math.hypot(b.x - p1.x, b.y - p1.y) < p1.radius + 14) {
         if (!p1.buff || p1.buff.type !== 'shield') {
           p1.die(particles);
           if (currentGameMode !== 'flag') p2.score++;
@@ -2385,7 +2428,7 @@ function loop() {
         }
         b.alive = false;
       }
-      if (p2.alive && b.shooterId !== 2 && Math.hypot(b.x - p2.x, b.y - p2.y) < p2.radius + 6) {
+      if (p2.alive && b.shooterId !== 2 && Math.hypot(b.x - p2.x, b.y - p2.y) < p2.radius + 14) {
         if (!p2.buff || p2.buff.type !== 'shield') {
           p2.die(particles);
           if (currentGameMode !== 'flag') p1.score++;
@@ -2493,19 +2536,21 @@ p1Btn.addEventListener('click', () => {
 
 p2Btn.addEventListener('click', () => {
   sfx.init();
-  // цикл: Бот Лёгкий → Бот Средний → Бот Сложный → Человек → ...
-  if (p2.name === 'Бот Средний') {
-    p2.isBot = true;
+  // цикл как у P1: Бот Лёгкий → Бот Средний → Бот Сложный → Человек → ...
+  if (p2.isBot && p2.name === 'Бот Лёгкий') {
+    p2.name = 'Бот Средний';
+    p2Btn.textContent = '🤖 Бот Средний';
+  } else if (p2.isBot && p2.name === 'Бот Средний') {
     p2.name = 'Бот Сложный';
     p2Btn.textContent = '🤖 Бот Сложный';
-  } else if (p2.name === 'Бот Сложный') {
+  } else if (p2.isBot) {
     p2.isBot = false;
     p2.name = localStorage.getItem('utopia_nickname') || 'Игрок 2';
     p2Btn.textContent = '👤 Человек';
   } else {
     p2.isBot = true;
-    p2.name = 'Бот Средний';
-    p2Btn.textContent = '🤖 Тактический Бот';
+    p2.name = 'Бот Лёгкий';
+    p2Btn.textContent = '🤖 Бот Лёгкий';
   }
 });
 
@@ -2543,10 +2588,11 @@ startBtn.addEventListener('click', () => {
   bullets.length = 0;
   powerups.length = 0;
 
-  // ники: свой — из мессенджера, бот — по сложности
+  // ники: свой — из мессенджера; имя бота НЕ трогаем (уже выбрано кнопкой в меню)
   const myNick = localStorage.getItem('utopia_nickname') || 'Игрок 1';
-  p1.name = p1.isBot ? 'Бот Лёгкий' : myNick;
-  p2.name = p2.isBot ? 'Бот Средний' : (pvpOppNick || 'Игрок 2');
+  if (!p1.isBot) p1.name = myNick;
+  if (!p2.isBot) p2.name = pvpOppNick || 'Игрок 2';
+  if (p2.isBot && !p2.name) p2.name = 'Бот Средний';
 
   if (currentGameMode === 'flag') {
     p1.spawnX = redBasePos.x;
