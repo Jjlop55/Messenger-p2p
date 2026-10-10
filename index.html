@@ -958,6 +958,7 @@
 <button class="admin-tab-btn active" id="tab-users-btn" onclick="showAdminTab('users')">👥 Юзеры</button>
 <button class="admin-tab-btn" id="tab-groups-btn" onclick="showAdminTab('groups')">💬 Группы</button>
 <button class="admin-tab-btn" id="tab-bans-btn" onclick="showAdminTab('bans')">🚫 Баны</button>
+<button class="admin-tab-btn" id="tab-perms-btn" onclick="showAdminTab('perms')">⚡ Выданные права</button>
 <button class="admin-tab-btn" id="tab-support-btn" onclick="showAdminTab('support')">🎧 Саппорт</button>
 <button class="admin-tab-btn" id="tab-requests-btn" onclick="showAdminTab('requests')">📋 Заявки</button>
 <button class="admin-tab-btn" id="tab-deleted-btn" onclick="showAdminTab('deleted')">🗑 Удалённые</button>
@@ -978,6 +979,7 @@
 
     <div id="admin-tab-groups" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
     <div id="admin-tab-bans" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
+    <div id="admin-tab-perms" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
     <div id="admin-tab-support" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
     <div id="admin-tab-requests" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
     <div id="admin-tab-deleted" style="display:none; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto;"></div>
@@ -998,7 +1000,7 @@
 <!-- Модалка выдачи клыкер-монет -->
 <div class="modal-overlay" id="give-coins-modal">
   <div class="modal-card" style="max-width:340px;">
-    <h3 class="modal-title">💰 Выдать монеты</h3>
+    <h3 class="modal-title">💰 Выдать / забрать монеты</h3>
     <div id="give-coins-target" style="font-size:13px; color:var(--neon-cyan); font-weight:700;"></div>
     <div id="give-coins-balance" style="font-size:11px; color:var(--text-dim);"></div>
     <input type="number" id="give-coins-amount" placeholder="Сколько монет..." value="1000" min="1" class="modal-input">
@@ -1010,6 +1012,7 @@
       <button class="pill-btn" style="padding:4px 10px; font-size:11px;" onclick="document.getElementById('give-coins-amount').value=100000">+100к</button>
     </div>
     <button class="pill-btn" id="save-give-coins-btn" style="background:#ffd166; color:#000;">Выдать</button>
+    <button class="pill-btn" id="take-coins-btn" style="background:rgba(255,51,102,0.2); color:var(--danger);">Забрать</button>
     <button class="pill-btn" onclick="closeModal('give-coins-modal')">Отмена</button>
   </div>
 </div>
@@ -1028,6 +1031,8 @@
       <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-ban"> Блокировка (бан)</label>
       <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-mute"> Заглушение (мьют)</label>
       <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-supp"> Ответы в саппорте</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim);"><input type="checkbox" id="perm-coins"> Выдача/забор монет</label>
+      <label style="display:flex; justify-content:space-between; font-size:13px; color:var(--warn); font-weight:700;"><input type="checkbox" id="perm-assistant"> 🤝 Помощник главного админа (все права)</label>
     </div>
     <button class="pill-btn" id="save-perms-btn" style="background:var(--neon-cyan); color:#000;">Сохранить</button>
     <button class="pill-btn" onclick="closeModal('grant-modal')">Отмена</button>
@@ -1826,6 +1831,49 @@ function checkFriendRequests() {
   }).catch(()=>{});
 }
 
+// Живое обновление бейджа друзей (WS friend_request / friend_accepted)
+function refreshFriendsBadge() { checkFriendRequests(); }
+
+// Показ/скрытие кнопки админ-панели после выдачи/отзыва прав
+function updateAdminPanelVisibility() {
+  const btn = document.getElementById('admin-panel-btn');
+  if (btn) btn.style.display = (isAdmin || isSuperAdmin) ? 'block' : 'none';
+  document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
+}
+
+// ── Красный счётчик непрочитанных у чата в списке ──
+function setChatUnread(chatId, count) {
+  const el = document.querySelector(`.chat-item[data-chat-id="${CSS.escape(String(chatId))}"]`);
+  if (!el) return;
+  const old = el.querySelector('.chat-unread-badge');
+  if (old) old.remove();
+  if (count > 0) {
+    const b = document.createElement('span');
+    b.className = 'chat-unread-badge';
+    b.style.cssText = 'background:var(--danger); color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; padding:0 5px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center;';
+    b.textContent = count > 99 ? '99+' : String(count);
+    el.appendChild(b);
+  }
+  const meta = (window.chatsMeta || {})[chatId];
+  if (meta) meta.unread = count;
+}
+
+function bumpChatUnread(chatId) {
+  if (!chatId) return;
+  const meta = (window.chatsMeta || {})[chatId];
+  const next = (meta ? Number(meta.unread || 0) : 0) + 1;
+  if (meta) meta.unread = next;
+  setChatUnread(chatId, next);
+}
+
+// Чат открыт — сбрасываем счётчик на сервере
+function markChatRead(chatId) {
+  if (!chatId || !currentUser) return;
+  setChatUnread(chatId, 0);
+  fetch(`${BACKEND_URL}/chats/${encodeURIComponent(chatId)}/read?user=${encodeURIComponent(currentUser)}`, { method: 'POST' })
+    .catch(() => {});
+}
+
 async function openDirectChat(target) {
   closeModal('friends-modal');
   const res = await fetch(`${BACKEND_URL}/direct-chat`, {
@@ -1944,8 +1992,13 @@ async function loadChats() {
                        : `<span style="font-size:10px; color:#58a6ff;">ГРУППА</span>`));
     // ЛС: показываем локальное имя, если задано
     const displayName = (c.is_direct && c.chat_type !== 'bot') ? (getLocalDmName(c.id) || c.name) : c.name;
+    const unread = Number(c.unread || 0);
+    const badge = unread > 0
+      ? `<span class="chat-unread-badge" style="background:var(--danger); color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; padding:0 5px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center;">${unread > 99 ? '99+' : unread}</span>`
+      : '';
     d.innerHTML = `
       <span style="font-weight:${isGen ? '700' : '500'}; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${displayName}</span>
+      ${badge}
       ${tag}
     `;
     d.onclick = () => {
@@ -2077,6 +2130,8 @@ async function switchChat(chatId, chatName, isDirect = null) {
       </div>`);
   }
   list.forEach(renderMessage);
+  // Чат открыт — сбрасываем красный счётчик непрочитанных
+  markChatRead(chatId);
 
   if (activeWs) { activeWs._manual = true; activeWs.close(); }
   activeWs = new WebSocket(BACKEND_URL.replace('https','wss').replace('http','ws') + `/ws/${chatId}/${currentUser}?token=${encodeURIComponent(currentSessionToken || '')}`);
@@ -2179,6 +2234,10 @@ async function switchChat(chatId, chatName, isDirect = null) {
         }
       }
     } else if (data.action === 'new_message') {
+      const msgChat = data.chat_id || activeChatId;
+      // Непрочитанные: +1 красный счётчик, если это не открытый чат
+      if (msgChat && msgChat !== activeChatId && data.sender !== currentUser) bumpChatUnread(msgChat);
+      else if (msgChat && msgChat === activeChatId && data.sender !== currentUser) markChatRead(msgChat);
       renderMessage(data);
       notifyIncomingMessage(data);
     } else if (data.action === 'deleted') {
@@ -2238,6 +2297,53 @@ async function switchChat(chatId, chatName, isDirect = null) {
       // В ЛС незнакомцу можно отправить ровно одно сообщение
       showToast(data.msg || 'Собеседник ещё не принял заявку в друзья — можно отправить только одно сообщение', 'error');
       updateDmBanner(activeChatId);
+    } else if (data.action === 'friend_request') {
+      // Живая заявка в друзья — у обоих без перезагрузки
+      showToast(`💌 Новая заявка в друзья от @${data.from}!`);
+      browserNotify('Заявка в друзья', `@${data.from} хочет добавить вас в друзья`);
+      refreshFriendsBadge();
+      const fm = document.getElementById('friends-modal');
+      if (fm && fm.style.display === 'flex') showFriendsTab('pending');
+    } else if (data.action === 'friend_accepted') {
+      const who = data.by || data.nick || data.from || '';
+      showToast(`🤝 @${who} принял(а) заявку в друзья!`, 'success');
+      browserNotify('Новый друг', `@${who} теперь у вас в друзьях`);
+      refreshFriendsBadge();
+      const fm2 = document.getElementById('friends-modal');
+      if (fm2 && fm2.style.display === 'flex') showFriendsTab('online');
+    } else if (data.action === 'admin_granted') {
+      // Права выданы живо: сразу подхватываем без перезагрузки
+      myAdminPerms = data.perms || {};
+      isAdmin = Object.values(myAdminPerms).some(Boolean) || isSuperAdmin;
+      if (data.assistant) myAdminPerms.can_assistant = true;
+      updateAdminPanelVisibility();
+      showToast(`⚡ ${data.granted_by ? '@' + data.granted_by + ' выдал вам права администратора!' : 'Вам выданы права администратора!'}`, 'success');
+      browserNotify('Права администратора', data.granted_by ? `@${data.granted_by} выдал вам права` : 'Вам выданы права администратора');
+      if (document.getElementById('admin-modal')?.style.display === 'flex') loadAdminUsers();
+    } else if (data.action === 'admin_revoked') {
+      myAdminPerms = {};
+      isAdmin = false;
+      updateAdminPanelVisibility();
+      showToast(`⛔ @${data.revoked_by || 'админ'} отозвал(а) ваши права!`, 'error');
+      browserNotify('Права отозваны', `@${data.revoked_by || 'админ'} отозвал ваши права администратора`);
+      closeModal('admin-modal');
+    } else if (data.action === 'support_perm_granted') {
+      myAdminPerms.can_handle_support = true;
+      isAdmin = true;
+      updateAdminPanelVisibility();
+      showToast('🎧 Вам выдано право поддержки!', 'success');
+    } else if (data.action === 'admin_notify') {
+      // Оповещение супера/помощника о новой заявке
+      showToast(data.msg || 'Новая заявка!', 'warning');
+      browserNotify('Заявка в админке', data.msg || 'Новая заявка');
+      if (document.getElementById('admin-modal')?.style.display === 'flex') {
+        showAdminTab('requests');
+      }
+    } else if (data.action === 'notify') {
+      showToast(data.msg || 'Уведомление', 'success');
+      browserNotify('Уведомление', data.msg || '');
+    } else if (data.action === 'unread_count') {
+      setChatUnread(data.chat_id, data.count);
     }
   };
 }
@@ -3077,6 +3183,16 @@ function requestCallNotifications() {
     if (window.Notification && Notification.permission === 'default') {
       Promise.resolve(Notification.requestPermission()).catch(() => {});
     }
+  } catch (e) {}
+}
+
+// Системное уведомление о любых событиях (друзья, права, заявки)
+function browserNotify(title, body) {
+  try {
+    if (!window.Notification || Notification.permission !== 'granted') return;
+    if (!msgNotifEnabled()) return;
+    const n = new Notification(title, { body: body || '', tag: 'utopia-' + Date.now() });
+    n.onclick = () => { window.focus(); try { n.close(); } catch (_) {} };
   } catch (e) {}
 }
 
@@ -4445,12 +4561,13 @@ function showAdminTab(tab) {
   document.querySelectorAll('.admin-tab-btn').forEach(b => {
     b.classList.toggle('active', b.id === `tab-${tab}-btn`);
   });
-  ['users','groups','bans','support','requests','deleted'].forEach(t => {
+  ['users','groups','bans','perms','support','requests','deleted'].forEach(t => {
     document.getElementById(`admin-tab-${t}`).style.display = t === tab ? 'flex' : 'none';
   });
   if (tab === 'users') loadAdminUsers();
   else if (tab === 'groups') loadAdminGroups();
   else if (tab === 'bans') loadAdminBans();
+  else if (tab === 'perms') loadAdminPerms();
   else if (tab === 'support') loadAdminSupport();
   else if (tab === 'requests') loadAdminRequests();
   else if (tab === 'deleted') loadAdminDeleted();
@@ -4506,6 +4623,13 @@ async function loadAdminUsers(query = '') {
   const data = await res.json();
   c.innerHTML = '';
 
+  const canMute = isSuperAdmin || !!myAdminPerms.can_mute_users;
+  const canKick = isSuperAdmin || !!myAdminPerms.can_kick_users;
+  const canBan = isSuperAdmin || !!myAdminPerms.can_ban_users;
+  const canCoins = isSuperAdmin || !!myAdminPerms.can_give_coins;
+  const canPerms = isSuperAdmin || !!myAdminPerms.can_grant_admins || !!myAdminPerms.can_assistant;
+  const canDelete = isSuperAdmin || !!myAdminPerms.can_delete_users_direct || !!myAdminPerms.can_request_delete_users;
+
   data.users.forEach(u => {
     const isSuperTarget = u.nickname.toLowerCase() === 'jjlop55' || u.nickname.toLowerCase() === 'gglo55';
     const isSelf = String(u.nickname).toLowerCase() === String(currentUser || '').toLowerCase();
@@ -4513,19 +4637,19 @@ async function loadAdminUsers(query = '') {
     row.className = 'user-row';
     row.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <b>@${u.nickname} ${u.is_superadmin ? '👑' : (u.is_admin ? '⚡' : '')}</b>
+        <b>@${u.nickname} ${u.is_superadmin ? '👑' : (u.assistant ? '🤝' : (u.is_admin ? '⚡' : ''))}</b>
         <span class="user-status ${u.is_online ? 'online' : 'offline'}">${u.is_online ? 'Онлайн' : 'Офлайн'}</span>
       </div>
-      <div style="font-size:11px; color:var(--text-dim);">Визит: ${u.last_login ? u.last_login.slice(0,16) : '—'}</div>
+      <div style="font-size:11px; color:var(--text-dim);">Визит: ${u.last_login ? u.last_login.slice(0,16) : '—'} · 💰 ${Number(u.coins || 0).toLocaleString('ru-RU')}</div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px;">
-        <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>
+        ${canPerms ? `<button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>` : ''}
         <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="viewUserSessions('${u.nickname}')">📱 Сессии</button>
-        <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,209,102,.15); color:#ffd166;" onclick="openGiveCoinsModal('${u.nickname}')">💰 Монеты</button>
+        ${canCoins ? `<button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,209,102,.15); color:#ffd166;" onclick="openGiveCoinsModal('${u.nickname}')">💰 Монеты</button>` : ''}
         ${(!isSuperTarget && !isSelf) ? `
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="adminKickUser('${u.nickname}')">Кик</button>
-          <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.2); color:var(--danger);" onclick="adminDeleteUser('${u.nickname}')">Удалить</button>
+          ${canBan ? `<button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>` : ''}
+          ${canMute ? `<button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>` : ''}
+          ${canKick ? `<button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="adminKickUser('${u.nickname}')">Кик</button>` : ''}
+          ${canDelete ? `<button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.2); color:var(--danger);" onclick="adminDeleteUser('${u.nickname}')">Удалить</button>` : ''}
         ` : ''}
         ${isSelf ? '<span style="font-size:10px; color:var(--text-dim); align-self:center;">сам себя заблокировать нельзя</span>' : ''}
       </div>`;
@@ -4601,6 +4725,24 @@ document.getElementById('save-give-coins-btn').onclick = async () => {
   const d = await res.json();
   showToast(d.msg || 'Готово');
   if (d.status === 'ok') closeModal('give-coins-modal');
+  loadAdminUsers();
+};
+
+// Забрать монеты: та же сумма, но со знаком минус
+document.getElementById('take-coins-btn').onclick = async () => {
+  const amount = parseInt(document.getElementById('give-coins-amount').value, 10);
+  if (!targetGiveCoinsUser || !amount || amount <= 0) { showToast('Укажите сумму!'); return; }
+  const ok = confirm(`Забрать ${amount.toLocaleString('ru-RU')} 💰 у @${targetGiveCoinsUser}?`);
+  if (!ok) return;
+  const res = await fetch(`${BACKEND_URL}/admin/give-coins`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: targetGiveCoinsUser, amount: -amount })
+  });
+  const d = await res.json();
+  showToast(d.msg || 'Готово');
+  if (d.status === 'ok') closeModal('give-coins-modal');
+  loadAdminUsers();
 };
 
 function openGrantModal(nick, perms) {
@@ -4615,6 +4757,11 @@ function openGrantModal(nick, perms) {
   document.getElementById('perm-ban').checked = !!perms.can_ban_users;
   document.getElementById('perm-mute').checked = !!perms.can_mute_users;
   document.getElementById('perm-supp').checked = !!perms.can_handle_support;
+  document.getElementById('perm-coins').checked = !!perms.can_give_coins;
+  document.getElementById('perm-assistant').checked = !!perms.can_assistant;
+  // Роль «помощник» выдаёт только Главный Администратор
+  document.getElementById('perm-assistant').closest('label').style.display =
+    isSuperAdmin ? 'flex' : 'none';
   openModal('grant-modal');
 }
 
@@ -4628,8 +4775,15 @@ document.getElementById('save-perms-btn').onclick = async () => {
     can_request_delete_users: document.getElementById('perm-del-req').checked,
     can_ban_users: document.getElementById('perm-ban').checked,
     can_mute_users: document.getElementById('perm-mute').checked,
-    can_handle_support: document.getElementById('perm-supp').checked
+    can_handle_support: document.getElementById('perm-supp').checked,
+    can_give_coins: document.getElementById('perm-coins').checked,
+    can_assistant: isSuperAdmin && document.getElementById('perm-assistant').checked
   };
+  // Помощник = все права разом — жёсткое подтверждение
+  if (perms.can_assistant) {
+    const ok = confirm(`Вы точно хотите дать все разрешения пользователю @${targetGrantUser}?`);
+    if (!ok) return;
+  }
   const res = await fetch(`${BACKEND_URL}/admin/set-perms`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -4641,9 +4795,21 @@ document.getElementById('save-perms-btn').onclick = async () => {
   loadAdminUsers();
 };
 
+// Помощник = одна галочка сразу ставит все остальные
+document.getElementById('perm-assistant').addEventListener('change', function () {
+  if (!this.checked) return;
+  ['perm-del-msg','perm-del-chat','perm-kick','perm-grant-adm','perm-del-direct',
+   'perm-del-req','perm-ban','perm-mute','perm-supp','perm-coins'].forEach(id => {
+    document.getElementById(id).checked = true;
+  });
+});
+
 function openBanModal(nick) {
   if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
     showToast('Нельзя забанить самого себя', 'error'); return;
+  }
+  if (!isSuperAdmin && !myAdminPerms.can_assistant && !myAdminPerms.can_ban_users) {
+    showToast('Нет права «Блокировка (бан)»', 'error'); return;
   }
   targetBanUser = nick;
   document.getElementById('ban-modal-target').innerText = `@${nick}`;
@@ -4668,12 +4834,15 @@ function openMutePrompt(nick) {
   if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
     showToast('Нельзя замутить самого себя', 'error'); return;
   }
-  const hint = isSuperAdmin ? 'На сколько минут заглушить? (без лимита, по умолч. 10):'
+  if (!isSuperAdmin && !myAdminPerms.can_assistant && !myAdminPerms.can_mute_users) {
+    showToast('Нет права «Заглушение (мьют)»', 'error'); return;
+  }
+  const hint = (isSuperAdmin || myAdminPerms.can_assistant) ? 'На сколько минут заглушить? (без лимита, по умолч. 10):'
                             : 'На сколько минут заглушить? (макс. 300 = 5 ч, по умолч. 10):';
   const mins = prompt(hint, '10');
   if (!mins) return;
   let m = parseInt(mins) || 10;
-  if (!isSuperAdmin && m > 300) {
+  if (!isSuperAdmin && !myAdminPerms.can_assistant && m > 300) {
     showToast('Без супер-прав мут максимум 5 часов (300 мин)', 'error');
     m = 300;
   }
@@ -4687,6 +4856,9 @@ function openMutePrompt(nick) {
 function adminKickUser(nick) {
   if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
     showToast('Нельзя кикнуть самого себя', 'error'); return;
+  }
+  if (!isSuperAdmin && !myAdminPerms.can_assistant && !myAdminPerms.can_kick_users) {
+    showToast('Нет права «Кик пользователей»', 'error'); return;
   }
   confirmAction('Кик', `Принудительно выкинуть @${nick}?`, () => {
     fetch(`${BACKEND_URL}/admin/kick`, {
@@ -4792,8 +4964,8 @@ async function loadAdminBans() {
     });
   }
 
-  // Супер-панель: активные муты (кто замучен и до какого времени)
-  if (isSuperAdmin) {
+  // Активные муты (кто замучен и до какого времени) — видят супер и право на мьют
+  if (isSuperAdmin || (myAdminPerms && myAdminPerms.can_mute_users)) {
     try {
       const mres = await fetch(`${BACKEND_URL}/admin/mutes?admin=${encodeURIComponent(currentUser)}`);
       const mutes = await mres.json();
@@ -4812,33 +4984,43 @@ async function loadAdminBans() {
         });
       }
     } catch (_) {}
-    // Выданные права: кому и что выдано
-    try {
-      const pres = await fetch(`${BACKEND_URL}/admin/perm-grants?admin=${encodeURIComponent(currentUser)}`);
-      const grants = await pres.json();
-      if (Array.isArray(grants) && grants.length) {
-        c.innerHTML += '<div style="font-size:12px;font-weight:700;color:var(--neon-cyan);margin-top:8px;">⚡ Выданные права:</div>';
-        const PERM_LABELS = {
-          can_delete_messages: 'удалять сообщения', can_delete_chats: 'удалять чаты',
-          can_kick_users: 'кикать', can_view_all_chats: 'смотреть все чаты',
-          can_grant_admins: 'выдавать права', can_delete_users_direct: 'удалять аккаунты',
-          can_request_delete_users: 'заявки на удаление', can_ban_users: 'банить',
-          can_mute_users: 'мьютить', can_handle_support: 'саппорт'
-        };
-        grants.forEach(g => {
-          const list = Object.entries(g.perms || {}).filter(([, v]) => v)
-            .map(([k]) => PERM_LABELS[k] || k).join(', ') || 'нет прав';
-          const row = document.createElement('div');
-          row.className = 'user-row';
-          row.innerHTML = `<b>${g.is_superadmin ? '👑' : '⚡'} @${escapeHtml(g.nickname)}</b>
-            <div style="font-size:11px;color:var(--text-dim);">${escapeHtml(list)}</div>`;
-          c.appendChild(row);
-        });
-      }
-    } catch (_) {}
   }
 
   if (!c.innerHTML) c.innerHTML = '<div style="color:var(--text-dim);">Банов нет</div>';
+}
+
+// Вкладка «Выданные права»: кому и что выдано (супер и помощник)
+async function loadAdminPerms() {
+  const c = document.getElementById('admin-tab-perms');
+  c.innerHTML = 'Загрузка...';
+  const PERM_LABELS = {
+    can_delete_messages: 'удалять сообщения', can_delete_chats: 'удалять чаты',
+    can_kick_users: 'кикать', can_view_all_chats: 'смотреть все чаты',
+    can_grant_admins: 'выдавать права', can_delete_users_direct: 'удалять аккаунты',
+    can_request_delete_users: 'заявки на удаление', can_ban_users: 'банить',
+    can_mute_users: 'мьютить', can_handle_support: 'саппорт',
+    can_give_coins: 'выдача/забор монет', can_assistant: 'помощник главного админа'
+  };
+  try {
+    const pres = await fetch(`${BACKEND_URL}/admin/perm-grants?admin=${encodeURIComponent(currentUser)}`);
+    const grants = await pres.json();
+    c.innerHTML = '';
+    if (!Array.isArray(grants) || !grants.length) {
+      c.innerHTML = '<div style="color:var(--text-dim);">Права пока никому не выданы.</div>';
+      return;
+    }
+    grants.forEach(g => {
+      const list = Object.entries(g.perms || {}).filter(([, v]) => v)
+        .map(([k]) => PERM_LABELS[k] || k).join(', ') || 'нет прав';
+      const row = document.createElement('div');
+      row.className = 'user-row';
+      row.innerHTML = `<b>${g.is_superadmin ? '👑' : (g.perms && g.perms.can_assistant ? '🤝' : '⚡')} @${escapeHtml(g.nickname)}</b>
+        <div style="font-size:11px;color:var(--text-dim);">${escapeHtml(list)}</div>`;
+      c.appendChild(row);
+    });
+  } catch (_) {
+    c.innerHTML = '<div style="color:var(--text-dim);">Нет доступа к списку прав.</div>';
+  }
 }
 
 function unbanUser(nick) {
@@ -4937,8 +5119,9 @@ function closeSupportTicket(tid) {
 async function loadAdminRequests() {
   const c = document.getElementById('admin-tab-requests');
   c.innerHTML = '';
+  const canDecide = isSuperAdmin || !!myAdminPerms.can_assistant;
 
-  if (isSuperAdmin) {
+  if (canDecide) {
     const sres = await fetch(`${BACKEND_URL}/support/perm-requests?admin=${currentUser}`);
     const sreqs = await sres.json();
     if (sreqs.length) {
@@ -4957,26 +5140,31 @@ async function loadAdminRequests() {
     }
   }
 
-  const res = await fetch(`${BACKEND_URL}/admin/delete-requests?admin=${currentUser}`);
-  const reqs = await res.json();
-  if (reqs.length) {
-    c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--danger); margin-top:8px;">🗑️ Заявки на удаление аккаунтов (7 дней):</div>';
-    reqs.forEach(r => {
-      const row = document.createElement('div');
-      row.className = 'user-row';
-      row.innerHTML = `
-        <div>Удалить @${r.target_nick} (подал @${r.requested_by})</div>
-        <div style="font-size:11px; color:var(--text-dim);">Причина: ${r.reason} · Истекает: ${r.expires_at}</div>
-        <div style="display:flex; gap:6px; margin-top:4px;">
-          <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideDelReq(${r.id},'approve')">Одобрить</button>
-          <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px;" onclick="decideDelReq(${r.id},'reject')">Отклонить</button>
-        </div>`;
-      c.appendChild(row);
-    });
+  // Заявки на удаление — решают супер и помощник
+  if (canDecide) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/admin/delete-requests?admin=${currentUser}`);
+      const reqs = await res.json();
+      if (Array.isArray(reqs) && reqs.length) {
+        c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--danger); margin-top:8px;">🗑️ Заявки на удаление аккаунтов (7 дней):</div>';
+        reqs.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'user-row';
+          row.innerHTML = `
+            <div>Удалить @${r.target_nick} (подал @${r.requested_by})</div>
+            <div style="font-size:11px; color:var(--text-dim);">Причина: ${r.reason} · Истекает: ${r.expires_at}</div>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+              <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideDelReq(${r.id},'approve')">Одобрить</button>
+              <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px; padding:4px;" onclick="decideDelReq(${r.id},'reject')">Отклонить</button>
+            </div>`;
+          c.appendChild(row);
+        });
+      }
+    } catch (_) {}
   }
 
-  // Заявки на бан (от обычных админов — решает только супер)
-  if (isSuperAdmin) {
+  // Заявки на бан (от обычных админов — решают супер и помощник)
+  if (canDecide) {
     try {
       const bres = await fetch(`${BACKEND_URL}/admin/ban-requests?admin=${currentUser}`);
       const breqs = await bres.json();
@@ -5606,10 +5794,17 @@ async function syncClickerGrants() {
       body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken })
     });
     const d = await res.json();
-    if (d.status === 'ok' && d.bonus > 0) {
-      clickerData.score += d.bonus;
+    if (d.status === 'ok' && d.bonus !== 0 && typeof d.bonus === 'number') {
+      if (d.bonus > 0) {
+        clickerData.score += d.bonus;
+        showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 💰!`);
+      } else {
+        const take = Math.abs(d.bonus);
+        const real = Math.min(take, clickerData.score);
+        clickerData.score -= real;
+        showToast(`💰 У вас забрано ${real.toLocaleString('ru-RU')} 💰`, 'warning');
+      }
       saveClicker();
-      showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 💰!`);
     }
   } catch (_) {}
 }
@@ -6800,7 +6995,7 @@ function renderClicker() {
     if (reward > 0) {
       resetBtn.style.display = 'inline-block';
       resetBtn.textContent = `🔄 Сбросить всё → баланс станет ${reward.toLocaleString('ru-RU')}`;
-      resetInfo.textContent = 'Прокачка и накопленные монеты обнулятся, останется только награда за сброс. Монеты можно тратить в Green Valley.';
+      resetInfo.textContent = 'Заберётся всё: счётчик кликов, монеты и все улучшения. Останется только награда за сброс. Престиж сохраняется.';
     } else {
       resetBtn.style.display = 'none';
       resetInfo.textContent = '';
@@ -6828,12 +7023,14 @@ function calcResetReward() {
 document.getElementById('clicker-reset-btn').onclick = () => {
   const reward = calcResetReward();
   if (reward <= 0) return;
-  if (!confirm(`Сбросить прокачку? Накопленные монеты обнулятся, будет начислено +${reward.toLocaleString('ru-RU')}. Прокачка обнулится.`)) return;
-  clickerData.score = reward; // накопленное обнуляется, остаётся только награда за сброс
+  if (!confirm(`Сбросить всё? Баланс кликов (total), монеты и вся прокачка обнулятся, будет начислено +${reward.toLocaleString('ru-RU')}. Престиж сохраняется.`)) return;
+  clickerData.score = reward; // накопленные монеты обнуляются, остаётся только награда за сброс
   clickerData.levels = {}; // обнуляем все уровни
+  clickerData.total = 0;   // и счётчик кликов забираем полностью
+  clickerData.chestOpens = 0;
   // престиж сохраняется — он навсегда
   saveClicker();
-  showToast(`🔄 Прокачка и монеты сброшены! Баланс: ${reward.toLocaleString('ru-RU')}`, 'success');
+  showToast(`🔄 Кликер полностью обнулён! Баланс: ${reward.toLocaleString('ru-RU')}`, 'success');
   renderClicker();
 };
 

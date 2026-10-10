@@ -265,6 +265,15 @@ CREATE TABLE IF NOT EXISTS mutes (
 """)
 
 cursor.execute("""
+CREATE TABLE IF NOT EXISTS chat_reads (
+    chat_id TEXT NOT NULL,
+    nickname TEXT NOT NULL,
+    last_read_id INTEGER DEFAULT 0,
+    PRIMARY KEY (chat_id, nickname)
+)
+""")
+
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS clicker_grants (
     nickname TEXT PRIMARY KEY,
     bonus_coins INTEGER DEFAULT 0,
@@ -436,6 +445,36 @@ conn.commit()
 
 def is_super(nick: str) -> bool:
     return nick.lower() in ("jjlop55", "gglo55")
+
+def get_admin_perms(nick: str) -> dict:
+    """Сырые права админа из БД ({} для обычного юзера)."""
+    if not nick:
+        return {}
+    cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (nick,))
+    row = cursor.fetchone()
+    if not row:
+        return {}
+    if row[0] or is_super(nick):
+        return {"__super__": True}
+    try:
+        p = json.loads(row[1] or "{}")
+    except Exception:
+        p = {}
+    return p if isinstance(p, dict) else {}
+
+def is_assistant(nick: str) -> bool:
+    """Помощник главного админа: все права супера, кроме действий над самим супером."""
+    return bool(get_admin_perms(nick).get("can_assistant"))
+
+def has_perm(nick: str, perm: str) -> bool:
+    """Строгая проверка конкретного права. Супер и помощник — всегда True."""
+    p = get_admin_perms(nick)
+    if p.get("__super__"):
+        return True
+    if p.get("can_assistant"):
+        return True
+    return bool(p.get(perm))
+
 
 def now_str() -> str:
     return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
@@ -1247,10 +1286,20 @@ class ConnectionManager:
         for row in cursor.fetchall():
             nick, perms_raw, is_sup = row
             perms = json.loads(perms_raw or '{}')
-            if is_sup or is_super(nick) or perms.get("can_handle_support", False):
+            if is_sup or is_super(nick) or is_assistant(nick) or perms.get("can_handle_support", False):
                 await self.send_to_user(nick, payload)
 
 manager = ConnectionManager()
+
+async def _notify_admins_about_request(text: str):
+    """Оповещение суперов и помощников о новой заявке: WS + запись в notifications."""
+    cursor.execute("SELECT nickname FROM users WHERE is_superadmin=1 OR is_admin=1")
+    rows = cursor.fetchall()
+    for (nick,) in rows:
+        if is_super(nick) or is_assistant(nick):
+            await manager.send_to_user(nick, {"action": "admin_notify", "msg": text})
+            cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (nick, text))
+    conn.commit()
 
 # ═══════════════════════════════════════════════════════════
 #  МАРШРУТЫ
@@ -1555,7 +1604,9 @@ async def manage_friend(data: FriendActionData):
             cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (dm_id, canonical_target))
             conn.commit()
 
+        # Обе стороны узнают сразу — без перезагрузки
         await manager.send_to_user(canonical_target, {"action": "friend_accepted", "by": data.from_user})
+        await manager.send_to_user(data.from_user, {"action": "friend_accepted", "by": canonical_target})
         return {"status": "ok", "msg": f"Заявка от @{canonical_target} принята! Чат создан."}
 
     elif data.action in ("decline", "remove"):
@@ -1746,6 +1797,14 @@ def get_user_chats(nickname: str):
         my_role, my_title, my_perms = get_member_row(cid, nickname)
         cursor.execute("SELECT COUNT(*) FROM members WHERE chat_id=?", (cid,))
         mcount = cursor.fetchone()[0]
+        # Счётчик непрочитанных: чужие сообщения новее последнего прочитанного
+        cursor.execute("SELECT last_read_id FROM chat_reads WHERE chat_id=? AND LOWER(nickname)=LOWER(?)",
+                       (cid, nickname))
+        rr = cursor.fetchone()
+        last_read = rr[0] if rr else 0
+        cursor.execute("SELECT COUNT(*) FROM messages WHERE chat_id=? AND id>? AND LOWER(sender)!=LOWER(?)",
+                       (cid, last_read, nickname))
+        unread = cursor.fetchone()[0]
         if is_dir:
             partner = u2 if u1.lower() == nickname.lower() else u1
             cname = f"💬 @{partner}"
@@ -1761,6 +1820,7 @@ def get_user_chats(nickname: str):
             "members_count": mcount,
             "direct_user1": u1 or "",
             "direct_user2": u2 or "",
+            "unread": unread,
         })
     chats.sort(key=lambda x: 0 if x["id"] == "general" else 1)
     # Личный чат с ботом-помощником — виртуальная запись, сообщения лежат в bot_<ник>
@@ -1771,6 +1831,17 @@ def get_user_chats(nickname: str):
         "members_count": 1,
     })
     return chats
+
+@app.post("/chats/{chat_id}/read")
+def mark_chat_read(chat_id: str, user: str):
+    """Чат открыт — сбрасываем красный счётчик непрочитанных."""
+    cursor.execute("SELECT COALESCE(MAX(id), 0) FROM messages WHERE chat_id=?", (chat_id,))
+    last = cursor.fetchone()[0]
+    cursor.execute("""INSERT INTO chat_reads (chat_id, nickname, last_read_id) VALUES (?,?,?)
+                      ON CONFLICT(chat_id, nickname) DO UPDATE SET last_read_id=excluded.last_read_id""",
+                   (chat_id, user, last))
+    conn.commit()
+    return {"status": "ok", "unread": 0}
 
 @app.get("/features")
 def list_features():
@@ -2265,8 +2336,10 @@ def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
 
     ns = now_str()
     cursor.execute("""
-        SELECT nickname, created_at, last_login, is_superadmin, is_admin, admin_perms, avatar_url, bio
-        FROM users WHERE LOWER(nickname) LIKE ? ORDER BY last_login DESC LIMIT 100
+        SELECT u.nickname, u.created_at, u.last_login, u.is_superadmin, u.is_admin, u.admin_perms,
+               u.avatar_url, u.bio, COALESCE(g.coins, 0)
+        FROM users u LEFT JOIN profile_game_stats g ON LOWER(g.nickname)=LOWER(u.nickname)
+        WHERE LOWER(u.nickname) LIKE ? ORDER BY u.last_login DESC LIMIT 100
     """, (f"%{query.lower()}%",))
 
     users_list = []
@@ -2288,7 +2361,9 @@ def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
             "nickname": nick, "created_at": r[1], "last_login": r[2],
             "is_superadmin": bool(r[3]) or is_super(nick), "is_admin": is_adm,
             "perms": json.loads(r[5] or '{}'), "avatar_url": r[6] or "", "bio": r[7] or "",
-            "is_online": online, "is_banned": is_banned, "is_muted": is_muted
+            "is_online": online, "is_banned": is_banned, "is_muted": is_muted,
+            "coins": int(r[8] or 0),
+            "assistant": bool(json.loads(r[5] or '{}').get("can_assistant"))
         })
 
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -2317,6 +2392,9 @@ async def admin_kill_session(data: TerminateSessionData):
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(data.nickname)):
         raise HTTPException(status_code=403, detail="Отказано")
+    # Строгая проверка: сессию можно рвать только с правом на кик
+    if not has_perm(data.nickname, "can_kick_users"):
+        return {"status": "error", "msg": "Нет права «Кик пользователей»!"}
 
     cursor.execute("SELECT nickname FROM user_sessions WHERE id=?", (data.target_session_id,))
     target = cursor.fetchone()
@@ -2356,23 +2434,22 @@ async def ban_user(data: BanData):
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Главного администратора заблокировать невозможно!"}
 
-    # Обычный админ с правом can_ban_users — только ЗАЯВКА на бан,
-    # решение принимает супер (/admin/ban-requests/decision)
-    sup = is_super(data.admin_nick)
+    # Помощник баниет сам (все права супера); обычный админ с can_ban_users —
+    # только ЗАЯВКА на бан, решение принимает супер (/admin/ban-requests/decision)
+    sup = is_super(data.admin_nick) or is_assistant(data.admin_nick)
     if not sup:
-        cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (data.admin_nick,))
-        adm = cursor.fetchone()
-        perms = json.loads(adm[1] or '{}') if adm else {}
-        if perms.get("can_ban_users"):
-            exp = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute("""INSERT INTO ban_requests
-                (target_nick, requested_by, reason, ban_type, duration_hours, expires_at)
-                VALUES (?,?,?,?,?,?,?)""",
-                (data.target_nick, data.admin_nick, data.reason, data.ban_type or 'permanent',
-                 float(data.duration_hours or 0), exp))
-            conn.commit()
-            return {"status": "ok", "msg": f"Заявка на бан @{data.target_nick} отправлена суперу (срок 7 дней).", "request": True}
-        return {"status": "error", "msg": "Нет прав на бан (нужен can_ban_users или супер)!"}
+        if not has_perm(data.admin_nick, "can_ban_users"):
+            return {"status": "error", "msg": "Нет права «Блокировка (бан)» — его должен выдать Главный Администратор!"}
+        exp = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("""INSERT INTO ban_requests
+            (target_nick, requested_by, reason, ban_type, duration_hours, expires_at)
+            VALUES (?,?,?,?,?,?,?)""",
+            (data.target_nick, data.admin_nick, data.reason, data.ban_type or 'permanent',
+             float(data.duration_hours or 0), exp))
+        conn.commit()
+        await _notify_admins_about_request(
+            f"🚫 Заявка на бан @{data.target_nick} от @{data.admin_nick}: {data.reason or 'без причины'}")
+        return {"status": "ok", "msg": f"Заявка на бан @{data.target_nick} отправлена суперу (срок 7 дней).", "request": True}
 
     expires_at = None
     if data.ban_type == "temporary" and data.duration_hours > 0:
@@ -2389,6 +2466,8 @@ async def ban_user(data: BanData):
 @app.post("/admin/unban")
 def unban_user(data: BanData):
     require_admin(data.admin_nick)
+    if not has_perm(data.admin_nick, "can_ban_users"):
+        return {"status": "error", "msg": "Нет права «Блокировка (бан)»!"}
     cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
     conn.commit()
     return {"status": "ok", "msg": f"@{data.target_nick} разблокирован."}
@@ -2408,6 +2487,8 @@ def get_bans(admin: str):
 async def unmute_user(data: BanData):
     """Снятие мута (кнопка «Размьютить» в супер-панели)."""
     require_admin(data.admin_nick)
+    if not has_perm(data.admin_nick, "can_mute_users"):
+        return {"status": "error", "msg": "Нет права «Заглушение (мьют)»!"}
     cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
     conn.commit()
     await manager.send_to_user(data.target_nick, {
@@ -2420,7 +2501,7 @@ async def unmute_user(data: BanData):
 @app.get("/admin/mutes")
 def get_mutes(admin: str):
     """Список активных мутов (для супер-панели: кто замучен)."""
-    if not (is_super(admin)):
+    if not (is_super(admin) or is_assistant(admin)):
         cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
         row = cursor.fetchone()
         if not row:
@@ -2438,8 +2519,8 @@ def get_mutes(admin: str):
 
 @app.get("/admin/perm-grants")
 def get_perm_grants(admin: str):
-    """Супер-панель: кому выдано какое право (список админов с их perms)."""
-    if not is_super(admin):
+    """Выданные права: супер и помощник смотрят, кому что выдано."""
+    if not (is_super(admin) or is_assistant(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     cursor.execute("""SELECT nickname, is_admin, is_superadmin, admin_perms FROM users
                       WHERE is_admin=1 OR is_superadmin=1 OR admin_perms IS NOT NULL
@@ -2458,11 +2539,15 @@ def get_perm_grants(admin: str):
 @app.post("/admin/mute")
 async def mute_user(data: MuteData):
     require_admin(data.admin_nick)
+    # Строгая проверка права: без can_mute_users мьютить нельзя (супер/помощник — можно)
+    if not has_perm(data.admin_nick, "can_mute_users"):
+        return {"status": "error", "msg": "Нет права «Заглушение (мьют)» — его должен выдать Главный Администратор!"}
     # Нельзя замутить самого себя
     if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
         return {"status": "error", "msg": "Нельзя замутить самого себя!"}
-    # Обычный админ: мут максимум 5 часов (300 мин), без продления
-    sup = is_super(data.admin_nick)
+    # Обычный админ: мут максимум 5 часов (300 мин), без продления.
+    # Супер и помощник — без лимитов.
+    sup = is_super(data.admin_nick) or is_assistant(data.admin_nick)
     duration = int(data.duration_minutes or 0)
     if not sup:
         if duration > 300:
@@ -2509,6 +2594,9 @@ async def mute_user(data: MuteData):
 @app.post("/admin/kick")
 async def kick_user(data: BanData):
     require_admin(data.admin_nick)
+    # Строгая проверка права: без can_kick_users кикать нельзя
+    if not has_perm(data.admin_nick, "can_kick_users"):
+        return {"status": "error", "msg": "Нет права «Кик» — его должен выдать Главный Администратор!"}
     # Себя кикнуть нельзя (даже суперу) — иначе выкинешь сам себя
     if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
         return {"status": "error", "msg": "Нельзя кикнуть самого себя!"}
@@ -2533,7 +2621,7 @@ def is_deleted_nick(nick: str) -> bool:
 
 
 @app.post("/admin/delete-user")
-def delete_user_action(data: DeleteUserAction):
+async def delete_user_action(data: DeleteUserAction):
     require_admin(data.admin_nick)
     # Удалить самого себя нельзя ни при каких правах
     if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
@@ -2544,7 +2632,7 @@ def delete_user_action(data: DeleteUserAction):
     adm = cursor.fetchone()
     if not adm: raise HTTPException(status_code=403, detail="Отказано")
     perms = json.loads(adm[2] or '{}')
-    is_sup = bool(adm[0]) or is_super(data.admin_nick)
+    is_sup = bool(adm[0]) or is_super(data.admin_nick) or is_assistant(data.admin_nick)
 
     if is_sup or perms.get("can_delete_users_direct"):
         cursor.execute("DELETE FROM users WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
@@ -2554,6 +2642,8 @@ def delete_user_action(data: DeleteUserAction):
         cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
         note_deleted_user(data.target_nick, data.admin_nick, data.reason)
         conn.commit()
+        # Удалённый сразу вылетает из аккаунта
+        await kick_account(data.target_nick, "Ваш аккаунт был удалён администратором.", lock=False)
         return {"status": "ok", "msg": f"Аккаунт @{data.target_nick} удалён! Ник больше нельзя занять."}
     elif perms.get("can_request_delete_users"):
         if not data.reason.strip(): return {"status": "error", "msg": "Укажите причину для заявки!"}
@@ -2561,14 +2651,14 @@ def delete_user_action(data: DeleteUserAction):
         cursor.execute("INSERT INTO delete_requests (target_nick, requested_by, reason, expires_at) VALUES (?,?,?,?)",
                        (data.target_nick, data.admin_nick, data.reason.strip(), exp))
         conn.commit()
+        await _notify_admins_about_request(
+            f"🗑 Заявка на удаление @{data.target_nick} от @{data.admin_nick}: {data.reason.strip()}")
         return {"status": "ok", "msg": f"Заявка на удаление @{data.target_nick} отправлена (срок 7 дней)."}
     return {"status": "error", "msg": "Нет прав на удаление аккаунтов!"}
 
 @app.get("/admin/delete-requests")
 def get_delete_requests(admin: str):
-    cursor.execute("SELECT is_superadmin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
-    row = cursor.fetchone()
-    if not row or (not row[0] and not is_super(admin)):
+    if not (is_super(admin) or is_assistant(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     periodic_cleanup()
     cursor.execute("SELECT id, target_nick, requested_by, reason, created_at, expires_at FROM delete_requests WHERE status='pending' ORDER BY id DESC")
@@ -2588,10 +2678,8 @@ def get_deleted_users(admin: str):
 
 @app.get("/admin/ban-requests")
 def get_ban_requests(admin: str):
-    """Заявки на бан от обычных админов (решает только супер)."""
-    cursor.execute("SELECT is_superadmin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
-    row = cursor.fetchone()
-    if not row or (not row[0] and not is_super(admin)):
+    """Заявки на бан: решают супер и помощник."""
+    if not (is_super(admin) or is_assistant(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     periodic_cleanup()
     cursor.execute("""SELECT id, target_nick, requested_by, reason, ban_type, duration_hours, created_at
@@ -2602,8 +2690,8 @@ def get_ban_requests(admin: str):
 
 @app.post("/admin/ban-requests/decision")
 async def decide_ban_request(data: ReqDecision):
-    if not is_super(data.admin_nick):
-        return {"status": "error", "msg": "Только Главный Администратор!"}
+    if not (is_super(data.admin_nick) or is_assistant(data.admin_nick)):
+        return {"status": "error", "msg": "Только Главный Администратор или его помощник!"}
     cursor.execute("""SELECT target_nick, requested_by, reason, ban_type, duration_hours
                       FROM ban_requests WHERE id=? AND status='pending'""", (data.request_id,))
     req = cursor.fetchone()
@@ -2623,20 +2711,23 @@ async def decide_ban_request(data: ReqDecision):
         conn.commit()
         await kick_account(target,
                            f"Вы заблокированы! Причина: {req_reason or 'нарушение правил'}.", lock=False)
-        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
-                       (requester, f"Заявка на бан @{target} одобрена."))
+        text = f"Заявка на бан @{target} одобрена."
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, text))
         conn.commit()
+        await manager.send_to_user(requester, {"action": "notify", "msg": text})
         return {"status": "ok", "msg": f"@{target} заблокирован по заявке @{requester}."}
     cursor.execute("UPDATE ban_requests SET status='rejected' WHERE id=?", (data.request_id,))
-    cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
-                   (requester, f"Заявка на бан @{target} отклонена."))
+    text = f"Заявка на бан @{target} отклонена."
+    cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, text))
     conn.commit()
+    await manager.send_to_user(requester, {"action": "notify", "msg": text})
     return {"status": "ok", "msg": "Заявка отклонена."}
 
 
 @app.post("/admin/delete-requests/decision")
-def decide_delete_request(data: ReqDecision):
-    if not is_super(data.admin_nick): return {"status": "error", "msg": "Только Главный Администратор!"}
+async def decide_delete_request(data: ReqDecision):
+    if not (is_super(data.admin_nick) or is_assistant(data.admin_nick)):
+        return {"status": "error", "msg": "Только Главный Администратор или его помощник!"}
     cursor.execute("SELECT target_nick, requested_by, reason FROM delete_requests WHERE id=? AND status='pending'", (data.request_id,))
     req = cursor.fetchone()
     if not req: return {"status": "error", "msg": "Заявка не найдена!"}
@@ -2647,25 +2738,52 @@ def decide_delete_request(data: ReqDecision):
         cursor.execute("DELETE FROM members WHERE LOWER(nickname)=LOWER(?)", (target,))
         cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (target,))
         note_deleted_user(target, data.admin_nick, req_reason)
-        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Главный администратор одобрил удаление @{target}."))
+        text = f"Удаление @{target} одобрено."
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, text))
         conn.commit()
+        await kick_account(target, "Ваш аккаунт был удалён администратором.", lock=False)
+        await manager.send_to_user(requester, {"action": "notify", "msg": text})
         return {"status": "ok", "msg": f"@{target} удалён! Ник больше нельзя занять."}
     else:
         cursor.execute("UPDATE delete_requests SET status='rejected' WHERE id=?", (data.request_id,))
-        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, f"Заявка на удаление @{target} отклонена."))
+        text = f"Заявка на удаление @{target} отклонена."
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (requester, text))
         conn.commit()
+        await manager.send_to_user(requester, {"action": "notify", "msg": text})
         return {"status": "ok", "msg": "Заявка отклонена."}
 
 @app.post("/admin/set-perms")
 async def set_admin_permissions(data: AdminPermsData):
-    # Выдавать/снимать админ-права может только супер или владелец сайта
-    if not can_manage_everything(data.admin_nick):
+    # Выдавать/снимать админ-права: супер, владелец сайта, помощник
+    # или админ с конкретным правом can_grant_admins
+    if not (can_manage_everything(data.admin_nick) or is_assistant(data.admin_nick)
+            or has_perm(data.admin_nick, "can_grant_admins")):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     if is_super(data.target_nick): return {"status": "error", "msg": "Нельзя менять права Главного Администратора!"}
+    # Роль «помощник» может выдать только супер/владелец
+    if data.perms.get("can_assistant") and not can_manage_everything(data.admin_nick):
+        return {"status": "error", "msg": "Роль «Помощник» выдаёт только Главный Администратор!"}
+    # Помощник получает все права автоматически
+    if data.perms.get("can_assistant"):
+        for k in ("can_delete_messages", "can_delete_chats", "can_kick_users", "can_view_all_chats",
+                  "can_grant_admins", "can_delete_users_direct", "can_request_delete_users",
+                  "can_ban_users", "can_mute_users", "can_handle_support", "can_give_coins",
+                  "can_manage_everything"):
+            data.perms[k] = True
     has_any = any(data.perms.values())
     if has_any:
         cursor.execute("UPDATE users SET is_admin=1, admin_perms=?, admin_notified=0, granted_by=?, revoked_by=NULL WHERE LOWER(nickname)=LOWER(?)",
                        (json.dumps(data.perms), data.admin_nick, data.target_nick))
+        conn.commit()
+        # Живое оповещение: выдаваемый сразу узнаёт о правах (без перезагрузки)
+        await manager.send_to_user(data.target_nick, {
+            "action": "admin_granted", "granted_by": data.admin_nick,
+            "perms": data.perms, "assistant": bool(data.perms.get("can_assistant"))})
+        text = f"Вы получили права администратора от @{data.admin_nick}!"
+        if data.perms.get("can_assistant"):
+            text = f"@{data.admin_nick} назначил вас помощником главного администратора!"
+        await manager.send_to_user(data.target_nick, {"action": "notify", "msg": text})
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)", (data.target_nick, text))
         conn.commit()
         return {"status": "ok", "msg": f"Права для @{data.target_nick} обновлены!"}
     else:
@@ -2677,14 +2795,35 @@ async def set_admin_permissions(data: AdminPermsData):
 
 @app.post("/admin/give-coins")
 async def admin_give_coins(data: GiveCoinsData):
-    """Выдача клыкер-монет (грант) из админ-панели."""
+    """Выдача/забор клыкер-монет из админ-панели. Требует права can_give_coins."""
     require_admin(data.admin_nick)
-    if not data.target_nick or not data.amount:
-        return {"status": "error", "msg": "Укажите юзера и сумму!"}
-    amount = max(1, min(int(data.amount), 10**9))
+    # Строгая проверка: монеты трогает только тот, у кого есть can_give_coins
+    if not (has_perm(data.admin_nick, "can_give_coins")
+            or can_manage_everything(data.admin_nick) or is_assistant(data.admin_nick)):
+        return {"status": "error", "msg": "Нет права «Выдача/забор монет» — его должен выдать Главный Администратор!"}
+    if not data.target_nick:
+        return {"status": "error", "msg": "Укажите юзера!"}
+    try:
+        amount = int(data.amount)
+    except Exception:
+        return {"status": "error", "msg": "Некорректная сумма!"}
+    if amount == 0:
+        return {"status": "error", "msg": "Сумма не может быть нулевой!"}
+    if amount > 10**9 or amount < -10**9:
+        return {"status": "error", "msg": "Сумма слишком большая!"}
     cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
     row = cursor.fetchone()
-    new_total = (row[0] if row else 0) + amount
+    pending = row[0] if row else 0
+    new_total = pending + amount
+    if amount < 0:
+        # Забор: сверяемся с последним известным балансом юзера + уже висящий грант
+        cursor.execute("SELECT coins FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
+        cr = cursor.fetchone()
+        balance = int(cr[0] or 0) if cr else 0
+        avail = balance + pending
+        if avail < abs(amount):
+            return {"status": "error",
+                    "msg": f"У @{data.target_nick} всего {max(0, avail)} 💰 — забрать {abs(amount)} нельзя!"}
     if row:
         cursor.execute("UPDATE clicker_grants SET bonus_coins=?, granted_by=?, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)",
                        (new_total, data.admin_nick, data.target_nick))
@@ -2692,14 +2831,20 @@ async def admin_give_coins(data: GiveCoinsData):
         cursor.execute("INSERT INTO clicker_grants (nickname, bonus_coins, granted_by) VALUES (?,?,?)",
                        (data.target_nick, new_total, data.admin_nick))
     conn.commit()
-    return {"status": "ok", "msg": f"@{data.target_nick} получает {amount} 💰 (всего грант: {new_total})."}
+    if amount > 0:
+        return {"status": "ok", "msg": f"@{data.target_nick} получает {amount} 💰 (всего грант: {new_total})."}
+    return {"status": "ok", "msg": f"У @{data.target_nick} забрано {abs(amount)} 💰 (всего грант: {new_total})."}
 
 @app.get("/admin/clicker-coins")
 def admin_get_clicker_coins(admin: str, target: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
+    # Смотреть баланс монет юзеров — только с can_give_coins
+    if not (row[0] or is_super(admin) or is_assistant(admin)
+            or json.loads(row[2] or '{}').get("can_give_coins")):
+        return {"error": "Нет права «Выдача/забор монет»"}
     cursor.execute("SELECT bonus_coins, granted_by FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (target,))
     r = cursor.fetchone()
     return {"bonus_coins": (r[0] if r else 0), "granted_by": (r[1] if r else "")}
@@ -2714,7 +2859,8 @@ async def clicker_sync(data: ClickerSyncData):
     cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
     r = cursor.fetchone()
     bonus = r[0] if r else 0
-    if bonus > 0:
+    if bonus != 0:
+        # грант применяется один раз: и выдача, и забор (отрицательная сумма)
         cursor.execute("UPDATE clicker_grants SET bonus_coins=0, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
         conn.commit()
     return {"status": "ok", "bonus": bonus}
@@ -2767,7 +2913,7 @@ def profile_gamestats_get(nickname: str):
 # ═══════════════════════════════════════════════════════════
 
 def _is_support_staff(nick: str) -> bool:
-    if is_super(nick): return True
+    if is_super(nick) or is_assistant(nick): return True
     cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (nick,))
     r = cursor.fetchone()
     if not r: return False
@@ -2860,7 +3006,7 @@ def close_ticket(data: SupportDeleteData):
     return {"status": "ok", "msg": "Обращение закрыто."}
 
 @app.post("/support/request-perm")
-def request_support_perm(data: SupportPermRequestData):
+async def request_support_perm(data: SupportPermRequestData):
     today = datetime.utcnow().date().isoformat()
     cursor.execute("SELECT 1 FROM support_perm_requests WHERE LOWER(requested_by)=LOWER(?) AND DATE(created_at)=? AND status='pending'",
                    (data.nickname, today))
@@ -2868,17 +3014,20 @@ def request_support_perm(data: SupportPermRequestData):
 
     cursor.execute("INSERT INTO support_perm_requests (requested_by) VALUES (?)", (data.nickname,))
     conn.commit()
+    await _notify_admins_about_request(f"🙋 @{data.nickname} просит право «Помощник поддержки».")
     return {"status": "ok", "msg": "Запрос отправлен Главному Администратору!"}
 
 @app.get("/support/perm-requests")
 def get_support_perm_requests(admin: str):
-    if not is_super(admin): raise HTTPException(status_code=403, detail="Только Главный Администратор")
+    if not (is_super(admin) or is_assistant(admin)):
+        raise HTTPException(status_code=403, detail="Только Главный Администратор")
     cursor.execute("SELECT id, requested_by, status, created_at FROM support_perm_requests WHERE status='pending' ORDER BY id DESC")
     return [{"id": r[0], "requested_by": r[1], "status": r[2], "created_at": r[3]} for r in cursor.fetchall()]
 
 @app.post("/support/perm-decision")
 async def decide_support_perm(data: SupportPermDecision):
-    if not is_super(data.admin_nick): return {"status": "error", "msg": "Только Главный Администратор!"}
+    if not (is_super(data.admin_nick) or is_assistant(data.admin_nick)):
+        return {"status": "error", "msg": "Только Главный Администратор или его помощник!"}
     cursor.execute("SELECT requested_by FROM support_perm_requests WHERE id=? AND status='pending'", (data.request_id,))
     row = cursor.fetchone()
     if not row: return {"status": "error", "msg": "Запрос не найден!"}
@@ -2893,6 +3042,9 @@ async def decide_support_perm(data: SupportPermDecision):
         perms["can_handle_support"] = True
         cursor.execute("UPDATE users SET is_admin=1, admin_perms=? WHERE LOWER(nickname)=LOWER(?)", (json.dumps(perms), nick))
         conn.commit()
+        # Живо: клиент сразу подхватывает право без перезагрузки
+        await manager.send_to_user(nick, {"action": "admin_granted", "granted_by": data.admin_nick,
+                                          "perms": perms, "assistant": False})
         await manager.send_to_user(nick, {"action": "support_perm_granted"})
         return {"status": "ok", "msg": f"Право на поддержку выдано @{nick}!"}
     else:
