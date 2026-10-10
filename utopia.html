@@ -1678,10 +1678,30 @@ function updateSmartBot(bot, enemy, bulletsRef, powerupsRef, crateRef) {
         moveDirY = -Math.sin(ang);
         if (bot.shootCooldown <= 0 && bot.ammo > 0) bot.shootRequest = true;
       } else {
-        // Оптимальная дистанция — стрейф + огонь
-        moveDirX = Math.cos(ang + Math.PI / 2);
-        moveDirY = Math.sin(ang + Math.PI / 2);
-        if (bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.12 + diff * 0.20) {
+        // Оптимальная дистанция — НЕ ходим по кругу постоянно:
+        // меняем сторону стрейфа, иногда рывком идём вперёд или отскакиваем
+        const _bt = performance.now();
+        if (!bot._strafeFlipT || _bt - bot._strafeFlipT > (700 + Math.random() * 900)) {
+          bot._strafeFlipT = _bt;
+          bot._strafeSide = (bot._strafeSide === undefined || Math.random() < 0.5) ? 1 : -1;
+          // 25% шанс — резкий рывок: вперёд (рывок на дистанцию) или назад
+          const roll = Math.random();
+          bot._dashMode = roll < 0.15 ? 'forward' : (roll < 0.25 ? 'back' : 'strafe');
+          bot._dashUntil = _bt + 600 + Math.random() * 700;
+        }
+        const side = bot._strafeSide || 1;
+        if (bot._dashMode === 'forward' && _bt < (bot._dashUntil || 0)) {
+          moveDirX = Math.cos(ang);
+          moveDirY = Math.sin(ang);
+        } else if (bot._dashMode === 'back' && _bt < (bot._dashUntil || 0)) {
+          moveDirX = -Math.cos(ang);
+          moveDirY = -Math.sin(ang);
+        } else {
+          moveDirX = Math.cos(ang + Math.PI / 2) * side;
+          moveDirY = Math.sin(ang + Math.PI / 2) * side;
+        }
+        // На оптимальной дистанции стреляем увереннее, чем раньше
+        if (bot.shootCooldown <= 0 && bot.ammo > 0 && Math.random() < 0.25 + diff * 0.35) {
           bot.shootRequest = true;
         }
       }
@@ -2424,6 +2444,8 @@ function loop() {
             pvpActive = false;
             pvpWs.send(JSON.stringify({ action: 'utopia_state', match_id: pvpMatchId, state: { alive: false, hp: 0 } }));
             pvpShowResult(false, 'Ты погиб!');
+          } else if (!pvpActive) {
+            pveCheckMatchEnd();
           }
         }
         b.alive = false;
@@ -2433,6 +2455,7 @@ function loop() {
           p2.die(particles);
           if (currentGameMode !== 'flag') p1.score++;
           // PvP: НЕ показываем победу — соперник сам отправит alive:false со своего клиента
+          if (!pvpActive) pveCheckMatchEnd();
         }
         b.alive = false;
       }
@@ -2720,6 +2743,42 @@ function pvpHandleMsg(d) {
     pvpBtn.textContent = '🔍 Найти соперника (PvP)';
     pvpSearching = false;
   }
+}
+
+// ── PvE: конец матча с ботом (до 5 фрагов) + статистика профиля ──
+function pveRecordResult(gameKey, won) {
+    try {
+        const st = JSON.parse(localStorage.getItem('utopia_pve_stats') || '{}');
+        if (!st[gameKey]) st[gameKey] = { wins: 0, losses: 0, matches: 0 };
+        st[gameKey].matches++;
+        if (won) st[gameKey].wins++; else st[gameKey].losses++;
+        localStorage.setItem('utopia_pve_stats', JSON.stringify(st));
+    } catch (_) {}
+}
+
+function pveCheckMatchEnd() {
+    if (!gameRunning) return;
+    const TARGET = 5;
+    if (p1.score < TARGET && p2.score < TARGET) return;
+    const won = p1.score >= TARGET;
+    gameRunning = false;
+    pveRecordResult('utopia_duel', won);
+    const oppName = p2.name || 'Бот';
+    menuOverlay.style.display = 'flex';
+    menuOverlay.innerHTML = `
+    <div style="text-align:center; color:#fff; font-family:Arial, sans-serif;">
+      <div style="font-size:64px; margin-bottom:16px;">${won ? '🏆' : '💀'}</div>
+      <div style="font-size:28px; font-weight:900; color:${won ? '#3fb950' : '#ff5555'}; margin-bottom:12px;">
+        ${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}
+      </div>
+      <div style="font-size:13px; color:#aaa; margin-bottom:20px;">Счёт: ${p1.score} : ${p2.score} · Соперник: ${escapeHtmlLocal(oppName)}</div>
+      <button onclick="location.reload()" style="padding:12px 28px; border-radius:10px; border:2px solid #818cf8; background:rgba(129,140,248,.2); color:#a5b4fc; font-size:15px; font-weight:700; cursor:pointer;">🔄 Играть ещё</button>
+      ${window.self !== window.top ? '<br><button onclick="window.top.closeGameModal&&window.top.closeGameModal()" style="padding:10px 24px; border-radius:10px; border:1px solid #555; background:rgba(255,255,255,.08); color:#aaa; font-size:13px; margin-top:10px; cursor:pointer;">✕ Выйти в мессенджер</button>' : ''}
+    </div>`;
+}
+
+function escapeHtmlLocal(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 // Экран победы/поражения поверх игры

@@ -641,8 +641,10 @@
         } catch (_) {}
         function gvSaveWeapons() { try { localStorage.setItem('gv_weapons', JSON.stringify(gvOwnedWeapons)); } catch (_) {} }
         function gvHasWeapon(idx) { return gvOwnedWeapons.indexOf(idx) >= 0; }
-        // Монеты Green Valley (синхронизируются с кликером через localStorage)
-        function gvGetCoins() { return parseInt(localStorage.getItem('utopia_clicker_score') || '0', 10) || 0; }
+        // Монеты Green Valley = баланс кликера (utopia_clicker.score)
+        function gvGetCoins() {
+            try { const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}'); return Math.floor(c.score || 0); } catch (_) { return 0; }
+        }
         function gvAddCoins(n) {
             // читаем текущий счёт кликера
             try {
@@ -693,7 +695,7 @@
             let html = '<div style="background:#0d1a12;border:2px solid #3fb950;border-radius:14px;padding:18px 20px;max-width:440px;width:92%;max-height:86vh;overflow-y:auto;">'
                 + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
                 + '<div style="color:#3fb950;font-weight:900;font-size:17px;">🛒 МАГАЗИН ОРУЖИЯ</div>'
-                + '<div style="color:#ffd700;font-weight:800;font-size:14px;">🪙 ' + coins.toLocaleString('ru-RU') + '</div>'
+                + '<div style="color:#ffd700;font-weight:800;font-size:14px;">💰 ' + coins.toLocaleString('ru-RU') + '</div>'
                 + '</div>'
                 + '<div style="color:#888;font-size:11px;margin-bottom:12px;">Пистолет и плазмоган бесплатны. Остальное — за монеты клыкера. Монеты общие с клыкером.</div>';
             GV_WEAPON_SHOP.forEach(w => {
@@ -709,7 +711,7 @@
                     html += '<div style="color:#3fb950;font-size:12px;font-weight:700;margin-top:3px;">✔ Куплено</div>';
                 } else {
                     html += '<div style="color:' + (canBuy ? '#ffd700' : '#ff7070') + ';font-size:12px;font-weight:700;margin-top:3px;">'
-                        + '🪙 ' + w.cost.toLocaleString('ru-RU')
+                        + '💰 ' + w.cost.toLocaleString('ru-RU')
                         + (canBuy ? '' : ' <span style="color:#ff7070;">(не хватает ' + short.toLocaleString('ru-RU') + ')</span>')
                         + '</div>';
                 }
@@ -962,50 +964,114 @@
             }
         }
 
-        function findCorridorPath(startPos, targetPos) {
-            const startC = Math.max(0, Math.min(maze[0].length - 1, Math.floor((startPos.x - mazeOffsetX) / cellSize)));
-            const startR = Math.max(0, Math.min(maze.length - 1, Math.floor((startPos.z - mazeOffsetZ) / cellSize)));
-            const targetC = Math.max(0, Math.min(maze[0].length - 1, Math.floor((targetPos.x - mazeOffsetX) / cellSize)));
-            const targetR = Math.max(0, Math.min(maze.length - 1, Math.floor((targetPos.z - mazeOffsetZ) / cellSize)));
+        // ── Навигационная сетка 1м из staticColliders (стены бункера, двери, ящики, кусты) ──
+        const NAV_CELL = 1;
+        const NAV_HALF = 80;
+        const NAV_N = 160;
+        let navBlocked = null;
+        let navDirty = true;
 
-            if (startC === targetC && startR === targetR) {
-                return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
-            }
-
-            const queue = [{ c: startC, r: startR, path: [] }];
-            const visited = new Uint8Array(maze.length * maze[0].length);
-            visited[startR * maze[0].length + startC] = 1;
-
-            const neighbors = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
-
-            while (queue.length > 0) {
-                const cur = queue.shift();
-                if (cur.c === targetC && cur.r === targetR) {
-                    const nextStep = cur.path[0] || { c: targetC, r: targetR };
-                    return new THREE.Vector3(
-                        mazeOffsetX + (nextStep.c + 0.5) * cellSize,
-                        1.1,
-                        mazeOffsetZ + (nextStep.r + 0.5) * cellSize
-                    );
+        function buildNavGrid() {
+            navBlocked = new Uint8Array(NAV_N * NAV_N);
+            for (let i = 0; i < staticColliders.length; i++) {
+                const col = staticColliders[i];
+                // Двери бункера не блокируют сетку: путь идёт через проход,
+                // бот откроет дверь по пути (с проверкой энергии)
+                let isDoorCol = false;
+                for (let di = 0; di < bunkerDoors.length; di++) {
+                    if (bunkerDoors[di].collider === col) { isDoorCol = true; break; }
                 }
-
-                for (let n of neighbors) {
-                    const nc = cur.c + n.dc;
-                    const nr = cur.r + n.dr;
-                    if (nc >= 0 && nc < maze[0].length && nr >= 0 && nr < maze.length) {
-                        const idx = nr * maze[0].length + nc;
-                        if (!visited[idx] && maze[nr][nc] === 0) {
-                            visited[idx] = 1;
-                            queue.push({
-                                c: nc,
-                                r: nr,
-                                path: cur.path.length === 0 ? [{ c: nc, r: nr }] : cur.path
-                            });
+                if (isDoorCol) continue;
+                if (col.isBox) {
+                    const c0 = Math.max(0, Math.floor(col.minX + NAV_HALF));
+                    const c1 = Math.min(NAV_N - 1, Math.floor(col.maxX + NAV_HALF));
+                    const r0 = Math.max(0, Math.floor(col.minZ + NAV_HALF));
+                    const r1 = Math.min(NAV_N - 1, Math.floor(col.maxZ + NAV_HALF));
+                    for (let r = r0; r <= r1; r++) {
+                        for (let c = c0; c <= c1; c++) navBlocked[r * NAV_N + c] = 1;
+                    }
+                } else {
+                    const c0 = Math.max(0, Math.floor(col.x - col.radius + NAV_HALF));
+                    const c1 = Math.min(NAV_N - 1, Math.floor(col.x + col.radius + NAV_HALF));
+                    const r0 = Math.max(0, Math.floor(col.z - col.radius + NAV_HALF));
+                    const r1 = Math.min(NAV_N - 1, Math.floor(col.z + col.radius + NAV_HALF));
+                    for (let r = r0; r <= r1; r++) {
+                        for (let c = c0; c <= c1; c++) {
+                            const wx = c - NAV_HALF + 0.5, wz = r - NAV_HALF + 0.5;
+                            if (Math.hypot(wx - col.x, wz - col.z) <= col.radius + 0.5) navBlocked[r * NAV_N + c] = 1;
                         }
                     }
                 }
             }
-            return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
+            navDirty = false;
+        }
+
+        function findCorridorPath(startPos, targetPos) {
+            if (!navBlocked || navDirty) buildNavGrid();
+            const cc = v => Math.max(0, Math.min(NAV_N - 1, v));
+            const sc = cc(Math.floor(startPos.x + NAV_HALF));
+            const sr = cc(Math.floor(startPos.z + NAV_HALF));
+            const tc = cc(Math.floor(targetPos.x + NAV_HALF));
+            const tr = cc(Math.floor(targetPos.z + NAV_HALF));
+
+            if (sc === tc && sr === tr) {
+                return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
+            }
+
+            let goalIdx = tr * NAV_N + tc;
+            if (navBlocked[goalIdx]) {
+                goalIdx = -1;
+                for (let rad = 1; rad <= 6 && goalIdx < 0; rad++) {
+                    for (let dr = -rad; dr <= rad && goalIdx < 0; dr++) {
+                        for (let dc = -rad; dc <= rad; dc++) {
+                            if (Math.max(Math.abs(dr), Math.abs(dc)) !== rad) continue;
+                            const rr = tr + dr, ck = tc + dc;
+                            if (rr < 0 || ck < 0 || rr >= NAV_N || ck >= NAV_N) continue;
+                            const idx = rr * NAV_N + ck;
+                            if (!navBlocked[idx]) { goalIdx = idx; break; }
+                        }
+                    }
+                }
+                if (goalIdx < 0) return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
+            }
+
+            const prev = new Int32Array(NAV_N * NAV_N).fill(-1);
+            const seen = new Uint8Array(NAV_N * NAV_N);
+            const startIdx = sr * NAV_N + sc;
+            const queue = [startIdx];
+            seen[startIdx] = 1;
+            let head = 0;
+            let found = -1;
+
+            while (head < queue.length) {
+                const cur = queue[head++];
+                if (cur === goalIdx) { found = cur; break; }
+                const r = (cur / NAV_N) | 0;
+                const c = cur - r * NAV_N;
+                if (c > 0 && !seen[cur - 1] && !navBlocked[cur - 1]) { seen[cur - 1] = 1; prev[cur - 1] = cur; queue.push(cur - 1); }
+                if (c < NAV_N - 1 && !seen[cur + 1] && !navBlocked[cur + 1]) { seen[cur + 1] = 1; prev[cur + 1] = cur; queue.push(cur + 1); }
+                if (r > 0 && !seen[cur - NAV_N] && !navBlocked[cur - NAV_N]) { seen[cur - NAV_N] = 1; prev[cur - NAV_N] = cur; queue.push(cur - NAV_N); }
+                if (r < NAV_N - 1 && !seen[cur + NAV_N] && !navBlocked[cur + NAV_N]) { seen[cur + NAV_N] = 1; prev[cur + NAV_N] = cur; queue.push(cur + NAV_N); }
+            }
+
+            if (found < 0) return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
+
+            let step = found;
+            while (prev[step] !== startIdx && prev[step] !== -1) step = prev[step];
+            const wr = (step / NAV_N) | 0;
+            const wc = step - wr * NAV_N;
+            return new THREE.Vector3(wc - NAV_HALF + 0.5, 1.1, wr - NAV_HALF + 0.5);
+        }
+
+        // Безопасное перемещение бота: мелкие подшаги + выталкивание из коллайдеров
+        function moveBotBy(pos, dir, dist) {
+            let remaining = dist;
+            while (remaining > 0.0001) {
+                const s = Math.min(0.3, remaining);
+                pos.addScaledVector(dir, s);
+                resolveEntityCollisions(pos, 0.6);
+                remaining -= s;
+            }
         }
 
         // ПОЛНАЯ ДЕТАЛИЗАЦИЯ ПЕРСОНАЖЕЙ И БОТОВ (ТАКТИЧЕСКИЙ БРОНЕЖИЛЕТ, ШЛЕМ, НАУШНИКИ, НАКОЛЕННИКИ)
@@ -1180,6 +1246,7 @@
                 strafeDir: Math.random() > 0.5 ? 1 : -1, strafeTimer: 0,
                 hasHealed: false, pathTarget: null, pathUpdateTimer: 0,
                 doorOpenCooldown: 0, doorHaltTimer: 0,
+                energy: 100, maxEnergy: 100, waitingForEnergy: false,
                 velocity: new THREE.Vector3(), prevPos: botGroup.position.clone()
             });
         }
@@ -2115,7 +2182,16 @@
                         isGameRunning = false;
                         if (document.exitPointerLock) document.exitPointerLock();
                         changeScreen('hud', 'none');
-                        const finalWinner = (blueRoundWins > redRoundWins) ? "ПОБЕДА СИНИХ!" : "ПОБЕДА КРАСНЫХ!";
+                        const blueWon = blueRoundWins > redRoundWins;
+                        const finalWinner = blueWon ? "ПОБЕДА СИНИХ!" : "ПОБЕДА КРАСНЫХ!";
+                        // Статистика PvE в профиль (игрок всегда на стороне синих)
+                        try {
+                            const st = JSON.parse(localStorage.getItem('utopia_pve_stats') || '{}');
+                            if (!st.greenu_match) st.greenu_match = { wins: 0, losses: 0, matches: 0 };
+                            st.greenu_match.matches++;
+                            if (blueWon) st.greenu_match.wins++; else st.greenu_match.losses++;
+                            localStorage.setItem('utopia_pve_stats', JSON.stringify(st));
+                        } catch (_) {}
                         document.getElementById('matchEndTitle').innerText = finalWinner;
                         document.getElementById('matchEndTitle').style.color = (blueRoundWins > redRoundWins) ? '#44aaff' : '#ff4444';
                         document.getElementById('matchEndSub').innerText = `Итоговый счёт: ${blueRoundWins} - ${redRoundWins}`;
@@ -3009,25 +3085,53 @@
                     const rdir = dangerRocket.vel.clone().normalize();
                     const side = new THREE.Vector3(-rdir.z, 0, rdir.x);
                     const dodgeSpd = (bot.diff === 'noob' ? 4 : (bot.diff === 'mid' ? 7.5 : 10));
-                    bot.mesh.position.addScaledVector(side, dodgeSpd * delta);
+                    moveBotBy(bot.mesh.position, side, dodgeSpd * delta);
                 }
 
+                // ЭНЕРГИЯ БОТА: восстановление как у игрока (100/15 сек)
+                bot.energy = Math.min(bot.maxEnergy, bot.energy + (100 / 15) * delta);
+
+                // ДВЕРИ: бот тратит 15 энергии на открытие; без энергии — ждёт у двери
+                let doorHaltReason = false;
                 if (bot.doorHaltTimer > 0) {
                     bot.doorHaltTimer -= delta;
-                    return; 
                 }
-
                 bunkerDoors.forEach(d => {
-                    if (!d.isOpen && bot.doorOpenCooldown <= 0) {
-                        const dwp = new THREE.Vector3();
-                        d.mesh.getWorldPosition(dwp);
-                        if (bot.mesh.position.distanceTo(dwp) < 3.5) {
+                    if (d.isOpen) return;
+                    const dwp = new THREE.Vector3();
+                    d.mesh.getWorldPosition(dwp);
+                    const distToDoor = bot.mesh.position.distanceTo(dwp);
+                    if (distToDoor > 3.5) return;
+                    // Бот у закрытой двери: нужен проход — открываем
+                    if (bot.doorOpenCooldown <= 0) {
+                        if (bot.energy >= 15) {
+                            bot.energy -= 15;
                             bot.doorOpenCooldown = 3.0;
                             bot.doorHaltTimer = (bot.diff === 'pro') ? 0.25 : 0.55;
                             toggleBunkerDoor(d, true);
+                        } else {
+                            // Нет энергии — ждём у двери, пока пополнится
+                            bot.waitingForEnergy = true;
+                            doorHaltReason = true;
                         }
+                    } else {
+                        doorHaltReason = true;
                     }
                 });
+                if (bot.waitingForEnergy && !doorHaltReason) {
+                    // Проверяем: дверь открыта или бот отошёл — выходим из ожидания
+                    const nearClosed = bunkerDoors.some(d => {
+                        if (d.isOpen) return false;
+                        const dwp = new THREE.Vector3();
+                        d.mesh.getWorldPosition(dwp);
+                        return bot.mesh.position.distanceTo(dwp) < 3.5;
+                    });
+                    if (!nearClosed) bot.waitingForEnergy = false;
+                }
+
+                if (doorHaltReason || bot.waitingForEnergy || bot.doorHaltTimer > 0) {
+                    return; // бот ждёт/стоит у двери, не двигается
+                }
 
                 let potentialTargets = [];
                 if (bot.team === 'enemy') {
@@ -3070,7 +3174,7 @@
                     }
                 }
 
-                // АНТИ-ЗАСТРЕВАНИЕ: если бот не двигался 1.5с — сбрасываем путь и даём рандомный дрейф
+                // АНТИ-ЗАСТРЕВАНИЕ: если бот не двигался 1.5с — сбрасываем путь и мягко сдвигаемся
                 if (bot._lastPos) {
                     const moved = bot.mesh.position.distanceTo(bot._lastPos);
                     if (moved < 0.1) {
@@ -3078,10 +3182,10 @@
                         if (bot._stuckTimer > 1.5) {
                             bot._stuckTimer = 0;
                             bot.pathTarget = null; // сброс пути — пересчитаем
-                            // Рандомный дрейф в сторону, чтобы выйти из угла
+                            // Мягкий дрейф в сторону (без телепорта сквозь стены)
                             const driftAngle = Math.random() * Math.PI * 2;
-                            bot.mesh.position.x += Math.cos(driftAngle) * 1.5;
-                            bot.mesh.position.z += Math.sin(driftAngle) * 1.5;
+                            const driftDir = new THREE.Vector3(Math.cos(driftAngle), 0, Math.sin(driftAngle));
+                            moveBotBy(bot.mesh.position, driftDir, 1.2);
                         }
                     } else {
                         bot._stuckTimer = 0;
@@ -3127,9 +3231,9 @@
                         }
 
                         let runSpeed = bot.diff === 'pro' ? 9.2 : (bot.diff === 'mid' ? 7.8 : 5.8);
-                        bot.mesh.position.addScaledVector(toWaypoint, runSpeed * delta);
+                        moveBotBy(bot.mesh.position, toWaypoint, runSpeed * delta);
                         if (bot.diff !== 'noob') {
-                            bot.mesh.position.addScaledVector(strafeVec, bot.strafeDir * 2.8 * delta);
+                            moveBotBy(bot.mesh.position, strafeVec, bot.strafeDir * 2.8 * delta);
                         }
 
                         if (target && bot.diff === 'pro' && !bot.isReloading) {
@@ -3173,23 +3277,30 @@
                 if (!isRetreating && target) {
                     let dist = bot.mesh.position.distanceTo(target.pos);
 
-                    // СИТУАТИВНОЕ ОРУЖИЕ: умный выбор под дистанцию и HP цели
+                    // СИТУАТИВНОЕ ОРУЖИЕ: умный выбор под дистанцию и HP цели.
+                    // mid/noob подурезаны: без снайперки и РПГ (только PRO возит тяжёлое)
                     let desiredWpn = 1;
-                    if (target.hp <= 40) {
-                        // Цель ранена — добиваем мощным
-                        if (dist > 20) desiredWpn = 5; 
-                        else if (dist > 10) desiredWpn = 6; 
-                        else desiredWpn = 2; 
-                    } else if (target.hp <= 70) {
-                        // Средний HP — универсал
-                        if (dist > 25) desiredWpn = 7;
-                        else if (dist > 12) desiredWpn = 1;
-                        else desiredWpn = 2;
+                    if (bot.diff === 'pro') {
+                        if (target.hp <= 40) {
+                            if (dist > 20) desiredWpn = 5;
+                            else if (dist > 10) desiredWpn = 6;
+                            else desiredWpn = 2;
+                        } else if (target.hp <= 70) {
+                            if (dist > 25) desiredWpn = 7;
+                            else if (dist > 12) desiredWpn = 1;
+                            else desiredWpn = 2;
+                        } else {
+                            if (dist < 8) desiredWpn = 2;
+                            else if (dist < 22) desiredWpn = 1;
+                            else desiredWpn = 7;
+                        }
+                    } else if (bot.diff === 'mid') {
+                        if (target.hp <= 50 && dist > 14) desiredWpn = 7;
+                        else if (dist < 8) desiredWpn = 2;
+                        else desiredWpn = 1;
                     } else {
-                        // Полный HP — дистанционный огонь
-                        if (dist < 8) desiredWpn = 2; 
-                        else if (dist < 22) desiredWpn = 1; 
-                        else desiredWpn = 7; 
+                        if (dist < 8) desiredWpn = 2;
+                        else desiredWpn = 1;
                     }
                     updateBotWeaponMesh(bot, desiredWpn);
 
@@ -3208,7 +3319,7 @@
                         let toWaypoint = new THREE.Vector3().subVectors(bot.pathTarget, bot.mesh.position);
                         toWaypoint.y = 0; toWaypoint.normalize();
                         let chaseSpd = bot.diff === 'pro' ? 8.5 : (bot.diff === 'mid' ? 6.0 : 4.5);
-                        bot.mesh.position.addScaledVector(toWaypoint, chaseSpd * delta);
+                        moveBotBy(bot.mesh.position, toWaypoint, chaseSpd * delta);
                         bot.mesh.lookAt(bot.pathTarget.x, 1.1, bot.pathTarget.z);
                     } else {
                         let forwardVec = new THREE.Vector3().subVectors(target.pos, bot.mesh.position);
@@ -3225,25 +3336,32 @@
                         let fwdSpd = bot.diff === 'pro' ? 7.0 : (bot.diff === 'mid' ? 4.8 : 4.0);
                         let strSpd = bot.diff === 'pro' ? 6.5 : (bot.diff === 'mid' ? 4.0 : 3.2);
 
-                        // PRO активно сближается на оптимальную дистанцию
-                        if (bot.diff === 'pro' && dist > 12) {
-                            bot.mesh.position.addScaledVector(forwardVec, fwdSpd * delta);
-                            bot.mesh.position.addScaledVector(rightVec, bot.strafeDir * strSpd * delta);
-                        } else if (dist > 18) {
-                            bot.mesh.position.addScaledVector(forwardVec, fwdSpd * delta);
-                            bot.mesh.position.addScaledVector(rightVec, bot.strafeDir * strSpd * delta);
-                        } else if (dist < 5) {
+                        // Все боты ПОДХОДЯТ на боевую дистанцию, а не танцуют издалека.
+                        // Цель стоит/идёт в упор — идём вперёд и стреляем на ходу.
+                        const targetSpeed = target.isPlayer
+                            ? playerVelocity.length()
+                            : (target.botRef ? target.botRef.velocity.length() : 1);
+                        const wantDist = bot.diff === 'pro' ? 11 : (bot.diff === 'mid' ? 13 : 15);
+                        if (dist < 5) {
                             // Слишком близко — отходим, чтобы не добивали в упор
-                            bot.mesh.position.addScaledVector(forwardVec, -fwdSpd * 1.0 * delta);
-                            bot.mesh.position.addScaledVector(rightVec, bot.strafeDir * strSpd * delta);
+                            const backVec = forwardVec.clone().negate();
+                            moveBotBy(bot.mesh.position, backVec, fwdSpd * 1.0 * delta);
+                            moveBotBy(bot.mesh.position, rightVec, bot.strafeDir * strSpd * delta);
+                        } else if (dist > wantDist || targetSpeed < 0.6) {
+                            // Идём к цели (в т.ч. если игрок стоит на месте — не танцуем, а подходим)
+                            moveBotBy(bot.mesh.position, forwardVec, fwdSpd * delta);
+                            if (dist > 8 && bot.diff !== 'noob') {
+                                moveBotBy(bot.mesh.position, rightVec, bot.strafeDir * strSpd * 0.5 * delta);
+                            }
                         } else {
-                            // Оптимальная дистанция — чистый стрейф
-                            bot.mesh.position.addScaledVector(rightVec, bot.strafeDir * (strSpd + 1.5) * delta);
+                            // Оптимальная дистанция — стрейф с переменным ритмом
+                            moveBotBy(bot.mesh.position, rightVec, bot.strafeDir * (strSpd + 1.5) * delta);
                         }
 
-                        // Скорострельность: PRO быстрее стреляет
-                        let fireRate = bot.diff === 'pro' ? 0.35 : (bot.diff === 'mid' ? 0.6 : 1.1);
+                        // Скорострельность: PRO быстрее стреляет. mid/noob — подурезано
+                        let fireRate = bot.diff === 'pro' ? 0.35 : (bot.diff === 'mid' ? 0.8 : 1.35);
                         let dmg = (bot.currentWeapon === 5) ? 50 : ((bot.currentWeapon === 6) ? 75 : ((bot.currentWeapon === 2) ? 12 : 5));
+                        if (bot.diff !== 'pro') dmg = Math.max(3, Math.round(dmg * (bot.diff === 'mid' ? 0.8 : 0.6)));
 
                         if (!bot.isReloading && time - bot.lastFire > fireRate && dist < 65) {
                             bot.lastFire = time;
@@ -3251,49 +3369,61 @@
 
                             playShootSound(bot.currentWeapon);
 
-                            // ТОЧНОЕ УПРЕЖДАЮЩЕЕ ПРИЦЕЛИВАНИЕ НА ОПЕРЕЖЕНИЕ
+                            // ТОЧНОЕ УПРЕЖДАЮЩЕЕ ПРИЦЕЛИВАНИЕ
                             let targetVel = target.isPlayer ? playerVelocity : (target.botRef ? target.botRef.velocity : new THREE.Vector3());
-                            let bulletSpeed = (bot.currentWeapon === 7) ? 40.0 : 70.0; // плазма медленнее
+                            let bulletSpeed = (bot.currentWeapon === 7) ? 40.0 : 70.0;
                             let timeToHit = dist / bulletSpeed;
                             let predMult = (bot.diff === 'pro') ? 0.98 : (bot.diff === 'mid' ? 0.55 : 0.1);
                             let predictedPos = target.pos.clone().add(targetVel.clone().multiplyScalar(timeToHit * predMult));
 
                             let aimDir = new THREE.Vector3().subVectors(predictedPos.clone().add(new THREE.Vector3(0, 0.9, 0)), startRay).normalize();
-                            
+
                             if (bot.diff === 'noob') {
-                                aimDir.x += (Math.random()-0.5)*0.16;
-                                aimDir.z += (Math.random()-0.5)*0.16;
+                                aimDir.x += (Math.random()-0.5)*0.22;
+                                aimDir.z += (Math.random()-0.5)*0.22;
                             } else if (bot.diff === 'mid') {
-                                aimDir.x += (Math.random()-0.5)*0.06;
-                                aimDir.z += (Math.random()-0.5)*0.06;
+                                aimDir.x += (Math.random()-0.5)*0.09;
+                                aimDir.z += (Math.random()-0.5)*0.09;
                             }
                             // PRO почти без разброса — точный прицел
 
                             raycaster.set(startRay, aimDir);
-                            let hits = raycaster.intersectObjects(wallMeshes.concat(hittableObjects), true);
 
-                            if (hits.length > 0) {
-                                let hitPoint = hits[0].point;
+                            // 1) Стена/препятствие между ботом и целью?
+                            const wallHits = raycaster.intersectObjects(wallMeshes, true);
+                            const wallDist = wallHits.length > 0 ? wallHits[0].distance : Infinity;
+
+                            // 2) Проходит ли луч близко к центру цели? (честное попадание)
+                            const targetCenter = target.pos.clone().add(new THREE.Vector3(0, 0.9, 0));
+                            const toTarget = new THREE.Vector3().subVectors(targetCenter, startRay);
+                            const along = toTarget.dot(aimDir);
+                            let hitConfirmed = false;
+                            let hitPoint = startRay.clone().addScaledVector(aimDir, Math.min(along, 80));
+                            if (along > 0 && wallDist > along - 0.4) {
+                                const closest = startRay.clone().addScaledVector(aimDir, along);
+                                const missDist = closest.distanceTo(targetCenter);
+                                // Радиус попадания: растёт с дистанцией (компенсация мелких ошибок)
+                                const hitRadius = 0.55 + dist * (bot.diff === 'pro' ? 0.02 : (bot.diff === 'mid' ? 0.012 : 0.006));
+                                if (missDist < hitRadius) {
+                                    hitConfirmed = true;
+                                    hitPoint = targetCenter;
+                                }
+                            }
+
+                            if (hitConfirmed) {
                                 createBotTracer(startRay, hitPoint, bot.currentWeapon === 7 ? 0x00ffff : 0xffcc00);
-
-                                // Проверяем и сам объект, и всех его родителей (дочерние мешы стен)
-                                let hitObj = hits[0].object;
-                                let hitWall = false;
-                                let chk = hitObj;
-                                while (chk) {
-                                    if (wallMeshes.indexOf(chk) !== -1) { hitWall = true; break; }
-                                    chk = chk.parent;
+                                if (target.isPlayer && !isSpectator) {
+                                    playerHp -= dmg; if (playerHp < 0) playerHp = 0;
+                                    updateHPUI();
+                                } else if (target.botRef) {
+                                    target.botRef.hp -= dmg; if (target.botRef.hp < 0) target.botRef.hp = 0;
+                                    target.botRef.bar.style.width = (target.botRef.hp / target.botRef.maxHp * 100) + '%';
+                                    target.botRef.text.innerText = Math.round(target.botRef.hp);
                                 }
-                                if (!hitWall) {
-                                    if (target.isPlayer && !isSpectator) {
-                                        playerHp -= dmg; if (playerHp < 0) playerHp = 0;
-                                        updateHPUI();
-                                    } else if (target.botRef) {
-                                        target.botRef.hp -= dmg; if (target.botRef.hp < 0) target.botRef.hp = 0;
-                                        target.botRef.bar.style.width = (target.botRef.hp / target.botRef.maxHp * 100) + '%'; 
-                                        target.botRef.text.innerText = Math.round(target.botRef.hp); 
-                                    }
-                                }
+                            } else if (wallHits.length > 0) {
+                                createBotTracer(startRay, wallHits[0].point, bot.currentWeapon === 7 ? 0x00ffff : 0xffcc00);
+                            } else {
+                                createBotTracer(startRay, hitPoint, bot.currentWeapon === 7 ? 0x00ffff : 0xffcc00);
                             }
 
                             if (bot.ammo <= 0) {

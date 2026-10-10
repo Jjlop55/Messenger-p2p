@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -114,8 +114,11 @@
     .msg.other { align-self: flex-start; background: rgba(22, 33, 54, 0.85); border: 1px solid rgba(0, 240, 255, 0.12); border-bottom-left-radius: 4px; }
     .msg-author { font-size: 11px; color: var(--neon-cyan); font-weight: 600; }
     .msg.mine .msg-author { color: #bae6fd; }
-    .msg-author-link { color: inherit; text-decoration: none; cursor: pointer; border-bottom: 1px dotted transparent; }
-    .msg-author-link:hover { border-bottom-color: currentColor; }
+.msg-author-link { color: inherit; text-decoration: none; cursor: pointer; border-bottom: 1px dotted transparent; }
+.msg-author-link:hover { border-bottom-color: currentColor; }
+.msg-avatar { display:inline-flex; margin-right:5px; cursor:pointer; vertical-align:middle; border-radius:50%; transition:transform .15s; }
+.msg-avatar:hover { transform:scale(1.15); }
+.msg-avatar img { border-radius:50%; }
     .msg-time { font-size: 10px; color: var(--text-dim); align-self: flex-end; }
     .msg.mine .msg-time { color: rgba(255, 255, 255, 0.75); }
 
@@ -577,7 +580,7 @@
   <div class="modal-card" style="max-width: 360px;">
     <h2 style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger</h2>
     <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Кибер-неон · Полная версия 2026</p>
-    <input type="text" id="login-nick" placeholder="Ваш никнейм" class="modal-input" autocomplete="off">
+    <input type="text" id="login-nick" placeholder="Ваш никнейм (до 8 символов)" class="modal-input" autocomplete="off" maxlength="8">
     <input type="password" id="login-pwd" placeholder="Пароль" class="modal-input">
     <button class="pill-btn" id="auth-btn" style="background: var(--neon-cyan); color: #000; font-weight: 700;">Войти в сеть</button>
     <div id="auth-error" style="color: var(--danger); font-size: 12px; text-align: center; font-weight: 600;"></div>
@@ -747,9 +750,14 @@
     <!-- ═══ ПРОФИЛЬ УЧАСТНИКА (Telegram-стиль) ═══ -->
     <div class="modal-overlay" id="user-profile-modal">
       <div class="modal-box" style="max-width: 380px; width: 94%;">
-        <div style="display:flex; justify-content:flex-end;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div id="up-tabs" style="display:flex; gap:6px;">
+            <button id="up-tab-info" class="pill-btn" style="font-size:12px; padding:5px 12px; background:rgba(88,166,255,.16); color:#58a6ff;" onclick="upShowTab('info')">ℹ Информация</button>
+            <button id="up-tab-stats" class="pill-btn" style="font-size:12px; padding:5px 12px; opacity:.6;" onclick="upShowTab('stats')">🎮 Игровая статистика</button>
+          </div>
           <button class="icon-btn" onclick="closeModal('user-profile-modal')">✕</button>
         </div>
+        <div id="up-pane-info">
         <div style="text-align:center; padding:4px 0 10px;">
           <div id="up-avatar" style="width:84px; height:84px; border-radius:50%; margin:0 auto 10px; background:var(--bg-sec); display:flex; align-items:center; justify-content:center; font-size:34px; overflow:hidden;"></div>
           <div id="up-nick" style="font-size:17px; font-weight:700;">—</div>
@@ -761,6 +769,10 @@
         <div id="up-bio" style="font-size:13px; color:var(--text-sec); background:var(--bg-sec); border-radius:10px; padding:8px 10px; margin-bottom:10px; min-height:18px;">—</div>
         <div id="up-actions" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center;"></div>
         <div id="up-note" style="font-size:11px; color:var(--warning,#e0a94a); margin-top:10px; text-align:center; display:none;"></div>
+        </div>
+        <div id="up-pane-stats" style="display:none; font-size:13px; max-height:60vh; overflow-y:auto;">
+          <div id="up-stats" style="color:var(--text-sec);">Загрузка...</div>
+        </div>
       </div>
     </div>
 
@@ -849,7 +861,7 @@
     <h3 class="modal-title">👤 Мой профиль</h3>
     <div>
       <label style="font-size:12px; color:var(--text-dim);">Юзернейм:</label>
-      <input type="text" id="prof-nick-input" class="modal-input">
+      <input type="text" id="prof-nick-input" class="modal-input" maxlength="8">
       <div id="prof-nick-lock-msg" style="font-size:11px; color:var(--danger); display:none; margin-top:4px; font-weight:600;">
         🔒 Смена юзернейма для Главного Администратора заблокирована ядром системы!
       </div>
@@ -1173,6 +1185,7 @@
 const BACKEND_URL = "https://utopia-messenger-api.onrender.com";
 
 let currentUser = null, currentSessionToken = null;
+let myAvatarUrl = '';
   let isSuperAdmin = false, isAdmin = false, myAdminPerms = {};
   let isSiteOwner = false;          // ранг владельца всего сайта
   let wasKicked = false;            // нас кикнули — выходим мгновенно
@@ -1369,8 +1382,10 @@ window.addEventListener('DOMContentLoaded', () => {
 async function login(nickname, password) {
   const err = document.getElementById('auth-error');
   err.innerText = '';
-  // Пустой аккаунт создать нельзя: ник и пароль от 3 символов
-  if ((nickname || '').trim().length < 3) { err.innerText = 'Ник должен быть от 3 символов!'; return; }
+  // Пустой аккаунт создать нельзя: ник от 3 до 8 символов
+  const _nick = (nickname || '').trim();
+  if (_nick.length < 3) { err.innerText = 'Ник должен быть от 3 символов!'; return; }
+  if (_nick.length > 8) { err.innerText = 'Ник должен быть не длиннее 8 символов!'; return; }
   if ((password || '').trim().length < 3) { err.innerText = 'Пароль должен быть от 3 символов!'; return; }
   try {
     const res = await fetch(`${BACKEND_URL}/auth`, {
@@ -1395,6 +1410,8 @@ async function login(nickname, password) {
       document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
 
       renderAvatar(d.avatar_url, document.getElementById('my-avatar-box'));
+      myAvatarUrl = d.avatar_url || '';
+      cacheAvatar(currentUser, myAvatarUrl);
       document.getElementById('admin-panel-btn').style.display = (isAdmin || isSuperAdmin) ? 'block' : 'none';
       requestCallNotifications();
 
@@ -1405,6 +1422,10 @@ async function login(nickname, password) {
       // подключаем игровой WS сразу — чтобы дуэли приходили всегда
       setTimeout(() => gameConnect(), 1500);
       loadSettingsFromServer(); // загружаем настройки с сервера
+      // Гранты кликера забираем сразу при входе (а не только при открытии кликера)
+      syncClickerGrants();
+      // Отправляем свою игровую статистику на сервер (для вкладки в профиле)
+      pushProfileGamestats();
 
       setInterval(() => {
         if (activeWs && activeWs.readyState === WebSocket.OPEN) {
@@ -2173,6 +2194,8 @@ async function switchChat(chatId, chatName, isDirect = null) {
     } else if (data.action === 'muted') {
       // Админ замьютил — показываем причину и срок
       showToast(data.msg || 'Вы замьючены по правилам', 'warning');
+    } else if (data.action === 'unmuted') {
+      showToast(data.msg || 'Мут снят', 'success');
     } else if (data.action === 'new_invite') {
       // Звонковая группа («📞 Звонок ...») — принимаем инвайт автоматически, чтобы все были «перекинуты»
       if (data.chat && data.chat.indexOf('📞 Звонок') === 0) {
@@ -2301,6 +2324,53 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function renderAvatarHtml(avatarStr, size) {
+  const s = size || 18;
+  const st = `width:${s}px;height:${s}px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;background:rgba(255,255,255,.08);font-size:${Math.round(s * 0.62)}px;vertical-align:middle;flex:none;`;
+  if (!avatarStr) return `<span class="msg-avatar-ic" style="${st}">👤</span>`;
+  if (avatarStr.startsWith('emoji:')) return `<span class="msg-avatar-ic" style="${st}">${escapeHtml(avatarStr.replace('emoji:', ''))}</span>`;
+  if (avatarStr.startsWith('http')) return `<span class="msg-avatar-ic" style="${st}"><img src="${escapeHtml(avatarStr)}" style="width:100%;height:100%;object-fit:cover;" alt=""></span>`;
+  return `<span class="msg-avatar-ic" style="${st}">${escapeHtml(avatarStr)}</span>`;
+}
+
+// Кэш аватарок (nick → avatar_url), чтобы не дёргать API на каждое сообщение
+const avatarCache = {};
+function cacheAvatar(nick, url) {
+  if (nick && url !== undefined) avatarCache[String(nick).toLowerCase()] = url;
+}
+function getCachedAvatar(nick) {
+  const v = avatarCache[String(nick || '').toLowerCase()];
+  return v === undefined ? null : v;
+}
+
+// Ленивая подгрузка аватарки отправителя (один запрос на ник)
+const _avatarLoading = {};
+function ensureAvatarLoaded(nick) {
+  if (!nick) return;
+  const key = String(nick).toLowerCase();
+  if (key === String(currentUser || '').toLowerCase()) {
+    cacheAvatar(nick, myAvatarUrl || '');
+    paintAvatars(nick);
+    return;
+  }
+  if (avatarCache[key] !== undefined || _avatarLoading[key]) return;
+  _avatarLoading[key] = true;
+  fetch(`${BACKEND_URL}/user/info/${encodeURIComponent(nick)}?by=${encodeURIComponent(currentUser || '')}`)
+    .then(r => r.json())
+    .then(d => { if (d && d.status === 'ok') cacheAvatar(nick, d.avatar_url || ''); else cacheAvatar(nick, ''); })
+    .catch(() => cacheAvatar(nick, ''))
+    .finally(() => { delete _avatarLoading[key]; paintAvatars(nick); });
+}
+
+// Обновить все иконки аватарок никнейма в уже отрисованных сообщениях
+function paintAvatars(nick) {
+  if (!nick) return;
+  const html = renderAvatarHtml(getCachedAvatar(nick), 18);
+  document.querySelectorAll(`.msg-avatar[data-avatar-nick]`).forEach(w => {
+    if (String(w.dataset.avatarNick).toLowerCase() === String(nick).toLowerCase()) w.innerHTML = html;
+  });
+}
+
 function renderMessage(msg) {
   const box = document.getElementById('messages-box');
 
@@ -2343,25 +2413,28 @@ function renderMessage(msg) {
 
   el.innerHTML = `
     ${quoteHtml}
-    <div class="msg-author"><a href="#" class="msg-author-link" data-nick="${escapeHtml(msg.sender || '')}">${escapeHtml(msg.sender)}</a></div>
+    <div class="msg-author"><span class="msg-avatar" data-avatar-nick="${escapeHtml(msg.sender || '')}">${renderAvatarHtml(getCachedAvatar(msg.sender), 18)}</span><a href="#" class="msg-author-link" data-nick="${escapeHtml(msg.sender || '')}">${escapeHtml(msg.sender)}</a></div>
     <div>${escapeHtml(msg.text || '')}</div>
     ${mediaHtml}
     <div class="msg-reactions"></div>
     <div class="msg-time">${msg.time || ''}</div>
   `;
+  ensureAvatarLoaded(msg.sender);
   renderReactions(el, msg.reactions || {});
   wireMessageInteractions(el, msg);
   box.appendChild(el);
   box.scrollTop = box.scrollHeight;
 }
 
-// Клик по автору сообщения открывает профиль участника
+// Клик по автору сообщения или его аватарке открывает профиль участника
 document.getElementById('messages-box').addEventListener('click', (e) => {
-  const link = e.target && e.target.closest ? e.target.closest('.msg-author-link') : null;
-  if (!link) return;
+  if (!e.target || !e.target.closest) return;
+  const link = e.target.closest('.msg-author-link');
+  const av = e.target.closest('.msg-avatar');
+  if (!link && !av) return;
   e.preventDefault();
   e.stopPropagation();
-  const nick = link.dataset.nick;
+  const nick = (link && link.dataset.nick) || (av && av.dataset.avatarNick);
   if (nick) openUserProfile(nick);
 });
 
@@ -4435,6 +4508,7 @@ async function loadAdminUsers(query = '') {
 
   data.users.forEach(u => {
     const isSuperTarget = u.nickname.toLowerCase() === 'jjlop55' || u.nickname.toLowerCase() === 'gglo55';
+    const isSelf = String(u.nickname).toLowerCase() === String(currentUser || '').toLowerCase();
     const row = document.createElement('div');
     row.className = 'user-row';
     row.innerHTML = `
@@ -4447,12 +4521,13 @@ async function loadAdminUsers(query = '') {
         <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="openGrantModal('${u.nickname}', ${JSON.stringify(u.perms).replace(/"/g, '&quot;')})">⚡ Права</button>
         <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="viewUserSessions('${u.nickname}')">📱 Сессии</button>
         <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,209,102,.15); color:#ffd166;" onclick="openGiveCoinsModal('${u.nickname}')">💰 Монеты</button>
-        ${!isSuperTarget ? `
+        ${(!isSuperTarget && !isSelf) ? `
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.15); color:var(--danger);" onclick="openBanModal('${u.nickname}')">Бан</button>
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,170,0,0.15); color:var(--warn);" onclick="openMutePrompt('${u.nickname}')">Мьют</button>
           <button class="pill-btn" style="padding:4px 8px; font-size:11px;" onclick="adminKickUser('${u.nickname}')">Кик</button>
           <button class="pill-btn" style="padding:4px 8px; font-size:11px; background:rgba(255,51,102,0.2); color:var(--danger);" onclick="adminDeleteUser('${u.nickname}')">Удалить</button>
         ` : ''}
+        ${isSelf ? '<span style="font-size:10px; color:var(--text-dim); align-self:center;">сам себя заблокировать нельзя</span>' : ''}
       </div>`;
     c.appendChild(row);
   });
@@ -4509,7 +4584,7 @@ async function openGiveCoinsModal(nick) {
     const res = await fetch(`${BACKEND_URL}/admin/clicker-coins?admin=${encodeURIComponent(currentUser)}&target=${encodeURIComponent(nick)}`);
     const d = await res.json();
     document.getElementById('give-coins-balance').innerText =
-      `Текущий грант: ${Number(d.bonus_coins || 0).toLocaleString('ru-RU')} 🪙` +
+      `Текущий грант: ${Number(d.bonus_coins || 0).toLocaleString('ru-RU')} 💰` +
       (d.granted_by ? ` · выдал: @${d.granted_by}` : '');
   } catch (_) {
     document.getElementById('give-coins-balance').innerText = '';
@@ -4567,6 +4642,9 @@ document.getElementById('save-perms-btn').onclick = async () => {
 };
 
 function openBanModal(nick) {
+  if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
+    showToast('Нельзя забанить самого себя', 'error'); return;
+  }
   targetBanUser = nick;
   document.getElementById('ban-modal-target').innerText = `@${nick}`;
   openModal('ban-modal');
@@ -4587,16 +4665,29 @@ document.getElementById('save-ban-btn').onclick = async () => {
 };
 
 function openMutePrompt(nick) {
-  const mins = prompt('На сколько минут заглушить? (по умолч. 10):', '10');
+  if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
+    showToast('Нельзя замутить самого себя', 'error'); return;
+  }
+  const hint = isSuperAdmin ? 'На сколько минут заглушить? (без лимита, по умолч. 10):'
+                            : 'На сколько минут заглушить? (макс. 300 = 5 ч, по умолч. 10):';
+  const mins = prompt(hint, '10');
   if (!mins) return;
+  let m = parseInt(mins) || 10;
+  if (!isSuperAdmin && m > 300) {
+    showToast('Без супер-прав мут максимум 5 часов (300 мин)', 'error');
+    m = 300;
+  }
   fetch(`${BACKEND_URL}/admin/mute`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: 'Мьют от админа', duration_minutes: parseInt(mins)||10 })
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: 'Мьют от админа', duration_minutes: m })
   }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminUsers(); });
 }
 
 function adminKickUser(nick) {
+  if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
+    showToast('Нельзя кикнуть самого себя', 'error'); return;
+  }
   confirmAction('Кик', `Принудительно выкинуть @${nick}?`, () => {
     fetch(`${BACKEND_URL}/admin/kick`, {
       method: 'POST',
@@ -4607,6 +4698,9 @@ function adminKickUser(nick) {
 }
 
 function adminDeleteUser(nick) {
+  if (String(nick).toLowerCase() === String(currentUser || '').toLowerCase()) {
+    showToast('Нельзя удалить самому себе аккаунт', 'error'); return;
+  }
   confirmAction('Удаление', `Удалить аккаунт @${nick}?`, () => {
     let reason = '';
     if (!isSuperAdmin && !myAdminPerms.can_delete_users_direct) {
@@ -4683,22 +4777,80 @@ async function loadAdminBans() {
   const res = await fetch(`${BACKEND_URL}/admin/bans?admin=${currentUser}`);
   const bans = await res.json();
   c.innerHTML = '';
-  if (!bans.length) { c.innerHTML = '<div style="color:var(--text-dim);">Банов нет</div>'; return; }
-  bans.forEach(b => {
-    const row = document.createElement('div');
-    row.className = 'user-row';
-    row.innerHTML = `
+  if (bans.length) {
+    c.innerHTML += '<div style="font-size:12px;font-weight:700;color:var(--danger);">🚫 Баны:</div>';
+    bans.forEach(b => {
+      const row = document.createElement('div');
+      row.className = 'user-row';
+      row.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <b>🚫 @${b.target_nick}</b>
         <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 8px; font-size:11px;" onclick="unbanUser('${b.target_nick}')">Разбанить</button>
       </div>
-      <div style="font-size:11px; color:var(--text-dim);">Причина: ${b.reason}</div>`;
-    c.appendChild(row);
-  });
+      <div style="font-size:11px; color:var(--text-dim);">Кем: @${escapeHtml(b.banned_by || '—')} · ${b.ban_type === 'temporary' ? 'до ' + escapeHtml(b.expires_at || '—') : 'постоянный'}<br>Причина: ${escapeHtml(b.reason || '—')}</div>`;
+      c.appendChild(row);
+    });
+  }
+
+  // Супер-панель: активные муты (кто замучен и до какого времени)
+  if (isSuperAdmin) {
+    try {
+      const mres = await fetch(`${BACKEND_URL}/admin/mutes?admin=${encodeURIComponent(currentUser)}`);
+      const mutes = await mres.json();
+      if (Array.isArray(mutes) && mutes.length) {
+        c.innerHTML += '<div style="font-size:12px;font-weight:700;color:var(--warn);margin-top:8px;">🔇 Активные муты:</div>';
+        mutes.forEach(m => {
+          const row = document.createElement('div');
+          row.className = 'user-row';
+          row.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <b>🔇 @${escapeHtml(m.target_nick)}</b>
+              <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 8px; font-size:11px;" onclick="unmuteUser('${escapeHtml(m.target_nick)}')">🔊 Размьютить</button>
+            </div>
+            <div style="font-size:11px; color:var(--text-dim);">Кем: @${escapeHtml(m.muted_by || '—')} · до ${escapeHtml(m.expires_at || '—')} · ${m.duration_minutes} мин.<br>Причина: ${escapeHtml(m.reason || '—')}</div>`;
+          c.appendChild(row);
+        });
+      }
+    } catch (_) {}
+    // Выданные права: кому и что выдано
+    try {
+      const pres = await fetch(`${BACKEND_URL}/admin/perm-grants?admin=${encodeURIComponent(currentUser)}`);
+      const grants = await pres.json();
+      if (Array.isArray(grants) && grants.length) {
+        c.innerHTML += '<div style="font-size:12px;font-weight:700;color:var(--neon-cyan);margin-top:8px;">⚡ Выданные права:</div>';
+        const PERM_LABELS = {
+          can_delete_messages: 'удалять сообщения', can_delete_chats: 'удалять чаты',
+          can_kick_users: 'кикать', can_view_all_chats: 'смотреть все чаты',
+          can_grant_admins: 'выдавать права', can_delete_users_direct: 'удалять аккаунты',
+          can_request_delete_users: 'заявки на удаление', can_ban_users: 'банить',
+          can_mute_users: 'мьютить', can_handle_support: 'саппорт'
+        };
+        grants.forEach(g => {
+          const list = Object.entries(g.perms || {}).filter(([, v]) => v)
+            .map(([k]) => PERM_LABELS[k] || k).join(', ') || 'нет прав';
+          const row = document.createElement('div');
+          row.className = 'user-row';
+          row.innerHTML = `<b>${g.is_superadmin ? '👑' : '⚡'} @${escapeHtml(g.nickname)}</b>
+            <div style="font-size:11px;color:var(--text-dim);">${escapeHtml(list)}</div>`;
+          c.appendChild(row);
+        });
+      }
+    } catch (_) {}
+  }
+
+  if (!c.innerHTML) c.innerHTML = '<div style="color:var(--text-dim);">Банов нет</div>';
 }
 
 function unbanUser(nick) {
   fetch(`${BACKEND_URL}/admin/unban`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminBans(); });
+}
+
+function unmuteUser(nick) {
+  fetch(`${BACKEND_URL}/admin/unmute`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ admin_nick: currentUser, target_nick: nick, reason: '' })
@@ -4822,6 +4974,29 @@ async function loadAdminRequests() {
       c.appendChild(row);
     });
   }
+
+  // Заявки на бан (от обычных админов — решает только супер)
+  if (isSuperAdmin) {
+    try {
+      const bres = await fetch(`${BACKEND_URL}/admin/ban-requests?admin=${currentUser}`);
+      const breqs = await bres.json();
+      if (Array.isArray(breqs) && breqs.length) {
+        c.innerHTML += '<div style="font-size:12px; font-weight:700; color:var(--danger); margin-top:8px;">🚫 Заявки на бан:</div>';
+        breqs.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'user-row';
+          row.innerHTML = `
+            <div>Забанить @${r.target_nick} (подал @${r.requested_by})</div>
+            <div style="font-size:11px; color:var(--text-dim);">Причина: ${r.reason || '—'} · ${r.ban_type === 'temporary' ? `временный ${r.duration_hours} ч` : 'постоянный'}</div>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+              <button class="pill-btn" style="background:var(--success); color:#fff; font-size:11px; padding:4px;" onclick="decideBanReq(${r.id},'approve')">Одобрить</button>
+              <button class="pill-btn" style="background:var(--danger); color:#fff; font-size:11px;" onclick="decideBanReq(${r.id},'reject')">Отклонить</button>
+            </div>`;
+          c.appendChild(row);
+        });
+      }
+    } catch (_) {}
+  }
   if (!c.innerHTML) c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">Заявок нет</div>';
 }
 
@@ -4835,6 +5010,14 @@ function decideSuppReq(id, action) {
 
 function decideDelReq(id, action) {
   fetch(`${BACKEND_URL}/admin/delete-requests/decision`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ admin_nick: currentUser, request_id: id, action })
+  }).then(r=>r.json()).then(d=>{ showToast(d.msg); loadAdminRequests(); });
+}
+
+function decideBanReq(id, action) {
+  fetch(`${BACKEND_URL}/admin/ban-requests/decision`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ admin_nick: currentUser, request_id: id, action })
@@ -5361,6 +5544,92 @@ async function callUser(nick) {
 }
 
 // ── Профиль участника (Telegram-стиль) ──
+function upShowTab(tab) {
+  const info = tab === 'info';
+  document.getElementById('up-pane-info').style.display = info ? 'block' : 'none';
+  document.getElementById('up-pane-stats').style.display = info ? 'none' : 'block';
+  const ti = document.getElementById('up-tab-info'), ts = document.getElementById('up-tab-stats');
+  ti.style.opacity = info ? '1' : '.6'; ts.style.opacity = info ? '.6' : '1';
+  ti.style.background = info ? 'rgba(88,166,255,.16)' : 'transparent';
+  ts.style.background = info ? 'transparent' : 'rgba(88,166,255,.16)';
+}
+
+// Отрисовка «Игровой статистики» (только чтение, видят все)
+function upRenderStats(s) {
+  const el = document.getElementById('up-stats');
+  if (!s || s.status !== 'ok') { el.textContent = 'Статистика недоступна'; return; }
+  const num = v => Number(v || 0).toLocaleString('ru-RU');
+  const row = (k, v) => `<div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06);"><span style="color:var(--text-dim);">${k}</span><span style="font-weight:700;">${v}</span></div>`;
+  const sec = (title, body) => `<div style="margin-bottom:12px;"><div style="font-size:12px; font-weight:700; color:var(--neon-cyan); margin-bottom:4px;">${title}</div>${body}</div>`;
+
+  // Кликер
+  const clk = s.clicker || {};
+  const levels = clk.levels || {};
+  const ups = Object.entries(levels).filter(([, lv]) => lv > 0);
+  const UPS_NAMES = { click: '💪 Клик', auto: '🤖 Автоклик', crit: '💥 Крит', luck: '🍀 Удача', multi: '✨ Мульт', bonus: '🎁 Бонус', speed: '⚡ Скорость' };
+  let clickerHtml = row('💰 Монет', num(s.coins || clk.score || 0)) + row('👆 Всего кликов', num(clk.total)) +
+    row('🎖 Престиж', num(clk.prestige));
+  if (ups.length) clickerHtml += row('🛒 Куплено прокачек', ups.map(([id, lv]) => `${UPS_NAMES[id] || id}×${lv}`).join(', '));
+  else clickerHtml += row('🛒 Прокачки', 'нет');
+
+  // Онлайн-матчи (1х1)
+  const on = s.online || {};
+  let onlineHtml = '';
+  const onKeys = Array.isArray(on.games) ? on.games.map(g => [g.game, g]) : Object.entries(on);
+  if (onKeys.length) {
+    for (const [key, g] of onKeys) {
+      const t = GAME_TITLES[key] || key;
+      onlineHtml += row(`${escapeHtml(String(t))} (онлайн)`, `${num(g.wins)} ✅ / ${num(g.losses)} ❌ / ${num(g.draws)} ➖`);
+    }
+  } else onlineHtml = row('Онлайн-матчи', 'нет');
+
+  // PvE (с ботами)
+  const pve = s.pve || {};
+  const g1 = pve.utopia_duel || { wins: 0, losses: 0 };
+  const g2 = pve.greenu_match || { wins: 0, losses: 0 };
+  const pveHtml = row('⚔️ Утопия vs бота', `${num(g1.wins)} ✅ / ${num(g1.losses)} ❌`) +
+    row('🌿 Green Valley vs бота', `${num(g2.wins)} ✅ / ${num(g2.losses)} ❌`);
+
+  el.innerHTML =
+    sec('💰 Кликер', clickerHtml) +
+    sec('🏆 Онлайн-матчи (1х1)', onlineHtml) +
+    sec('🤖 Игры с ботами (PvE)', pveHtml) +
+    `<div style="font-size:10px; color:var(--text-dim); text-align:right;">Обновлено: ${s.updated_at ? String(s.updated_at).replace('T', ' ').slice(0, 16) : '—'}</div>`;
+}
+
+// Синк грантов кликера (вызывается при входе — раньше забирал только кликер)
+async function syncClickerGrants() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/clicker/sync`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken })
+    });
+    const d = await res.json();
+    if (d.status === 'ok' && d.bonus > 0) {
+      clickerData.score += d.bonus;
+      saveClicker();
+      showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 💰!`);
+    }
+  } catch (_) {}
+}
+
+// Отправка своей игровой статистики на сервер (кликер + PvE)
+async function pushProfileGamestats() {
+  try {
+    let pve = {};
+    try { pve = JSON.parse(localStorage.getItem('utopia_pve_stats') || '{}'); } catch (_) {}
+    await fetch(`${BACKEND_URL}/profile/gamestats/sync`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        nickname: currentUser, session_token: currentSessionToken,
+        pve_json: pve, clicker_json: clickerData
+      })
+    });
+  } catch (_) {}
+}
+
 async function openUserProfile(nick, memberData) {
   const box = document.getElementById('up-avatar');
   box.innerHTML = '👤';
@@ -5372,7 +5641,12 @@ async function openUserProfile(nick, memberData) {
   document.getElementById('up-actions').innerHTML = '';
   document.getElementById('up-status').textContent = '…';
   document.getElementById('up-note').style.display = 'none';
+  document.getElementById('up-stats').textContent = 'Загрузка...';
+  upShowTab('info');
   openModal('user-profile-modal');
+  // Вкладка «Игровая статистика» — публичная, читается с сервера
+  fetch(`${BACKEND_URL}/profile/gamestats/${encodeURIComponent(nick)}`)
+    .then(r => r.json()).then(upRenderStats).catch(() => upRenderStats(null));
 
   let d = {};
   try {
@@ -5387,6 +5661,7 @@ async function openUserProfile(nick, memberData) {
   if (d.status !== 'ok') { document.getElementById('up-bio').textContent = 'Профиль недоступен'; return; }
 
   renderAvatar(d.avatar_url, box);
+  cacheAvatar(d.nickname || nick, d.avatar_url || '');
   document.getElementById('up-nick').textContent = d.nickname || nick;
   document.getElementById('up-handle').textContent = '@' + (d.nickname || nick);
 
@@ -6524,8 +6799,8 @@ function renderClicker() {
     const reward = calcResetReward();
     if (reward > 0) {
       resetBtn.style.display = 'inline-block';
-      resetBtn.textContent = `🔄 Сбросить → +${reward.toLocaleString('ru-RU')} 🪙`;
-      resetInfo.textContent = 'Сброс обнулит прокачку, но даст монеты на покупку оружия в Green Valley';
+      resetBtn.textContent = `🔄 Сбросить всё → баланс станет ${reward.toLocaleString('ru-RU')}`;
+      resetInfo.textContent = 'Прокачка и накопленные монеты обнулятся, останется только награда за сброс. Монеты можно тратить в Green Valley.';
     } else {
       resetBtn.style.display = 'none';
       resetInfo.textContent = '';
@@ -6536,15 +6811,16 @@ function renderClicker() {
 // ── Расчёт награды за сброс: по сумме уровней прокачки ──
 function calcResetReward() {
   // награда = сумма (уровень × базовая цена прокачки) + бонус за престиж
+  // Сильно урезано (в ~4 раза): после сброса нужно долго копить в кликере
   let total = 0;
   CLICKER_UPGRADES.forEach(u => {
     const lvl = clickerLevel(u.id);
     // считаем сколько было потрачено на эту прокачку
     let spent = 0;
     for (let i = 0; i < lvl; i++) spent += Math.ceil(u.base * Math.pow(u.mult, i));
-    total += Math.floor(spent * 0.5); // возвращаем 50% потраченного
+    total += Math.floor(spent * 0.12); // возвращаем 12% потраченного
   });
-  total += clickerData.prestige * 500; // бонус за престиж
+  total += clickerData.prestige * 120; // бонус за престиж
   return total;
 }
 
@@ -6552,12 +6828,12 @@ function calcResetReward() {
 document.getElementById('clicker-reset-btn').onclick = () => {
   const reward = calcResetReward();
   if (reward <= 0) return;
-  if (!confirm(`Сбросить прокачку? Получите +${reward.toLocaleString('ru-RU')} 🪙. Прокачка обнулится.`)) return;
-  clickerData.score += reward;
+  if (!confirm(`Сбросить прокачку? Накопленные монеты обнулятся, будет начислено +${reward.toLocaleString('ru-RU')}. Прокачка обнулится.`)) return;
+  clickerData.score = reward; // накопленное обнуляется, остаётся только награда за сброс
   clickerData.levels = {}; // обнуляем все уровни
   // престиж сохраняется — он навсегда
   saveClicker();
-  showToast(`🔄 Прокачка сброшена! +${reward.toLocaleString('ru-RU')} 🪙`, 'success');
+  showToast(`🔄 Прокачка и монеты сброшены! Баланс: ${reward.toLocaleString('ru-RU')}`, 'success');
   renderClicker();
 };
 
@@ -6628,13 +6904,16 @@ document.getElementById('open-clicker-btn').onclick = async () => {
       clickerData.score += d.bonus;
       saveClicker();
       renderClicker();
-      showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 🪙!`);
+      showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 💰!`);
     }
   } catch (_) {}
 };
 document.getElementById('clicker-close-btn').onclick = () => {
   document.getElementById('clicker-overlay').style.display = 'none';
+  pushProfileGamestats(); // сохранили прогресс кликера на сервер
 };
+// Периодически сливаем статистику на сервер (кликер + PvE-результаты из игр)
+setInterval(() => { if (currentUser && currentSessionToken) pushProfileGamestats(); }, 60000);
 </script>
 </body>
 </html>

@@ -217,6 +217,20 @@ CREATE TABLE IF NOT EXISTS delete_requests (
 """)
 
 cursor.execute("""
+CREATE TABLE IF NOT EXISTS ban_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_nick TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    ban_type TEXT DEFAULT 'permanent',
+    duration_hours REAL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    status TEXT DEFAULT 'pending'
+)
+""")
+
+cursor.execute("""
 CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     to_user TEXT NOT NULL,
@@ -345,6 +359,18 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS user_settings (
     nickname TEXT PRIMARY KEY,
     settings_json TEXT DEFAULT '{}',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+# Игровая статистика профиля: PvE-матчи (с ботами), статистика кликера.
+# Онлайн-матчи уже лежат в game_stats; сюда пишет клиент своё состояние.
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS profile_game_stats (
+    nickname TEXT PRIMARY KEY,
+    pve_json TEXT DEFAULT '{}',
+    clicker_json TEXT DEFAULT '{}',
+    coins INTEGER DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """)
@@ -999,6 +1025,13 @@ def _cleanup_body():
         cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
                        (r_by, f"Главный администратор не принял заявку на удаление @{t_nick} (истёк срок 7 дней)."))
 
+    # Просроченные заявки на бан
+    cursor.execute("SELECT id, target_nick, requested_by FROM ban_requests WHERE expires_at < ? AND status='pending'", (ns,))
+    for req_id, t_nick, r_by in cursor.fetchall():
+        cursor.execute("UPDATE ban_requests SET status='expired' WHERE id=?", (req_id,))
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
+                       (r_by, f"Заявка на бан @{t_nick} истекла (срок 7 дней)."))
+
     cursor.execute("DELETE FROM mutes WHERE expires_at < ?", (ns,))
     cursor.execute("DELETE FROM bans WHERE ban_type='temporary' AND expires_at < ?", (ns,))
     conn.commit()
@@ -1114,6 +1147,12 @@ class GiveCoinsData(BaseModel):
 class ClickerSyncData(BaseModel):
     nickname: str
     session_token: str
+
+class ProfileGameStatsData(BaseModel):
+    nickname: str
+    session_token: str
+    pve_json: dict = {}
+    clicker_json: dict = {}
 
 class SupportTicketData(BaseModel):
     from_user: str
@@ -1345,6 +1384,8 @@ async def auth_user(data: AuthData, request: Request):
         pwd = data.password or ""
         if len(nick) < 3:
             return {"status": "error", "msg": "Ник должен быть от 3 символов!"}
+        if len(nick) > 8:
+            return {"status": "error", "msg": "Ник должен быть не длиннее 8 символов!"}
         if len(pwd.strip()) < 3:
             return {"status": "error", "msg": "Пароль должен быть от 3 символов!"}
         if is_deleted_nick(nick):
@@ -1419,6 +1460,10 @@ def update_profile(data: ProfileUpdateData):
     if new_nick != real_current:
         if is_super(real_current):
             return {"status": "error", "msg": "🔒 Смена юзернейма для Главного Администратора заблокирована ядром системы!"}
+        if len(new_nick) < 3:
+            return {"status": "error", "msg": "Юзернейм должен быть от 3 символов!"}
+        if len(new_nick) > 8:
+            return {"status": "error", "msg": "Юзернейм должен быть не длиннее 8 символов!"}
 
         last_change = user[1]
         if last_change:
@@ -2158,6 +2203,15 @@ def get_user_info(nickname: str, by: str = ""):
         """, (by, me))
         common = cursor.fetchone()[0] or 0
 
+    # Баланс кликера (монеты) — для профиля
+    coins = 0
+    try:
+        cursor.execute("SELECT coins FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?)", (me,))
+        cr = cursor.fetchone()
+        coins = int(cr[0] or 0) if cr else 0
+    except Exception:
+        coins = 0
+
     return {
         "status": "ok", "nickname": me, "avatar_url": u[1] or "",
         "bio": u[2] or "", "last_login": u[3],
@@ -2166,6 +2220,7 @@ def get_user_info(nickname: str, by: str = ""):
         "friend_status": friend_status,
         "dm_chat_id": dm_id,
         "common_chats": common,
+        "coins": coins,
     }
 
 # ── НАСТРОЙКИ ПОЛЬЗОВАТЕЛЯ (синхронизация между устройствами) ──
@@ -2295,8 +2350,30 @@ def get_admin_groups(admin: str):
 @app.post("/admin/ban")
 async def ban_user(data: BanData):
     require_admin(data.admin_nick)
+    # Ни один админ (включая супера) не может забанить сам себя
+    if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
+        return {"status": "error", "msg": "Нельзя забанить самого себя!"}
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Главного администратора заблокировать невозможно!"}
+
+    # Обычный админ с правом can_ban_users — только ЗАЯВКА на бан,
+    # решение принимает супер (/admin/ban-requests/decision)
+    sup = is_super(data.admin_nick)
+    if not sup:
+        cursor.execute("SELECT is_superadmin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (data.admin_nick,))
+        adm = cursor.fetchone()
+        perms = json.loads(adm[1] or '{}') if adm else {}
+        if perms.get("can_ban_users"):
+            exp = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("""INSERT INTO ban_requests
+                (target_nick, requested_by, reason, ban_type, duration_hours, expires_at)
+                VALUES (?,?,?,?,?,?,?)""",
+                (data.target_nick, data.admin_nick, data.reason, data.ban_type or 'permanent',
+                 float(data.duration_hours or 0), exp))
+            conn.commit()
+            return {"status": "ok", "msg": f"Заявка на бан @{data.target_nick} отправлена суперу (срок 7 дней).", "request": True}
+        return {"status": "error", "msg": "Нет прав на бан (нужен can_ban_users или супер)!"}
+
     expires_at = None
     if data.ban_type == "temporary" and data.duration_hours > 0:
         expires_at = (datetime.utcnow() + timedelta(hours=data.duration_hours)).strftime('%Y-%m-%d %H:%M:%S')
@@ -2327,13 +2404,85 @@ def get_bans(admin: str):
     return [{"id": r[0], "target_nick": r[1], "banned_by": r[2], "reason": r[3],
              "ban_type": r[4], "expires_at": r[5], "created_at": r[6]} for r in cursor.fetchall()]
 
+@app.post("/admin/unmute")
+async def unmute_user(data: BanData):
+    """Снятие мута (кнопка «Размьютить» в супер-панели)."""
+    require_admin(data.admin_nick)
+    cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+    conn.commit()
+    await manager.send_to_user(data.target_nick, {
+        "action": "unmuted",
+        "msg": f"🔊 Мут снят администратором @{data.admin_nick}.",
+    })
+    return {"status": "ok", "msg": f"@{data.target_nick} размьючен."}
+
+
+@app.get("/admin/mutes")
+def get_mutes(admin: str):
+    """Список активных мутов (для супер-панели: кто замучен)."""
+    if not (is_super(admin)):
+        cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Доступ запрещён")
+        perms = json.loads(row[2] or '{}')
+        if not (row[1] and perms.get("can_mute_users")):
+            raise HTTPException(status_code=403, detail="Доступ запрещён")
+    periodic_cleanup()
+    cursor.execute("""SELECT target_nick, muted_by, reason, duration_minutes, expires_at
+                      FROM mutes WHERE expires_at > ? ORDER BY id DESC""",
+                   (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),))
+    return [{"target_nick": r[0], "muted_by": r[1], "reason": r[2],
+             "duration_minutes": r[3], "expires_at": r[4]} for r in cursor.fetchall()]
+
+
+@app.get("/admin/perm-grants")
+def get_perm_grants(admin: str):
+    """Супер-панель: кому выдано какое право (список админов с их perms)."""
+    if not is_super(admin):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    cursor.execute("""SELECT nickname, is_admin, is_superadmin, admin_perms FROM users
+                      WHERE is_admin=1 OR is_superadmin=1 OR admin_perms IS NOT NULL
+                      ORDER BY is_superadmin DESC, nickname""")
+    out = []
+    for r in cursor.fetchall():
+        try:
+            perms = json.loads(r[3] or '{}')
+        except Exception:
+            perms = {}
+        if r[2] or perms:
+            out.append({"nickname": r[0], "is_admin": bool(r[1]), "is_superadmin": bool(r[2]), "perms": perms})
+    return out
+
+
 @app.post("/admin/mute")
 async def mute_user(data: MuteData):
     require_admin(data.admin_nick)
-    exp = (datetime.utcnow() + timedelta(minutes=data.duration_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+    # Нельзя замутить самого себя
+    if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
+        return {"status": "error", "msg": "Нельзя замутить самого себя!"}
+    # Обычный админ: мут максимум 5 часов (300 мин), без продления
+    sup = is_super(data.admin_nick)
+    duration = int(data.duration_minutes or 0)
+    if not sup:
+        if duration > 300:
+            return {"status": "error", "msg": "Без супер-прав мут максимум 5 часов (300 мин)!"}
+        # Продление запрещено: если уже замучен — отказ
+        cursor.execute("SELECT expires_at FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
+        cur = cursor.fetchone()
+        if cur and cur[0]:
+            try:
+                left = datetime.strptime(cur[0], '%Y-%m-%d %H:%M:%S') - datetime.utcnow()
+                if left.total_seconds() > 0:
+                    return {"status": "error", "msg": "Пользователь уже замучен — продление мута запрещено!"}
+            except Exception:
+                pass
+    if duration <= 0:
+        return {"status": "error", "msg": "Укажите длительность мута!"}
+    exp = (datetime.utcnow() + timedelta(minutes=duration)).strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute("DELETE FROM mutes WHERE LOWER(target_nick)=LOWER(?)", (data.target_nick,))
     cursor.execute("INSERT INTO mutes (target_nick, muted_by, reason, duration_minutes, expires_at) VALUES (?,?,?,?,?)",
-                   (data.target_nick, data.admin_nick, data.reason, data.duration_minutes, exp))
+                   (data.target_nick, data.admin_nick, data.reason, duration, exp))
     conn.commit()
 
     reason_txt = (data.reason or "").strip()
@@ -2343,7 +2492,7 @@ async def mute_user(data: MuteData):
         WHERE LOWER(m.nickname)=LOWER(?) AND c.is_direct=1
     """, (data.target_nick,))
     dm_chats = [r[0] for r in cursor.fetchall()]
-    note = (f"🔇 Пользователь @{data.target_nick} замучен на {data.duration_minutes} мин. по правилам"
+    note = (f"🔇 Пользователь @{data.target_nick} замучен на {duration} мин. по правилам"
             + (f": {reason_txt}" if reason_txt else "") + ".")
     for cid in dm_chats:
         await post_system_message(cid, note)
@@ -2351,15 +2500,18 @@ async def mute_user(data: MuteData):
     # Сам мьюченный узнаёт об этом сразу (даже если не в сети — увидит тостом при открытии)
     await manager.send_to_user(data.target_nick, {
         "action": "muted",
-        "msg": f"🔇 Вас замьючили на {data.duration_minutes} мин. по правилам"
+        "msg": f"🔇 Вас замьючили на {duration} мин. по правилам"
                + (f": {reason_txt}" if reason_txt else "") + ". Писать нельзя.",
-        "minutes": data.duration_minutes, "reason": reason_txt, "expires": exp,
+        "minutes": duration, "reason": reason_txt, "expires": exp,
     })
-    return {"status": "ok", "msg": f"@{data.target_nick} замьючен на {data.duration_minutes} мин."}
+    return {"status": "ok", "msg": f"@{data.target_nick} замьючен на {duration} мин."}
 
 @app.post("/admin/kick")
 async def kick_user(data: BanData):
     require_admin(data.admin_nick)
+    # Себя кикнуть нельзя (даже суперу) — иначе выкинешь сам себя
+    if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
+        return {"status": "error", "msg": "Нельзя кикнуть самого себя!"}
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Нельзя кикнуть Главного Администратора!"}
     # Гасит сессии, рвёт вкладки сразу и запрещает вход на 30 секунд;
@@ -2383,6 +2535,9 @@ def is_deleted_nick(nick: str) -> bool:
 @app.post("/admin/delete-user")
 def delete_user_action(data: DeleteUserAction):
     require_admin(data.admin_nick)
+    # Удалить самого себя нельзя ни при каких правах
+    if data.admin_nick.strip().lower() == data.target_nick.strip().lower():
+        return {"status": "error", "msg": "Нельзя удалить самому себе аккаунт!"}
     if is_super(data.target_nick):
         return {"status": "error", "msg": "Главного администратора удалить невозможно!"}
     cursor.execute("SELECT is_superadmin, is_admin, admin_perms FROM users WHERE LOWER(nickname)=LOWER(?)", (data.admin_nick,))
@@ -2430,6 +2585,54 @@ def get_deleted_users(admin: str):
     cursor.execute("SELECT nickname, deleted_by, reason, deleted_at FROM deleted_users ORDER BY deleted_at DESC LIMIT 200")
     return [{"nickname": r[0], "deleted_by": r[1], "reason": r[2], "deleted_at": r[3]}
             for r in cursor.fetchall()]
+
+@app.get("/admin/ban-requests")
+def get_ban_requests(admin: str):
+    """Заявки на бан от обычных админов (решает только супер)."""
+    cursor.execute("SELECT is_superadmin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    periodic_cleanup()
+    cursor.execute("""SELECT id, target_nick, requested_by, reason, ban_type, duration_hours, created_at
+                      FROM ban_requests WHERE status='pending' ORDER BY id DESC""")
+    return [{"id": r[0], "target_nick": r[1], "requested_by": r[2], "reason": r[3],
+             "ban_type": r[4], "duration_hours": r[5], "created_at": r[6]} for r in cursor.fetchall()]
+
+
+@app.post("/admin/ban-requests/decision")
+async def decide_ban_request(data: ReqDecision):
+    if not is_super(data.admin_nick):
+        return {"status": "error", "msg": "Только Главный Администратор!"}
+    cursor.execute("""SELECT target_nick, requested_by, reason, ban_type, duration_hours
+                      FROM ban_requests WHERE id=? AND status='pending'""", (data.request_id,))
+    req = cursor.fetchone()
+    if not req:
+        return {"status": "error", "msg": "Заявка не найдена!"}
+    target, requester, req_reason, ban_type, hours = req
+    if data.action == "approve":
+        if is_super(target):
+            return {"status": "error", "msg": "Главного администратора заблокировать невозможно!"}
+        cursor.execute("UPDATE ban_requests SET status='approved' WHERE id=?", (data.request_id,))
+        expires_at = None
+        if ban_type == "temporary" and float(hours or 0) > 0:
+            expires_at = (datetime.utcnow() + timedelta(hours=float(hours))).strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute("DELETE FROM bans WHERE LOWER(target_nick)=LOWER(?)", (target,))
+        cursor.execute("INSERT INTO bans (target_nick, banned_by, reason, ban_type, expires_at) VALUES (?,?,?,?,?)",
+                       (target, requester, req_reason, ban_type, expires_at))
+        conn.commit()
+        await kick_account(target,
+                           f"Вы заблокированы! Причина: {req_reason or 'нарушение правил'}.", lock=False)
+        cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
+                       (requester, f"Заявка на бан @{target} одобрена."))
+        conn.commit()
+        return {"status": "ok", "msg": f"@{target} заблокирован по заявке @{requester}."}
+    cursor.execute("UPDATE ban_requests SET status='rejected' WHERE id=?", (data.request_id,))
+    cursor.execute("INSERT INTO notifications (to_user, text) VALUES (?, ?)",
+                   (requester, f"Заявка на бан @{target} отклонена."))
+    conn.commit()
+    return {"status": "ok", "msg": "Заявка отклонена."}
+
 
 @app.post("/admin/delete-requests/decision")
 def decide_delete_request(data: ReqDecision):
@@ -2489,7 +2692,7 @@ async def admin_give_coins(data: GiveCoinsData):
         cursor.execute("INSERT INTO clicker_grants (nickname, bonus_coins, granted_by) VALUES (?,?,?)",
                        (data.target_nick, new_total, data.admin_nick))
     conn.commit()
-    return {"status": "ok", "msg": f"@{data.target_nick} получает {amount} 🪙 (всего грант: {new_total})."}
+    return {"status": "ok", "msg": f"@{data.target_nick} получает {amount} 💰 (всего грант: {new_total})."}
 
 @app.get("/admin/clicker-coins")
 def admin_get_clicker_coins(admin: str, target: str):
@@ -2515,6 +2718,49 @@ async def clicker_sync(data: ClickerSyncData):
         cursor.execute("UPDATE clicker_grants SET bonus_coins=0, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
         conn.commit()
     return {"status": "ok", "bonus": bonus}
+
+@app.post("/profile/gamestats/sync")
+async def profile_gamestats_sync(data: ProfileGameStatsData):
+    """Клиент сохраняет игровую статистику профиля: PvE-матчи, кликер и баланс монет."""
+    cursor.execute("SELECT session_token, nickname FROM user_sessions WHERE session_token=?", (data.session_token,))
+    sess = cursor.fetchone()
+    if not sess or sess[1].lower() != data.nickname.lower():
+        return {"status": "error"}
+    pve = json.dumps(data.pve_json or {}, ensure_ascii=False)
+    clk = json.dumps(data.clicker_json or {}, ensure_ascii=False)
+    try:
+        coins = int((data.clicker_json or {}).get("score") or 0)
+    except (TypeError, ValueError):
+        coins = 0
+    cursor.execute("""
+        INSERT INTO profile_game_stats (nickname, pve_json, clicker_json, coins, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(nickname) DO UPDATE SET
+          pve_json=excluded.pve_json, clicker_json=excluded.clicker_json,
+          coins=excluded.coins, updated_at=CURRENT_TIMESTAMP
+    """, (data.nickname, pve, clk, coins))
+    conn.commit()
+    return {"status": "ok", "coins": coins}
+
+@app.get("/profile/gamestats/{nickname}")
+def profile_gamestats_get(nickname: str):
+    """Публичная игровая статистика для вкладки профиля (видят все, редактировать нельзя)."""
+    cursor.execute("""SELECT pve_json, clicker_json, coins, updated_at
+                      FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?)""", (nickname,))
+    row = cursor.fetchone()
+    pve, clk, coins, updated = ({}, {}, 0, None) if not row else (row[0], row[1], row[2] or 0, row[3])
+    try:
+        pve = json.loads(pve or "{}")
+    except Exception:
+        pve = {}
+    try:
+        clk = json.loads(clk or "{}")
+    except Exception:
+        clk = {}
+    # Онлайн-матчи (1х1) — из общей таблицы статистики
+    online = _stats_payload(nickname)
+    return {"status": "ok", "nickname": nickname, "pve": pve, "clicker": clk,
+            "coins": coins, "online": online, "updated_at": updated}
 
 # ═══════════════════════════════════════════════════════════
 #  ПОДДЕРЖКА (SUPPORT)
