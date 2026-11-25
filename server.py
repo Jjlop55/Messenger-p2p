@@ -416,6 +416,11 @@ _safe_alters = [
     ("users", "last_kick_at", "TIMESTAMP"),
     # Служебные сообщения (мьют, бан, звонки) — не редактируются и не имеют автора
     ("messages", "is_system", "INTEGER DEFAULT 0"),
+    # Discord/Telegram каналы, серверы, темы и закреплённые сообщения
+    ("chats", "topic", "TEXT DEFAULT ''"),
+    ("chats", "server_name", "TEXT DEFAULT ''"),
+    ("chats", "channel_kind", "TEXT DEFAULT 'text'"),
+    ("chats", "pinned_msg_id", "INTEGER DEFAULT NULL"),
 ]
 for tbl, col, ctype in _safe_alters:
     try:
@@ -1110,6 +1115,10 @@ class ChatCreateData(BaseModel):
     name: str
     created_by: str
     silent: bool = False  # звонковая группа: не broadcast_all всему сайту
+    chat_type: str = "group"      # 'group' | 'channel' | 'voice'
+    server_name: str = ""
+    topic: str = ""
+    channel_kind: str = "text"    # 'text' | 'voice'
 
 class ChatRenameData(BaseModel):
     chat_id: str
@@ -1214,6 +1223,19 @@ class SupportPermDecision(BaseModel):
     admin_nick: str
     request_id: int
     action: str
+
+class AdminBroadcastData(BaseModel):
+    admin_nick: str
+    message: str
+    post_to_general: bool = False
+
+class AdminRestoreDeletedData(BaseModel):
+    admin_nick: str
+    target_nick: str
+
+class VoiceRoomActionData(BaseModel):
+    nickname: str
+    session_token: str = ""
 
 # ═══════════════════════════════════════════════════════════
 #  CONNECTION MANAGER
@@ -1530,6 +1552,7 @@ def update_profile(data: ProfileUpdateData):
         cursor.execute("UPDATE messages SET sender=? WHERE sender=?", (new_nick, real_current))
         cursor.execute("UPDATE messages SET reply_to_sender=? WHERE reply_to_sender=?", (new_nick, real_current))
         cursor.execute("UPDATE chats SET created_by=? WHERE created_by=?", (new_nick, real_current))
+        cursor.execute("UPDATE chats SET owner=? WHERE owner=?", (new_nick, real_current))
         cursor.execute("UPDATE chats SET direct_user1=? WHERE direct_user1=?", (new_nick, real_current))
         cursor.execute("UPDATE chats SET direct_user2=? WHERE direct_user2=?", (new_nick, real_current))
         cursor.execute("UPDATE friends SET user1=? WHERE user1=?", (new_nick, real_current))
@@ -1537,6 +1560,16 @@ def update_profile(data: ProfileUpdateData):
         cursor.execute("UPDATE invites SET from_user=? WHERE from_user=?", (new_nick, real_current))
         cursor.execute("UPDATE invites SET to_user=? WHERE to_user=?", (new_nick, real_current))
         cursor.execute("UPDATE user_sessions SET nickname=? WHERE nickname=?", (new_nick, real_current))
+        cursor.execute("UPDATE profile_game_stats SET nickname=? WHERE LOWER(nickname)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE game_stats SET nickname=? WHERE LOWER(nickname)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE user_settings SET nickname=? WHERE LOWER(nickname)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE chat_reads SET nickname=? WHERE LOWER(nickname)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE message_reactions SET nickname=? WHERE LOWER(nickname)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE clicker_grants SET nickname=? WHERE LOWER(nickname)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE bans SET target_nick=? WHERE LOWER(target_nick)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE mutes SET target_nick=? WHERE LOWER(target_nick)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE support_tickets SET from_user=? WHERE LOWER(from_user)=LOWER(?)", (new_nick, real_current))
+        cursor.execute("UPDATE notifications SET to_user=? WHERE LOWER(to_user)=LOWER(?)", (new_nick, real_current))
         conn.commit()
 
     target_nick = new_nick if new_nick != real_current else real_current
@@ -1783,17 +1816,28 @@ def get_or_create_direct_chat(data: DirectChatData):
     conn.commit()
     return {"status": "ok", "chat_id": cid, "chat_name": cname}
 
+_voice_rooms: Dict[str, List[str]] = {}  # chat_id -> list of active voice participants
+
+def _get_pinned_preview(chat_id: str, pinned_id) -> Optional[dict]:
+    if not pinned_id:
+        return None
+    cursor.execute("SELECT id, sender, text, file_type FROM messages WHERE id=? AND chat_id=?", (pinned_id, chat_id))
+    r = cursor.fetchone()
+    if not r:
+        return None
+    return {"id": r[0], "sender": r[1] or "", "text": (r[2] or "")[:140], "file_type": r[3] or ""}
+
 @app.get("/chats/{nickname}")
 def get_user_chats(nickname: str):
     cursor.execute("""
         SELECT DISTINCT c.id, c.name, c.is_direct, c.direct_user1, c.direct_user2,
-               c.owner, c.chat_type
+               c.owner, c.chat_type, c.topic, c.server_name, c.channel_kind, c.pinned_msg_id
         FROM chats c LEFT JOIN members m ON c.id=m.chat_id
         WHERE c.id='general' OR LOWER(m.nickname)=LOWER(?)
     """, (nickname,))
     chats = []
     for r in cursor.fetchall():
-        cid, cname, is_dir, u1, u2, owner, ctype = r
+        cid, cname, is_dir, u1, u2, owner, ctype, topic, srv_name, ch_kind, pinned_id = r
         my_role, my_title, my_perms = get_member_row(cid, nickname)
         cursor.execute("SELECT COUNT(*) FROM members WHERE chat_id=?", (cid,))
         mcount = cursor.fetchone()[0]
@@ -1806,7 +1850,7 @@ def get_user_chats(nickname: str):
                        (cid, last_read, nickname))
         unread = cursor.fetchone()[0]
         if is_dir:
-            partner = u2 if u1.lower() == nickname.lower() else u1
+            partner = u2 if (u1 or "").lower() == nickname.lower() else u1
             cname = f"💬 @{partner}"
             ctype = "dm"
         elif ctype in (None, "", "dm"):
@@ -1814,6 +1858,11 @@ def get_user_chats(nickname: str):
         chats.append({
             "id": cid, "name": cname, "is_direct": is_dir,
             "chat_type": ctype or "group",
+            "topic": topic or "",
+            "server_name": srv_name or "",
+            "channel_kind": ch_kind or ("voice" if ctype == "voice" else "text"),
+            "pinned_msg": _get_pinned_preview(cid, pinned_id),
+            "voice_users": list(_voice_rooms.get(cid, [])),
             "owner": owner or "",
             "my_role": my_role or ("owner" if cid == "general" else "member"),
             "my_title": my_title or "",
@@ -1827,8 +1876,10 @@ def get_user_chats(nickname: str):
     bot_id = f"bot_{nickname}"
     chats.insert(1 if chats and chats[0]["id"] == "general" else 0, {
         "id": bot_id, "name": "🤖 Бот-помощник", "is_direct": 1,
-        "chat_type": "bot", "owner": "", "my_role": "member", "my_title": "",
-        "members_count": 1,
+        "chat_type": "bot", "topic": "Справочник и ИИ-помощник", "server_name": "",
+        "channel_kind": "text", "pinned_msg": None, "voice_users": [],
+        "owner": "", "my_role": "member", "my_title": "",
+        "members_count": 1, "unread": 0,
     })
     return chats
 
@@ -1851,10 +1902,14 @@ def list_features():
 
 @app.post("/chats")
 async def create_custom_chat(data: ChatCreateData):
+    ctype = data.chat_type if data.chat_type in ("group", "channel", "voice") else "group"
+    ch_kind = "voice" if (ctype == "voice" or data.channel_kind == "voice") else "text"
+    topic = " ".join((data.topic or "").split())[:120]
+    srv = " ".join((data.server_name or "").split())[:40]
     # Создатель группы сразу становится её владельцем
     cursor.execute(
-        "INSERT OR IGNORE INTO chats (id, name, created_by, is_direct, owner, chat_type) VALUES (?, ?, ?, 0, ?, 'group')",
-        (data.id, data.name, data.created_by, data.created_by))
+        "INSERT OR IGNORE INTO chats (id, name, created_by, is_direct, owner, chat_type, topic, server_name, channel_kind) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)",
+        (data.id, data.name, data.created_by, data.created_by, ctype, topic, srv, ch_kind))
     cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname, role) VALUES (?, ?, 'owner')",
                    (data.id, data.created_by))
     # Если чат уже был (дубль id) — нового владельца не перетираем
@@ -1866,9 +1921,32 @@ async def create_custom_chat(data: ChatCreateData):
             "action": "chat_created",
             "id": data.id,
             "name": data.name,
+            "chat_type": ctype,
+            "channel_kind": ch_kind,
             "created_by": data.created_by,
         })
-    return {"status": "ok", "owner": data.created_by}
+    return {"status": "ok", "owner": data.created_by, "chat_type": ctype, "channel_kind": ch_kind}
+
+@app.post("/voice/{chat_id}/join")
+async def join_voice_room(chat_id: str, data: VoiceRoomActionData):
+    nick = (data.nickname or "").strip()
+    if not nick:
+        return {"status": "error", "msg": "Укажите ник"}
+    peers = _voice_rooms.setdefault(chat_id, [])
+    if not any(p.lower() == nick.lower() for p in peers):
+        peers.append(nick)
+    await manager.broadcast_all({"action": "voice_room_updated", "chat_id": chat_id, "users": list(peers)})
+    return {"status": "ok", "users": list(peers)}
+
+@app.post("/voice/{chat_id}/leave")
+async def leave_voice_room(chat_id: str, data: VoiceRoomActionData):
+    nick = (data.nickname or "").strip()
+    peers = _voice_rooms.get(chat_id, [])
+    _voice_rooms[chat_id] = [p for p in peers if p.lower() != nick.lower()]
+    if not _voice_rooms[chat_id]:
+        _voice_rooms.pop(chat_id, None)
+    await manager.broadcast_all({"action": "voice_room_updated", "chat_id": chat_id, "users": list(_voice_rooms.get(chat_id, []))})
+    return {"status": "ok", "users": list(_voice_rooms.get(chat_id, []))}
 
 @app.delete("/chats/{chat_id}")
 async def delete_chat(chat_id: str, user: str):
@@ -2070,10 +2148,10 @@ def get_messages(chat_id: str):
     periodic_cleanup()
     cursor.execute("""
         SELECT id, sender, text, file_url, file_type, reply_to_id, reply_to_text, reply_to_sender,
-               strftime('%H:%M', created_at), is_system
-        FROM messages WHERE chat_id=? ORDER BY id ASC LIMIT 150
+               strftime('%H:%M', created_at), is_system, COALESCE(is_edited, 0)
+        FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT 150
     """, (chat_id,))
-    rows = cursor.fetchall()
+    rows = list(reversed(cursor.fetchall()))
 
     ids = [r[0] for r in rows]
     reactions = {}
@@ -2089,8 +2167,23 @@ def get_messages(chat_id: str):
     return [{
         "id": r[0], "sender": r[1], "text": r[2], "file_url": r[3], "file_type": r[4],
         "reply_to_id": r[5], "reply_to_text": r[6], "reply_to_sender": r[7], "time": r[8],
-        "reactions": reactions.get(r[0], {}), "is_system": bool(r[9]),
+        "reactions": reactions.get(r[0], {}), "is_system": bool(r[9]), "is_edited": bool(r[10]),
     } for r in rows]
+
+@app.get("/messages/{chat_id}/search")
+def search_chat_messages(chat_id: str, q: str = "", limit: int = 30):
+    term = (q or "").strip()
+    if not term:
+        return []
+    cursor.execute("""
+        SELECT id, sender, text, strftime('%H:%M', created_at), is_system
+        FROM messages
+        WHERE chat_id=? AND LOWER(COALESCE(text,'')) LIKE ?
+        ORDER BY id DESC LIMIT ?
+    """, (chat_id, f"%{term.lower()}%", max(1, min(limit, 50))))
+    return [{
+        "id": r[0], "sender": r[1] or "", "text": r[2] or "", "time": r[3] or "", "is_system": bool(r[4])
+    } for r in cursor.fetchall()]
 
 @app.post("/upload")
 async def upload_file(request: Request, filename: str = "file.bin"):
@@ -2329,17 +2422,17 @@ def save_user_settings(nickname: str, data: dict = None):
 
 @app.get("/admin/users")
 def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin, is_owner FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
-    if not row or (not row[0] and not row[1] and not is_super(admin)):
+    if not row or (not row[0] and not row[1] and not row[2] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
 
     ns = now_str()
     cursor.execute("""
         SELECT u.nickname, u.created_at, u.last_login, u.is_superadmin, u.is_admin, u.admin_perms,
-               u.avatar_url, u.bio, COALESCE(g.coins, 0)
+               u.avatar_url, u.bio, COALESCE(g.coins, 0), COALESCE(u.is_owner, 0)
         FROM users u LEFT JOIN profile_game_stats g ON LOWER(g.nickname)=LOWER(u.nickname)
-        WHERE LOWER(u.nickname) LIKE ? ORDER BY u.last_login DESC LIMIT 100
+        WHERE LOWER(u.nickname) LIKE ? ORDER BY u.last_login DESC LIMIT 150
     """, (f"%{query.lower()}%",))
 
     users_list = []
@@ -2357,18 +2450,43 @@ def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
         if filter_type == "banned" and not is_banned: continue
         if filter_type == "admins" and not is_adm: continue
 
+        try:
+            perms_dict = json.loads(r[5] or '{}')
+        except Exception:
+            perms_dict = {}
         users_list.append({
             "nickname": nick, "created_at": r[1], "last_login": r[2],
+            "is_owner": bool(r[9]) or nick.lower() == "jjlop55",
             "is_superadmin": bool(r[3]) or is_super(nick), "is_admin": is_adm,
-            "perms": json.loads(r[5] or '{}'), "avatar_url": r[6] or "", "bio": r[7] or "",
+            "perms": perms_dict, "avatar_url": r[6] or "", "bio": r[7] or "",
             "is_online": online, "is_banned": is_banned, "is_muted": is_muted,
             "coins": int(r[8] or 0),
-            "assistant": bool(json.loads(r[5] or '{}').get("can_assistant"))
+            "assistant": bool(perms_dict.get("can_assistant"))
         })
 
     cursor.execute("SELECT COUNT(*) FROM users")
     total = cursor.fetchone()[0]
-    return {"total_users": total, "online_count": len(manager.user_sockets), "users": users_list}
+    cursor.execute("SELECT COUNT(*) FROM bans WHERE ban_type='permanent' OR expires_at>?", (ns,))
+    active_bans = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM mutes WHERE expires_at>?", (ns,))
+    active_mutes = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM support_tickets WHERE status='open'")
+    open_tickets = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM delete_requests WHERE status='pending'")
+    pend_del = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM ban_requests WHERE status='pending'")
+    pend_ban = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM support_perm_requests WHERE status='pending'")
+    pend_sup = cursor.fetchone()[0]
+    return {
+        "total_users": total,
+        "online_count": len(manager.user_sockets),
+        "active_bans": active_bans,
+        "active_mutes": active_mutes,
+        "open_tickets": open_tickets,
+        "pending_requests": pend_del + pend_ban + pend_sup,
+        "users": users_list,
+    }
 
 @app.get("/admin/user-sessions")
 def admin_get_user_sessions(admin: str, target: str):
@@ -2410,20 +2528,70 @@ async def admin_kill_session(data: TerminateSessionData):
 
 @app.get("/admin/groups")
 def get_admin_groups(admin: str):
-    cursor.execute("SELECT is_superadmin, is_admin FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    cursor.execute("SELECT is_superadmin, is_admin, is_owner FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
-    if not row or (not row[0] and not row[1] and not is_super(admin)):
+    if not row or (not row[0] and not row[1] and not row[2] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
 
-    cursor.execute("SELECT id, name, created_by, created_at FROM chats")
+    cursor.execute("SELECT id, name, created_by, created_at, is_direct, chat_type, topic, channel_kind FROM chats")
     res = []
-    for cid, cname, cc, cca in cursor.fetchall():
+    for cid, cname, cc, cca, is_dir, ctype, topic, ch_kind in cursor.fetchall():
         cursor.execute("SELECT nickname, role FROM members WHERE chat_id=?", (cid,))
         roles = {r[0]: (r[1] or "member") for r in cursor.fetchall()}
+        cursor.execute("SELECT COUNT(*) FROM messages WHERE chat_id=?", (cid,))
+        msg_cnt = cursor.fetchone()[0]
         owner = next((n for n, rl in roles.items() if rl == "owner"), None)
-        res.append({"id": cid, "name": cname, "created_by": cc, "created_at": cca,
-                    "members": list(roles.keys()), "roles": roles, "owner": owner})
+        res.append({
+            "id": cid, "name": cname, "created_by": cc, "created_at": cca,
+            "is_direct": bool(is_dir), "chat_type": ctype or "group",
+            "topic": topic or "", "channel_kind": ch_kind or "text",
+            "msg_count": msg_cnt,
+            "members": list(roles.keys()), "roles": roles, "owner": owner
+        })
     return res
+
+@app.get("/admin/chat-messages")
+def admin_view_chat_messages(admin: str, chat_id: str, limit: int = 80):
+    require_admin(admin)
+    if not (can_manage_everything(admin) or is_assistant(admin) or has_perm(admin, "can_view_all_chats")):
+        raise HTTPException(status_code=403, detail="Нет права «Просмотр всех чатов» (can_view_all_chats)")
+    cursor.execute("""
+        SELECT id, sender, text, file_url, file_type, strftime('%d.%m %H:%M', created_at), is_system
+        FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT ?
+    """, (chat_id, max(1, min(limit, 150))))
+    rows = list(reversed(cursor.fetchall()))
+    return [{
+        "id": r[0], "sender": r[1] or "", "text": r[2] or "",
+        "file_url": r[3] or "", "file_type": r[4] or "",
+        "time": r[5] or "", "is_system": bool(r[6])
+    } for r in rows]
+
+@app.post("/admin/broadcast")
+async def admin_broadcast_announcement(data: AdminBroadcastData):
+    if not (can_manage_everything(data.admin_nick) or is_assistant(data.admin_nick)):
+        raise HTTPException(status_code=403, detail="Доступ только для Главного Администратора или помощника")
+    text = (data.message or "").strip()[:500]
+    if not text:
+        return {"status": "error", "msg": "Введите текст объявления!"}
+    await manager.broadcast_all({
+        "action": "admin_broadcast",
+        "from": data.admin_nick,
+        "msg": f"📢 Объявление от @{data.admin_nick}: {text}",
+    })
+    if data.post_to_general:
+        await post_system_message("general", f"📢 ОБЪЯВЛЕНИЕ (@{data.admin_nick}): {text}")
+    return {"status": "ok", "msg": "Объявление доставлено всем пользователям в сети!"}
+
+@app.post("/admin/restore-deleted")
+def admin_restore_deleted(data: AdminRestoreDeletedData):
+    if not (can_manage_everything(data.admin_nick) or is_assistant(data.admin_nick)):
+        raise HTTPException(status_code=403, detail="Только Главный Администратор или помощник")
+    target = (data.target_nick or "").strip()
+    if not target:
+        return {"status": "error", "msg": "Укажите ник!"}
+    cursor.execute("DELETE FROM deleted_users WHERE LOWER(nickname)=LOWER(?)", (target,))
+    conn.commit()
+    return {"status": "ok", "msg": f"Ник @{target} разблокирован для повторной регистрации."}
 
 @app.post("/admin/ban")
 async def ban_user(data: BanData):
@@ -2873,9 +3041,10 @@ async def profile_gamestats_sync(data: ProfileGameStatsData):
     if not sess or sess[1].lower() != data.nickname.lower():
         return {"status": "error"}
     pve = json.dumps(data.pve_json or {}, ensure_ascii=False)
-    clk = json.dumps(data.clicker_json or {}, ensure_ascii=False)
+    clk_dict = data.clicker_json or {}
+    clk = json.dumps(clk_dict, ensure_ascii=False)
     try:
-        coins = int((data.clicker_json or {}).get("score") or 0)
+        coins = int((clk_dict.get("score") or 0) + (clk_dict.get("adminCoins") or 0))
     except (TypeError, ValueError):
         coins = 0
     cursor.execute("""
@@ -3001,6 +3170,8 @@ def delete_support_ticket(data: SupportDeleteData):
 
 @app.post("/support/close")
 def close_ticket(data: SupportDeleteData):
+    if not _is_support_staff(data.admin_nick):
+        return {"status": "error", "msg": "Нет прав саппорта!"}
     cursor.execute("UPDATE support_tickets SET status='closed' WHERE id=?", (data.ticket_id,))
     conn.commit()
     return {"status": "ok", "msg": "Обращение закрыто."}
@@ -3097,8 +3268,21 @@ _match_seq = 0
 _game_sockets: Dict[str, WebSocket] = {}
 
 
+def _gsock_find(nick: str) -> Optional[str]:
+    if not nick:
+        return None
+    if nick in _game_sockets:
+        return nick
+    low = nick.lower()
+    for k in list(_game_sockets.keys()):
+        if k.lower() == low:
+            return k
+    return None
+
+
 async def _gsend(nick: str, payload: dict):
-    ws = _game_sockets.get(nick)
+    key = _gsock_find(nick)
+    ws = _game_sockets.get(key) if key else None
     if not ws:
         return
     try:
@@ -3110,7 +3294,7 @@ async def _gsend(nick: str, payload: dict):
 def _lobby_state() -> dict:
     playing = {g: 0 for g in GAMES}
     for m in _matches.values():
-        if m.get("game") in playing:
+        if not m.get("over") and m.get("game") in playing:
             playing[m["game"]] += 1
     return {
         "action": "lobby_state",
@@ -3239,6 +3423,7 @@ def _init_match(game: str, p1: str, p2: str) -> dict:
         state = {
             "phase": "fighting",
             "hp": {p1: 100, p2: 100},
+            "pos": {},
             "colors": {p1: colors[0], p2: colors[1]},
             "last_state": {},
         }
@@ -3250,7 +3435,7 @@ def _public_state(m: dict, nick: str) -> dict:
     game, st, opp = m["game"], m["state"], (m["p2"] if nick == m["p1"] else m["p1"])
     base = {"action": "game_state", "id": m["id"], "game": game,
             "you": nick, "opp": opp, "over": m["over"]}
-    if game == "utopia":
+    if game in ("utopia", "greenu"):
         colors = st.get("colors", {})
         base.update({"my_color": colors.get(nick, "red"), "opp_color": colors.get(opp, "blue")})
     if game == "rps":
@@ -3328,8 +3513,12 @@ async def _finish_match(m: dict, winner: Optional[str], reason: str = ""):
             "winner": winner, "you": None, "reason": reason, "score": score,
             "stats": {p1: _stats_payload(p1), p2: _stats_payload(p2)}}
     for nick in (p1, p2):
+        final_st = _public_state(m, nick)
+        if game == "sea" and m.get("state", {}).get("ships"):
+            opp_n = p2 if nick == p1 else p1
+            final_st["foe_ships"] = [c for cells in (m["state"]["ships"].get(opp_n) or []) for c in cells]
         payload = dict(over, you=nick, you_won=(winner == nick),
-                       opp=(p2 if nick == p1 else p1))
+                       opp=(p2 if nick == p1 else p1), final_state=final_st)
         await _gsend(nick, payload)
     _matches.pop(m["id"], None)
     await _lobby_broadcast()
@@ -3450,7 +3639,7 @@ async def _handle_queue(nick: str, game: str):
         await _gsend(nick, {"action": "queued", "game": game, "title": GAMES[game]})
         return
     await _drop_queue(nick)
-    rival = next((n for n in _queues[game] if n != nick and n in _game_sockets), None)
+    rival = next((n for n in _queues[game] if n.lower() != nick.lower() and _gsock_find(n)), None)
     if rival is None:
         _queues[game].append(nick)
         _queue_game[nick] = game
@@ -3667,6 +3856,11 @@ async def games_websocket(websocket: WebSocket, nickname: str):
         await websocket.accept()
         await websocket.close(code=4401)
         return
+    # Приводим ник к каноническому из БД (чтобы Jjlop55 и jjlop55 не разъезжались)
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (nickname,))
+    crow = cursor.fetchone()
+    if crow and crow[0]:
+        nickname = crow[0]
     await websocket.accept()
     old = _game_sockets.get(nickname)
     if old and old is not websocket:
@@ -3692,7 +3886,7 @@ async def games_websocket(websocket: WebSocket, nickname: str):
             elif action == "place_ships":
                 await _handle_place_ships(nickname, data.get("match_id"), data)
             elif action == "utopia_state":
-                # Утопия: клиент шлёт свой стейт, сервер релеит сопернику
+                # Утопия / Green Valley: клиент шлёт свой стейт + выстрелы/урон, сервер релеит сопернику
                 try:
                     mid = int(data.get("match_id"))
                 except (TypeError, ValueError):
@@ -3702,12 +3896,20 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                     continue
                 opp = m["p2"] if nickname == m["p1"] else m["p1"]
                 payload = data.get("state") or {}
-                m["state"]["last_state"][nickname] = payload
+                m["state"].setdefault("last_state", {})[nickname] = payload
+                m["state"].setdefault("hp", {m["p1"]: 100, m["p2"]: 100})
+                m["state"].setdefault("pos", {})
                 # сохраняем hp/alive и pos для статистики
                 if "hp" in payload:
-                    m["state"]["hp"][nickname] = payload["hp"]
+                    try:
+                        m["state"]["hp"][nickname] = max(0, min(100, float(payload["hp"])))
+                    except (TypeError, ValueError):
+                        pass
                 if "alive" in payload:
-                    m["state"]["hp"][nickname] = 100 if payload["alive"] else 0
+                    if not payload["alive"]:
+                        m["state"]["hp"][nickname] = 0
+                    elif "hp" not in payload:
+                        m["state"]["hp"][nickname] = 100
                 if "pos" in payload:
                     m["state"]["pos"][nickname] = payload["pos"]
                 # если кто-то умер — матч окончен (в co-op — только когда пали ОБА)
@@ -3721,7 +3923,7 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                         winner = m["p1"] if hp.get(m["p2"], 100) <= 0 else m["p2"]
                         await _finish_match(m, winner, "kill")
                         continue
-                # релеим сопернику
+                # релеим сопернику (включая выстрелы, hit_dmg, открытие дверей и т.д.)
                 await _gsend(opp, {"action": "utopia_state", "id": mid, "from": nickname, "state": payload})
             elif action == "forfeit":
                 try:
@@ -3763,19 +3965,20 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                     continue
                 if target.lower() == nickname.lower():
                     continue
-                if target not in _game_sockets:
+                target_online = _gsock_find(target)
+                if not target_online:
                     await _gsend(nickname, {"action": "error", "msg": f"@{target} не в сети"})
                     continue
-                if any(m["nick"].lower() == target.lower() for m in room["members"]):
-                    await _gsend(nickname, {"action": "error", "msg": f"@{target} уже в лобби"})
+                if any(m["nick"].lower() == target_online.lower() for m in room["members"]):
+                    await _gsend(nickname, {"action": "error", "msg": f"@{target_online} уже в лобби"})
                     continue
                 if len(room["members"]) >= 2:
                     await _gsend(nickname, {"action": "error", "msg": "Лобби заполнено (макс. 2 игрока)"})
                     continue
-                await _gsend(target, {"action": "room_invite", "from": nickname,
-                                      "room_id": room["id"],
-                                      "game_title": GAMES.get(room["game"], room["game"])})
-                await _gsend(nickname, {"action": "room_invited", "to": target})
+                await _gsend(target_online, {"action": "room_invite", "from": nickname,
+                                       "room_id": room["id"],
+                                       "game_title": GAMES.get(room["game"], room["game"])})
+                await _gsend(nickname, {"action": "room_invited", "to": target_online})
             elif action == "room_join":
                 rid = (data.get("room_id") or "").strip()
                 room = _rooms.get(rid)
@@ -3845,6 +4048,7 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                 bots_cfg = dict(room.get("bots", {"blue": 0, "red": 0}))
                 if len(humans) == 1:
                     # одиночная лобби-игра — без серверного матча, только конфиг ботов
+                    _rooms.pop(room["id"], None)
                     await _gsend(nickname, {"action": "room_solo_start", "id": 0,
                                             "game": room["game"], "opp": "",
                                             "my_color": humans[0]["team"],
@@ -3880,26 +4084,31 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                 # бросить дуэль конкретному игроку
                 target = (data.get("target") or "").strip()
                 game = (data.get("game") or "").strip()
-                if target and game in GAMES and target.lower() != nickname.lower():
+                target_online = _gsock_find(target)
+                if target_online and game in GAMES and target_online.lower() != nickname.lower():
                     # отправляем вызов цели
-                    await _gsend(target, {
+                    await _gsend(target_online, {
                         "action": "duel_request",
                         "from": nickname,
                         "game": game,
                         "game_title": GAMES[game],
                     })
-                    await websocket.send_json({"action": "duel_sent", "to": target, "game_title": GAMES.get(game, game)})
+                    await websocket.send_json({"action": "duel_sent", "to": target_online, "game_title": GAMES.get(game, game)})
+                elif target and game in GAMES:
+                    await websocket.send_json({"action": "error", "msg": f"@{target} сейчас не в сети (игровой сокет оффлайн)"})
             elif action == "duel_accept":
                 # принять дуэль — создаём матч напрямую
                 challenger = (data.get("from") or "").strip()
                 game = (data.get("game") or "").strip()
+                chal_key = _gsock_find(challenger)
+                self_key = _gsock_find(nickname)
                 if challenger and game in GAMES:
                     # оба должны быть онлайн
-                    if challenger in _game_sockets and nickname in _game_sockets:
+                    if chal_key and self_key:
                         # убираем из очередей
-                        await _drop_queue(challenger)
-                        await _drop_queue(nickname)
-                        await _create_match(game, challenger, nickname)
+                        await _drop_queue(chal_key)
+                        await _drop_queue(self_key)
+                        await _create_match(game, chal_key, self_key)
                     else:
                         await _gsend(nickname, {"action": "error", "msg": "Соперник оффлайн"})
             elif action == "duel_decline":
@@ -3916,24 +4125,26 @@ async def games_websocket(websocket: WebSocket, nickname: str):
     except WebSocketDisconnect:
         pass
     finally:
+        # КРИТИЧНО: если это старый сокет (вытеснен новым из iframe utopia/greenu с кодом 4402),
+        # НЕЛЬЗЯ сбрасывать очередь, лобби и активные матчи нового сокета!
         if _game_sockets.get(nickname) is websocket:
             _game_sockets.pop(nickname, None)
-        await _drop_queue(nickname)
-        await _room_member_left(nickname)
-        # Противник не будет ждать вечно — закрытый игрок проигрывает
-        # Но grace-период 15 сек: если игрок отключился сразу после создания матча — не forfeit
-        now = time.time()
-        for m in list(_matches.values()):
-            if not m["over"] and nickname in (m["p1"], m["p2"]):
-                created = m.get("created_at", 0)
-                if now - created < 15:
-                    # grace-период — просто закрываем матч без штрафа
-                    m["over"] = True
-                    _matches.pop(m["id"], None)
-                    continue
-                opp = m["p2"] if nickname == m["p1"] else m["p1"]
-                await _finish_match(m, opp, "forfeit")
-        await _lobby_broadcast()
+            await _drop_queue(nickname)
+            await _room_member_left(nickname)
+            # Противник не будет ждать вечно — закрытый игрок проигрывает
+            # Но grace-период 15 сек: если игрок отключился сразу после создания матча — не forfeit
+            now = time.time()
+            for m in list(_matches.values()):
+                if not m["over"] and nickname in (m["p1"], m["p2"]):
+                    created = m.get("created_at", 0)
+                    if now - created < 15:
+                        # grace-период — просто закрываем матч без штрафа
+                        m["over"] = True
+                        _matches.pop(m["id"], None)
+                        continue
+                    opp = m["p2"] if nickname == m["p1"] else m["p1"]
+                    await _finish_match(m, opp, "forfeit")
+            await _lobby_broadcast()
 
 
 @app.websocket("/ws/{chat_id}/{nickname}")
@@ -4013,9 +4224,91 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 data["chat_id"] = chat_id
                 await manager.broadcast_chat(chat_id, data)
 
+                # Уведомляем участников этого чата, которые онлайн в других чатах (чтобы тикали непрочитанные!)
+                chat_socks = manager.chat_sockets.get(chat_id, set())
+                if chat_id == "general":
+                    target_users = list(manager.user_sockets.keys())
+                elif chat_id.startswith("bot_"):
+                    target_users = []
+                else:
+                    cursor.execute("SELECT nickname FROM members WHERE chat_id=?", (chat_id,))
+                    target_users = [r[0].lower() for r in cursor.fetchall()]
+                for u_low in target_users:
+                    if u_low == nickname.lower():
+                        continue
+                    u_socks = manager.user_sockets.get(u_low, set())
+                    if not u_socks or any(s in chat_socks for s in u_socks):
+                        continue
+                    await manager.send_to_user(u_low, {
+                        "action": "chat_unread_hint",
+                        "chat_id": chat_id,
+                        "sender": nickname,
+                        "text": data.get("text", ""),
+                        "file_url": data.get("file_url"),
+                    })
+
                 # Личный чат с ботом-помощником: он отвечает отдельной задачей
                 if chat_id.startswith("bot_"):
                     asyncio.create_task(bot_reply(chat_id, nickname, data.get("text") or ""))
+
+            elif action == "typing":
+                await manager.broadcast_chat(chat_id, {
+                    "action": "typing",
+                    "chat_id": chat_id,
+                    "sender": nickname,
+                })
+
+            elif action == "edit":
+                mid = data.get("message_id")
+                new_text = (data.get("text") or "").strip()[:2000]
+                try:
+                    mid = int(mid)
+                except (TypeError, ValueError):
+                    continue
+                if not new_text:
+                    await websocket.send_json({"action": "error", "msg": "Текст не может быть пустым"})
+                    continue
+                cursor.execute("SELECT sender, chat_id, is_system FROM messages WHERE id=?", (mid,))
+                row = cursor.fetchone()
+                if not row or (row[1] or "") != chat_id or row[2]:
+                    continue
+                if (row[0] or "").lower() != nickname.lower():
+                    await websocket.send_json({"action": "error", "msg": "Редактировать можно только свои сообщения"})
+                    continue
+                cursor.execute("UPDATE messages SET text=?, is_edited=1 WHERE id=?", (new_text, mid))
+                conn.commit()
+                await manager.broadcast_chat(chat_id, {
+                    "action": "edited",
+                    "chat_id": chat_id,
+                    "message_id": mid,
+                    "text": new_text,
+                })
+
+            elif action in ("pin", "unpin"):
+                if chat_id.startswith("bot_"):
+                    continue
+                can_pin = chat_id.startswith("dm_") or can_edit_chat(chat_id, nickname) or chat_permission(chat_id, nickname, "delete_messages") or can_manage_everything(nickname)
+                if chat_id == "general" and not (can_manage_everything(nickname) or is_assistant(nickname)):
+                    can_pin = False
+                if not can_pin:
+                    await websocket.send_json({"action": "error", "msg": "Нет прав на закрепление сообщений"})
+                    continue
+                if action == "unpin":
+                    cursor.execute("UPDATE chats SET pinned_msg_id=NULL WHERE id=?", (chat_id,))
+                    conn.commit()
+                    await manager.broadcast_chat(chat_id, {"action": "pinned", "chat_id": chat_id, "pinned_msg": None})
+                else:
+                    try:
+                        mid = int(data.get("message_id"))
+                    except (TypeError, ValueError):
+                        continue
+                    cursor.execute("UPDATE chats SET pinned_msg_id=? WHERE id=?", (mid, chat_id))
+                    conn.commit()
+                    await manager.broadcast_chat(chat_id, {
+                        "action": "pinned",
+                        "chat_id": chat_id,
+                        "pinned_msg": _get_pinned_preview(chat_id, mid),
+                    })
 
             elif action == "react":
                 mid = data.get("message_id")
@@ -4071,7 +4364,22 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 await manager.broadcast_chat(chat_id, {"action": "deleted", "message_ids": [mid], "deleted_by": nickname})
 
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(chat_id, websocket, nickname)
+        if not manager.is_online(nickname):
+            for vcid in list(_voice_rooms.keys()):
+                before = _voice_rooms.get(vcid, [])
+                after = [u for u in before if u.lower() != nickname.lower()]
+                if len(after) != len(before):
+                    if after:
+                        _voice_rooms[vcid] = after
+                    else:
+                        _voice_rooms.pop(vcid, None)
+                    try:
+                        await manager.broadcast_all({"action": "voice_room_updated", "chat_id": vcid, "users": after})
+                    except Exception:
+                        pass
 
 
 # ── Статические маршруты страниц (мессенджер, игры) ──

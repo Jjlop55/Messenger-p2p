@@ -6,10 +6,10 @@
     <title>Green Valley: Next-Gen Shaders & Tactical AI</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; font-family: 'Segoe UI', Tahoma, sans-serif; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #070e17; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden; background-color: #070e17; }
         canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
         
-        .ui-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #fff; z-index: 100; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+        .ui-screen { position: absolute; inset: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: safe center; align-items: center; overflow-y: auto; padding: 18px 14px; color: #fff; z-index: 100; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
         .menu-transparent-bg { background: radial-gradient(circle at center, rgba(12,24,36,0.65) 0%, rgba(4,8,14,0.92) 100%); backdrop-filter: blur(5px); }
         .dark-bg { background: rgba(0,0,0,0.88); backdrop-filter: blur(8px); }
         .death-bg { background: radial-gradient(circle, rgba(160,0,0,0.9) 0%, rgba(20,0,0,0.98) 100%); }
@@ -231,7 +231,10 @@
         #mobSprint { right: 100px; bottom: 140px; font-size: 16px; }
         #mobReload { right: 18px; bottom: 30px; font-size: 18px; }
         #mobWeapon { right: 190px; bottom: 46px; font-size: 15px; width: 72px; height: 72px; }
+        #mobUse { right: 190px; bottom: 132px; font-size: 16px; width: 58px; height: 58px; border-color: rgba(255,215,0,0.8); }
+        #mobCam { left: 72px; top: 12px; width: 48px; height: 48px; font-size: 15px; z-index: 210; }
         #mobPause { left: 12px; top: 12px; width: 48px; height: 48px; font-size: 16px; z-index: 210; }
+        #damageFlashOverlay { position: fixed; inset: 0; pointer-events: none; z-index: 55; background: radial-gradient(circle, rgba(255,0,0,0) 45%, rgba(255,20,20,0.58) 100%); opacity: 0; transition: opacity 0.14s ease-out; }
         /* левый джойстик */
         #mobJoyBase {
             position: absolute; left: 24px; bottom: 28px; width: 120px; height: 120px;
@@ -272,6 +275,7 @@
     <audio id="menuMusic" src="menu.mp3" loop preload="auto"></audio>
     <audio id="battleMusic" src="battle.mp3" loop preload="auto"></audio>
 
+    <div id="damageFlashOverlay"></div>
     <div id="exhaustionOverlay"></div>
     <div id="battleTransition">
         <div class="bt-mode" id="btMode">1 VS 1</div>
@@ -480,9 +484,11 @@
     <!-- Мобильные сенсорные кнопки -->
     <div id="mobileControls">
         <div class="mob-btn" id="mobPause" ontouchstart="event.preventDefault(); pauseGame()">⏸</div>
+        <div class="mob-btn" id="mobCam" title="Вид 1/3 лицо">👁</div>
         <div id="mobJoyBase"><div id="mobJoyStick"></div></div>
         <div class="mob-btn" id="mobJump">⬆</div>
         <div class="mob-btn" id="mobSprint">💨</div>
+        <div class="mob-btn" id="mobUse" title="Дверь / Аптечка">✋E</div>
         <div class="mob-btn" id="mobFire">🔥</div>
         <div class="mob-btn" id="mobReload">🔄</div>
         <div class="mob-btn" id="mobWeapon">🔫</div>
@@ -719,29 +725,44 @@
         } catch (_) {}
         function gvSaveWeapons() { try { localStorage.setItem('gv_weapons', JSON.stringify(gvOwnedWeapons)); } catch (_) {} }
         function gvHasWeapon(idx) { return gvOwnedWeapons.indexOf(idx) >= 0; }
+        function _gvClickerKey() {
+            try {
+                const nick = (localStorage.getItem('utopia_nickname') || JSON.parse(localStorage.getItem('utopia_saved_user') || '{}').nickname || '').trim().toLowerCase();
+                if (nick) {
+                    const k = 'utopia_clicker_' + nick;
+                    if (!localStorage.getItem(k) && localStorage.getItem('utopia_clicker')) {
+                        localStorage.setItem(k, localStorage.getItem('utopia_clicker'));
+                    }
+                    return k;
+                }
+            } catch (_) {}
+            return 'utopia_clicker';
+        }
         // Монеты Green Valley = баланс кликера (клики score + админ-монеты adminCoins)
         function gvGetCoins() {
-            try { const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}'); return Math.floor((c.score || 0) + (c.adminCoins || 0)); } catch (_) { return 0; }
+            try { const c = JSON.parse(localStorage.getItem(_gvClickerKey()) || '{}'); return Math.floor((c.score || 0) + (c.adminCoins || 0)); } catch (_) { return 0; }
         }
         function gvAddCoins(n) {
             // читаем текущий счёт кликера
             try {
-                const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}');
+                const k = _gvClickerKey();
+                const c = JSON.parse(localStorage.getItem(k) || '{}');
                 c.score = (c.score || 0) + n;
-                localStorage.setItem('utopia_clicker', JSON.stringify(c));
+                localStorage.setItem(k, JSON.stringify(c));
             } catch (_) {}
         }
         function gvSpendCoins(n) {
             // трата: сначала «клики» (score), потом админ-монеты (adminCoins)
             try {
-                const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}');
+                const k = _gvClickerKey();
+                const c = JSON.parse(localStorage.getItem(k) || '{}');
                 const score = c.score || 0, admin = c.adminCoins || 0;
                 if (score + admin < n) return false;
                 const fromScore = Math.min(score, n);
                 c.score = score - fromScore;
                 const rest = n - fromScore;
                 if (rest > 0) c.adminCoins = Math.max(0, admin - rest);
-                localStorage.setItem('utopia_clicker', JSON.stringify(c));
+                localStorage.setItem(k, JSON.stringify(c));
                 return true;
             } catch (_) { return false; }
         }
@@ -752,17 +773,23 @@
                 const nick = saved.nickname || saved.nick || '';
                 const token = localStorage.getItem('utopia_session_token');
                 if (!nick || !token) return;
-                const res = await fetch('https://utopia-messenger-api.onrender.com/clicker/sync', {
+                const res = await fetch(`${PVP_BACKEND}/clicker/sync`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ nickname: nick, session_token: token })
                 });
                 const d = await res.json();
                 if (d.status === 'ok' && d.bonus) {
-                    const c = JSON.parse(localStorage.getItem('utopia_clicker') || '{}');
-                    c.adminCoins = (c.adminCoins || 0) + d.bonus;
-                    localStorage.setItem('utopia_clicker', JSON.stringify(c));
-                    if (typeof showNotify === 'function') showNotify(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} монет!`);
+                    const k = _gvClickerKey();
+                    const c = JSON.parse(localStorage.getItem(k) || '{}');
+                    if (d.bonus > 0) {
+                        c.adminCoins = (c.adminCoins || 0) + d.bonus;
+                        if (typeof showNotify === 'function') showNotify(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} монет!`);
+                    } else {
+                        gvSpendCoins(Math.abs(d.bonus));
+                        return;
+                    }
+                    localStorage.setItem(k, JSON.stringify(c));
                 }
             } catch (_) {}
         }
@@ -927,9 +954,17 @@
         }
 
         function requestGamePointerLock() {
-            if (isGameRunning && document.pointerLockElement !== document.body) {
-                document.body.requestPointerLock();
+            if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+            if (isGameRunning && document.pointerLockElement !== document.body && document.body.requestPointerLock) {
+                try { document.body.requestPointerLock(); } catch (_) {}
             }
+        }
+        function flashDamageEffect() {
+            const el = document.getElementById('damageFlashOverlay');
+            if (!el) return;
+            el.style.opacity = '1';
+            clearTimeout(el._t);
+            el._t = setTimeout(() => { el.style.opacity = '0'; }, 180);
         }
 
         function initAudio() {
@@ -1620,9 +1655,19 @@
             playShootSound(currentWeapon);
 
             if (currentWeapon === 4) { spawnKnife(); startReload(); return; }
-            if (currentWeapon === 6) { spawnRocket(camera.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion), true); startReload(); return; }
+            if (currentWeapon === 6) {
+                const rDir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+                const rStart = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(rDir, 1.4);
+                spawnRocket(rStart, rDir, true);
+                if (pvpActive && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                    pvpSendRocket(rStart, rDir);
+                }
+                startReload();
+                return;
+            }
 
             const pelletCount = (currentWeapon === 2) ? 7 : 1;
+            const tracerCol = currentWeapon === 7 ? 0x00ffff : 0xffcc00;
             for (let p = 0; p < pelletCount; p++) {
                 let dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
                 if (currentWeapon === 2) { 
@@ -1648,7 +1693,10 @@
                     }
                     checkTargetDamage(intersects[0].object, dmg);
                 } else { hitPoint.copy(raycaster.ray.at(100, new THREE.Vector3())); }
-                createTracer(hitPoint, currentWeapon === 7 ? 0x00ffff : 0xffcc00);
+                const tStart = createTracer(hitPoint, tracerCol);
+                if (pvpActive && p === 0 && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                    pvpSendTracer(tStart, hitPoint, tracerCol);
+                }
             }
             if (currentAmmo[currentWeapon] <= 0) startReload();
         }
@@ -1672,18 +1720,23 @@
                 }
             }
 
-            let hitCrate = destructibleCrates.find(c => c.mesh === obj || c.mesh.children.includes(obj));
+            let hitCrateIdx = destructibleCrates.findIndex(c => c.mesh === obj || (c.mesh.children && c.mesh.children.includes(obj)));
+            let hitCrate = hitCrateIdx >= 0 ? destructibleCrates[hitCrateIdx] : null;
             if (hitCrate && hitCrate.hp > 0) {
                 hitCrate.hp -= damage;
                 hitCrate.mesh.position.y += 0.05;
                 setTimeout(() => { if(hitCrate.mesh) hitCrate.mesh.position.y = 1.0; }, 60);
                 if (hitCrate.hp <= 0) {
                     destroyCrate(hitCrate);
+                    if (pvpActive && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                        try { pvpWs.send(JSON.stringify({ action: 'utopia_state', match_id: pvpMatchId, state: { crate_break: hitCrateIdx } })); } catch (_) {}
+                    }
                 }
             }
         }
 
-        function destroyCrate(crate) {
+        function destroyCrate(crate, silent) {
+            if (!crate || crate.hp <= 0 && !crate.mesh.parent) return;
             playWoodBreakSound();
             for (let i = 0; i < 16; i++) {
                 const sp = new THREE.Mesh(
@@ -1701,7 +1754,35 @@
             wallMeshes = wallMeshes.filter(m => m !== crate.mesh);
             hittableObjects = hittableObjects.filter(h => h !== crate.mesh);
             crate.hp = 0;
-            showNotify("ЯЩИК СЛОМАН! ПУТЬ ОТКРЫТ.");
+            navDirty = true;
+            if (!silent) showNotify("ЯЩИК СЛОМАН! ПУТЬ ОТКРЫТ.");
+        }
+
+        function restoreCratesAndDoors() {
+            destructibleCrates.forEach(cr => {
+                cr.hp = 40;
+                if (!cr.mesh.parent) scene.add(cr.mesh);
+                cr.mesh.position.y = 1.0;
+                if (!staticColliders.includes(cr.collider)) staticColliders.push(cr.collider);
+                if (!wallMeshes.includes(cr.mesh)) wallMeshes.push(cr.mesh);
+                if (!hittableObjects.includes(cr.mesh)) hittableObjects.push(cr.mesh);
+            });
+            bunkerDoors.forEach(d => {
+                d.isOpen = false;
+                d.currentAngle = 0;
+                d.pivot.rotation.y = 0;
+                if (!staticColliders.includes(d.collider)) staticColliders.push(d.collider);
+                if (!wallMeshes.includes(d.mesh)) wallMeshes.push(d.mesh);
+            });
+            navDirty = true;
+        }
+
+        function clearTransientProjectiles() {
+            tracers.forEach(t => scene.remove(t.mesh)); tracers = [];
+            decals.forEach(d => scene.remove(d.mesh)); decals = [];
+            knifesInWorld.forEach(k => scene.remove(k.mesh)); knifesInWorld = [];
+            rocketsInWorld.forEach(r => scene.remove(r.mesh)); rocketsInWorld = [];
+            woodSplinters.forEach(s => scene.remove(s.mesh)); woodSplinters = [];
         }
 
         function createDecal(pos, normal, obj) {
@@ -1727,6 +1808,7 @@
             }
             tracer.position.copy(startPos); tracer.lookAt(hitPoint); scene.add(tracer);
             tracers.push({ mesh: tracer, startPos: startPos, targetPos: hitPoint, progress: 0, distance: startPos.distanceTo(hitPoint) });
+            return startPos;
         }
         
         function createBotTracer(startPos, hitPoint, color = 0xffcc00) {
@@ -1735,6 +1817,7 @@
             const tracer = new THREE.Mesh(tracerGeo, tracerMat);
             tracer.position.copy(startPos); tracer.lookAt(hitPoint); scene.add(tracer);
             tracers.push({ mesh: tracer, startPos: startPos, targetPos: hitPoint, progress: 0, distance: startPos.distanceTo(hitPoint) });
+            return startPos;
         }
 
         function spawnRocket(startPos, dir, isFromPlayer) {
@@ -2392,9 +2475,14 @@
 
         function resetRoundEntities() {
             isSpectator = false;
+            isFireBtnPressed = false;
+            semiAutoLock = false;
             document.getElementById('spectatorHUD').style.display = 'none';
             document.getElementById('crosshair').style.display = (currentWeapon !== 3 && currentWeapon !== 4) ? 'block' : 'none';
             mobControls(true);
+
+            clearTransientProjectiles();
+            restoreCratesAndDoors();
 
             playerHp = maxPlayerHp;
             stamina = maxStamina;
@@ -2406,6 +2494,8 @@
             resetAllAmmoAndReload();
 
             playerContainer.position.set(blueBasePos.x, 0, blueBasePos.z - 6);
+            prevPlayerPos.copy(playerContainer.position);
+            playerVelocity.set(0, 0, 0);
             playerRotation.yaw = 0; playerRotation.pitch = 0;
 
             tpsBody.visible = (cameraMode === 1);
@@ -2672,11 +2762,18 @@
 
         function exitToMenu(e) { 
             if(e) e.preventDefault(); 
+            if (pvpActive && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                try { pvpWs.send(JSON.stringify({ action: 'forfeit', match_id: pvpMatchId })); } catch (_) {}
+            }
+            pvpCleanup(true);
+            clearTransientProjectiles();
             isGameRunning = false; 
 
             // Сброс эффектов энергии — чтобы не оставались в меню
             stamina = maxStamina;
             isExhausted = false;
+            isFireBtnPressed = false;
+            semiAutoLock = false;
             const sBar = document.getElementById('staminaBar');
             if (sBar) { sBar.style.width = '100%'; sBar.style.background = ''; }
             const sText = document.getElementById('staminaText');
@@ -2716,6 +2813,52 @@
             } 
         }
 
+        function interactNearby() {
+            if (!isGameRunning || isSpectator || playerHp <= 0) return;
+            let doorIdx = bunkerDoors.findIndex(d => {
+                const wp = new THREE.Vector3();
+                d.mesh.getWorldPosition(wp);
+                return playerContainer.position.distanceTo(wp) < 4.5;
+            });
+            if (doorIdx >= 0) {
+                if (stamina >= 15) {
+                    stamina = Math.max(0, stamina - 15);
+                    toggleBunkerDoor(bunkerDoors[doorIdx]);
+                    if (pvpActive && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                        try { pvpWs.send(JSON.stringify({ action: 'utopia_state', match_id: pvpMatchId, state: { door_idx: doorIdx, door_open: bunkerDoors[doorIdx].isOpen } })); } catch (_) {}
+                    }
+                } else {
+                    showNotify("НЕ ХВАТАЕТ ЭНЕРГИИ ДЛЯ ДВЕРИ (< 15%)!");
+                }
+                return;
+            }
+            const distToBlueMedkit = playerContainer.position.distanceTo(blueBasePos);
+            const distToRedMedkit = playerContainer.position.distanceTo(redBasePos);
+            const distToCenterMedkit = playerContainer.position.distanceTo(centerBunkerPos);
+            const myMedkitPos = (pvpActive && pvpMyColor === 'red') ? redBasePos : blueBasePos;
+            const myMedUsed = (pvpActive && pvpMyColor === 'red') ? redMedkitUsed : blueMedkitUsed;
+            if (playerContainer.position.distanceTo(myMedkitPos) < 4.0 && !myMedUsed && playerHp < maxPlayerHp) {
+                if (pvpActive && pvpMyColor === 'red') {
+                    redMedkitUsed = true;
+                    if (redMedkitMesh) redMedkitMesh.visible = false;
+                } else {
+                    blueMedkitUsed = true;
+                    if (blueMedkitMesh) blueMedkitMesh.visible = false;
+                }
+                playerHp = Math.min(maxPlayerHp, playerHp + 50);
+                updateHPUI();
+                playMedkitSound();
+                showNotify("АПТЕЧКА БАЗЫ (+50 HP)!");
+            } else if (distToCenterMedkit < 4.5 && !centerMedkitUsed && playerHp < maxPlayerHp) {
+                centerMedkitUsed = true;
+                playerHp = Math.min(maxPlayerHp, playerHp + 75);
+                updateHPUI();
+                playMedkitSound();
+                if (centerMedkitMesh) centerMedkitMesh.visible = false;
+                showNotify("СУПЕР-АПТЕЧКА ИЗ ДОМА (+75 HP)!");
+            }
+        }
+
         function setupPCControls() {
             window.addEventListener('keydown', (e) => {
                 if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -2739,42 +2882,7 @@
                 if (e.code === 'Digit7') selectWeapon(6);
                 if (e.code === 'Digit8') selectWeapon(7);
 
-                if (e.code === 'KeyE') {
-                    // Хитбокс двери следует за реальным положением меша (когда открыта — дверь в другом месте)
-                    let doorToToggle = bunkerDoors.find(d => {
-                        const wp = new THREE.Vector3();
-                        d.mesh.getWorldPosition(wp);
-                        return playerContainer.position.distanceTo(wp) < 4.5;
-                    });
-                    if (doorToToggle) {
-                        if (stamina >= 15) {
-                            stamina = Math.max(0, stamina - 15);
-                            toggleBunkerDoor(doorToToggle);
-                        } else {
-                            showNotify("НЕ ХВАТАЕТ ЭНЕРГИИ ДЛЯ ДВЕРИ (< 15%)!");
-                        }
-                        return;
-                    }
-
-                    const distToBlueMedkit = playerContainer.position.distanceTo(blueBasePos);
-                    const distToCenterMedkit = playerContainer.position.distanceTo(centerBunkerPos);
-
-                    if (distToBlueMedkit < 4.0 && !blueMedkitUsed) {
-                        blueMedkitUsed = true;
-                        playerHp = Math.min(maxPlayerHp, playerHp + 50);
-                        updateHPUI();
-                        playMedkitSound();
-                        if (blueMedkitMesh) blueMedkitMesh.visible = false;
-                        showNotify("АПТЕЧКА БАЗЫ (+50 HP)!");
-                    } else if (distToCenterMedkit < 4.5 && !centerMedkitUsed) {
-                        centerMedkitUsed = true;
-                        playerHp = Math.min(maxPlayerHp, playerHp + 75);
-                        updateHPUI();
-                        playMedkitSound();
-                        if (centerMedkitMesh) centerMedkitMesh.visible = false;
-                        showNotify("СУПЕР-АПТЕЧКА ИЗ ДОМА (+75 HP)!");
-                    }
-                }
+                if (e.code === 'KeyE') interactNearby();
 
                 if (e.code === 'KeyV') {
                     cameraMode = (cameraMode === 1) ? 0 : 1;
@@ -2965,6 +3073,16 @@
                         const nxt = (currentWeapon + i) % 8;
                         if (gvHasWeapon(nxt)) { selectWeapon(nxt); break; }
                     }
+                }, { passive: false });
+
+                // Взаимодействие [E] (двери / аптечки) и камера [V]
+                const ub = document.getElementById('mobUse');
+                if (ub) ub.addEventListener('touchstart', (e) => { e.preventDefault(); interactNearby(); }, { passive: false });
+                const cb = document.getElementById('mobCam');
+                if (cb) cb.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    cameraMode = (cameraMode === 1) ? 0 : 1;
+                    showNotify(cameraMode === 1 ? "ВИД: 3-Е ЛИЦО (TPS)" : "ВИД: 1-Е ЛИЦО (FPS)");
                 }, { passive: false });
             })();
 
@@ -3606,7 +3724,7 @@
                 if (bots[i].hp <= 0) {
                     let b = bots[i];
                     scene.remove(b.mesh); b.ui.style.display = 'none';
-                    hittableObjects = hittableObjects.filter(obj => obj !== b.torso && obj !== b.head);
+                    hittableObjects = hittableObjects.filter(obj => obj !== b.torso && obj !== b.head && (!b.parts || obj !== b.parts.bigHitbox));
                     bots.splice(i, 1);
                 }
             }
@@ -3644,17 +3762,23 @@
             renderer.render(scene, camera);
         }
 
-        window.addEventListener('resize', () => { 
-            if(camera){ 
-                camera.aspect = window.innerWidth / window.innerHeight; 
-                camera.updateProjectionMatrix(); 
+        function resize3DRenderer() {
+            const vv = window.visualViewport;
+            const w = vv ? vv.width : window.innerWidth;
+            const h = vv ? vv.height : window.innerHeight;
+            if (camera) {
+                camera.aspect = w / Math.max(1, h);
+                camera.updateProjectionMatrix();
                 if (menuCamera) {
-                    menuCamera.aspect = window.innerWidth / window.innerHeight;
+                    menuCamera.aspect = w / Math.max(1, h);
                     menuCamera.updateProjectionMatrix();
                 }
-                renderer.setSize(window.innerWidth, window.innerHeight); 
+                renderer.setSize(w, h);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
             }
-        });
+        }
+        window.addEventListener('resize', resize3DRenderer);
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', resize3DRenderer);
 
         window.addEventListener('DOMContentLoaded', () => {
             initEngine();
@@ -3682,7 +3806,7 @@
         const urlBots = urlParams.get('bots');   // "blue.red" — конфиг ботов лобби
         const urlCoop = urlParams.get('coop') === '1';
 
-        function pvpSearch(e) {
+        function pvpSearch(e, forceQueue = false) {
             if (e) e.preventDefault();
             initAudio();
             if (pvpRoom) { renderPvPRoom(); return; } // уже в лобби — просто показать экран
@@ -3704,7 +3828,7 @@
                 + `/ws/games/${encodeURIComponent(nick)}?token=${encodeURIComponent(token)}`;
             pvpWs = new WebSocket(wsUrl);
             pvpWs.onopen = () => {
-                if (urlMatch) {
+                if (urlMatch && !forceQueue) {
                     // прямой вход из мессенджера
                     pvpMatchId = parseInt(urlMatch);
                     pvpOppNick = urlOpp || 'Соперник';
@@ -3832,11 +3956,36 @@
             setTimeout(() => { if (box.parentNode) box.remove(); }, 30000);
         }
 
+        function pvpBackToMenu() {
+            const overlay = document.getElementById('pvpResultOverlay');
+            if (overlay) overlay.style.display = 'none';
+            pvpCleanup(true);
+            clearTransientProjectiles();
+            if (urlMatch && history.replaceState) {
+                try { history.replaceState(null, '', location.pathname); } catch (_) {}
+            }
+            exitToMenu();
+        }
+
+        function pvpRematch() {
+            const overlay = document.getElementById('pvpResultOverlay');
+            if (overlay) overlay.style.display = 'none';
+            pvpCleanup(true);
+            clearTransientProjectiles();
+            if (urlMatch && history.replaceState) {
+                try { history.replaceState(null, '', location.pathname); } catch (_) {}
+            }
+            exitToMenu();
+            setTimeout(() => pvpSearch(null, true), 150);
+        }
+
         // Экран победы/поражения
         function pvpShowResult(won, reason) {
             isGameRunning = false;
+            pvpActive = false;
             changeScreen('hud', 'none');
-            document.exitPointerLock && document.exitPointerLock();
+            mobControls(false);
+            if (document.exitPointerLock) document.exitPointerLock();
             // overlay поверх всего
             let overlay = document.getElementById('pvpResultOverlay');
             if (!overlay) {
@@ -3845,38 +3994,51 @@
                 overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:99999;';
                 document.body.appendChild(overlay);
             }
+            const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
             overlay.innerHTML = `
-                <div style="text-align:center; color:#fff; font-family:Arial, sans-serif;">
+                <div style="text-align:center; color:#fff; font-family:Arial, sans-serif; padding:18px;">
                     <div style="font-size:64px; margin-bottom:16px;">${won ? '🏆' : '💀'}</div>
                     <div style="font-size:28px; font-weight:900; color:${won ? '#3fb950' : '#ff5555'}; margin-bottom:12px;">
                         ${won ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ'}
                     </div>
-                    ${reason ? `<div style="font-size:15px; color:#ffd166; margin-bottom:8px;">${reason}</div>` : ''}
-                    <div style="font-size:13px; color:#aaa; margin-bottom:20px;">Соперник: @${pvpOppNick || '—'}</div>
-                    <button onclick="location.reload()" style="padding:12px 28px; border-radius:10px; border:2px solid #818cf8; background:rgba(129,140,248,.2); color:#a5b4fc; font-size:15px; font-weight:700; cursor:pointer;">🔄 Играть ещё</button>
-                    ${window.self !== window.top ? '<br><button onclick="window.top.closeGameModal&&window.top.closeGameModal()" style="padding:10px 24px; border-radius:10px; border:1px solid #555; background:rgba(255,255,255,.08); color:#aaa; font-size:13px; margin-top:10px; cursor:pointer;">✕ Выйти в мессенджер</button>' : ''}
+                    ${reason ? `<div style="font-size:15px; color:#ffd166; margin-bottom:8px;">${esc(reason)}</div>` : ''}
+                    <div style="font-size:13px; color:#aaa; margin-bottom:20px;">Соперник: @${esc(pvpOppNick || '—')}</div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+                        <button onclick="pvpRematch()" style="padding:12px 24px; border-radius:10px; border:2px solid #818cf8; background:rgba(129,140,248,.2); color:#a5b4fc; font-size:15px; font-weight:700; cursor:pointer;">🔄 Играть ещё</button>
+                        <button onclick="pvpBackToMenu()" style="padding:12px 22px; border-radius:10px; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.08); color:#fff; font-size:14px; font-weight:700; cursor:pointer;">🏠 В меню</button>
+                        ${window.self !== window.top ? '<button onclick="exitToMessenger()" style="padding:12px 22px; border-radius:10px; border:1px solid #555; background:rgba(255,255,255,.08); color:#ccc; font-size:14px; cursor:pointer;">✕ В мессенджер</button>' : ''}
+                    </div>
                 </div>`;
             overlay.style.display = 'flex';
         }
 
+        let pvpHitSeq = 0, pvpOppHitSeq = 0, pvpShotSeq = 0, pvpOppShotSeq = 0;
+
         function pvpStart() {
             document.getElementById('pvpStatus').style.display = 'none';
             // полноэкранный режим
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {});
+            if (!document.fullscreenElement && !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+                document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {});
             }
             teamConfig.allies = 0; teamConfig.enemies = 0;
             changeScreen('mainMenu', 'none');
             playBattleTransition(() => {
+                clearTransientProjectiles();
+                restoreCratesAndDoors();
                 bots.forEach(b => { scene.remove(b.mesh); b.ui.remove(); });
                 bots = [];
+                pvpHitSeq = 0; pvpOppHitSeq = 0; pvpShotSeq = 0; pvpOppShotSeq = 0;
                 if (!pvpSolo) pvpSpawnOpponent();
                 spawnLobbyBots();
                 currentRound = 1; blueRoundWins = 0; redRoundWins = 0;
+                roundEnding = false;
                 document.getElementById('blueWins').innerText = 0;
                 document.getElementById('redWins').innerText = 0;
                 document.getElementById('roundText').innerText = pvpLobbyBots ? 'ЛОББИ' : 'PvP';
+                changeScreen('hud', 'block');
                 document.getElementById('teamScoreUI').style.display = 'block';
+                document.getElementById('playerUIHPContainer').style.display = 'block';
+                document.getElementById('crosshair').style.display = (currentWeapon !== 3 && currentWeapon !== 4) ? 'block' : 'none';
                 playerHp = maxPlayerHp; updateHPUI();
                 pvpOppHp = 100; pvpOppAlive = true;
                 // спавн по цвету
@@ -3885,6 +4047,8 @@
                 } else {
                     playerContainer.position.set(0, 0, -50);
                 }
+                prevPlayerPos.copy(playerContainer.position);
+                playerVelocity.set(0, 0, 0);
                 playerRotation.yaw = 0; playerRotation.pitch = 0;
                 blueMedkitUsed = false; redMedkitUsed = false; centerMedkitUsed = false;
                 if (blueMedkitMesh) blueMedkitMesh.visible = true;
@@ -3892,6 +4056,8 @@
                 if (centerMedkitMesh) centerMedkitMesh.visible = true;
                 resetAllAmmoAndReload();
                 isSpectator = false;
+                isFireBtnPressed = false;
+                semiAutoLock = false;
                 isGameRunning = true;
                 pvpActive = true;
                 mobControls(true);
@@ -3924,7 +4090,7 @@
         function pvpSpawnOpponent() {
             if (pvpOppMesh) scene.remove(pvpOppMesh);
             const asAlly = pvpIsAlly; // co-op: союзник по команде — не убиваем
-            const parts = createDetailedCharacterMesh(false);
+            const parts = createDetailedCharacterMesh(asAlly || pvpMyColor === 'red');
             pvpOppMesh = parts.group;
             // соперник спавнится напротив; союзник — рядом со мной
             const oppZ = asAlly ? (pvpMyColor === 'red' ? 44 : -44) : (pvpMyColor === 'red' ? -50 : 50);
@@ -3952,7 +4118,7 @@
             pvpOppMesh.userData = { ui, bar, txt, parts, isAlly: asAlly };
         }
 
-        function pvpCleanup() {
+        function pvpCleanup(closeSocket = true) {
             if (pvpOppMesh) {
                 if (pvpOppMesh.userData && pvpOppMesh.userData.ui) pvpOppMesh.userData.ui.remove();
                 if (pvpOppMesh.userData && pvpOppMesh.userData.parts) {
@@ -3963,7 +4129,11 @@
                 scene.remove(pvpOppMesh);
                 pvpOppMesh = null;
             }
-            if (pvpWs) { try { pvpWs.send(JSON.stringify({ action: 'unqueue' })); } catch(_){} pvpWs.close(); pvpWs = null; }
+            if (closeSocket && pvpWs) {
+                try { pvpWs.send(JSON.stringify({ action: 'unqueue' })); } catch(_){}
+                try { pvpWs.close(); } catch(_){}
+                pvpWs = null;
+            }
             pvpActive = false; pvpMatchId = null; pvpQueued = false;
             pvpLobbyBots = null; pvpCoOp = false; pvpSolo = false; pvpIsAlly = false;
             oppTargetPos = new THREE.Vector3(); oppVelocity = new THREE.Vector3(); oppLastUpdate = 0;
@@ -3985,7 +4155,96 @@
             ud.wpnMesh.position.set(0, 0, 0);
             ud.parts.rightHandMount.add(ud.wpnMesh);
         }
+        function pvpSendTracer(startPos, hitPoint, color) {
+            if (!pvpWs || pvpWs.readyState !== 1 || !pvpActive || !pvpMatchId) return;
+            pvpShotSeq++;
+            pvpWs.send(JSON.stringify({
+                action: 'utopia_state',
+                match_id: pvpMatchId,
+                state: {
+                    shot: {
+                        seq: pvpShotSeq,
+                        sx: Math.round(startPos.x * 100) / 100,
+                        sy: Math.round(startPos.y * 100) / 100,
+                        sz: Math.round(startPos.z * 100) / 100,
+                        hx: Math.round(hitPoint.x * 100) / 100,
+                        hy: Math.round(hitPoint.y * 100) / 100,
+                        hz: Math.round(hitPoint.z * 100) / 100,
+                        c: color || 0xffcc00,
+                        w: currentWeapon,
+                    }
+                }
+            }));
+        }
+        function pvpSendRocket(startPos, dir) {
+            if (!pvpWs || pvpWs.readyState !== 1 || !pvpActive || !pvpMatchId) return;
+            pvpShotSeq++;
+            pvpWs.send(JSON.stringify({
+                action: 'utopia_state',
+                match_id: pvpMatchId,
+                state: {
+                    rocket: {
+                        seq: pvpShotSeq,
+                        sx: Math.round(startPos.x * 100) / 100,
+                        sy: Math.round(startPos.y * 100) / 100,
+                        sz: Math.round(startPos.z * 100) / 100,
+                        dx: Math.round(dir.x * 1000) / 1000,
+                        dy: Math.round(dir.y * 1000) / 1000,
+                        dz: Math.round(dir.z * 1000) / 1000,
+                    }
+                }
+            }));
+        }
         function pvpApplyState(s) {
+            if (!s) return;
+            // Двери бункера и ящики синхронизируются даже до появления модели соперника
+            if (typeof s.door_idx === 'number' && bunkerDoors[s.door_idx]) {
+                const d = bunkerDoors[s.door_idx];
+                if (typeof s.door_open === 'boolean' && d.isOpen !== s.door_open) toggleBunkerDoor(d, true);
+            }
+            if (typeof s.crate_break === 'number' && destructibleCrates[s.crate_break]) {
+                const cr = destructibleCrates[s.crate_break];
+                if (cr.hp > 0) destroyCrate(cr, true);
+            }
+            // Трассер выстрела соперника
+            if (s.shot && typeof s.shot.seq === 'number' && s.shot.seq > pvpOppShotSeq) {
+                pvpOppShotSeq = s.shot.seq;
+                const sp = new THREE.Vector3(s.shot.sx, s.shot.sy, s.shot.sz);
+                const hp = new THREE.Vector3(s.shot.hx, s.shot.hy, s.shot.hz);
+                createBotTracer(sp, hp, s.shot.c || 0xffcc00);
+                playShootSound(typeof s.shot.w === 'number' ? s.shot.w : 1);
+            }
+            // Ракета соперника
+            if (s.rocket && typeof s.rocket.seq === 'number' && s.rocket.seq > pvpOppShotSeq) {
+                pvpOppShotSeq = s.rocket.seq;
+                const sp = new THREE.Vector3(s.rocket.sx, s.rocket.sy, s.rocket.sz);
+                const d = new THREE.Vector3(s.rocket.dx, s.rocket.dy, s.rocket.dz).normalize();
+                spawnRocket(sp, d, false);
+                playShootSound(6);
+            }
+            // Входящий урон от соперника — снимаем HP у себя и подтверждаем серверу!
+            if (typeof s.hit_dmg === 'number' && s.hit_dmg > 0 && typeof s.hit_seq === 'number' && s.hit_seq > pvpOppHitSeq) {
+                pvpOppHitSeq = s.hit_seq;
+                if (!pvpIsAlly && !isSpectator && playerHp > 0) {
+                    const dmg = Math.min(150, Math.max(0, s.hit_dmg));
+                    playerHp = Math.max(0, playerHp - dmg);
+                    updateHPUI();
+                    flashDamageEffect();
+                    pvpSendState(true);
+                    if (playerHp <= 0) {
+                        isGameRunning = false;
+                        pvpActive = false;
+                        if (pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                            pvpWs.send(JSON.stringify({
+                                action: 'utopia_state', match_id: pvpMatchId,
+                                state: { hp: 0, alive: false }
+                            }));
+                        }
+                        pvpShowResult(false, 'Ты пал в перестрелке!');
+                        return;
+                    }
+                }
+            }
             if (!pvpOppMesh) return;
 
             if (typeof s.hp === 'number') {
@@ -4024,7 +4283,7 @@
             if (typeof s.weapon === 'number') updatePvPOpponentWeapon(s.weapon);
         }
 
-        // Плавная интерполяция + предсказание позиции соперника в каждом кадре
+        // Плавная интерполяция + предсказание позиции соперника + анимация ног в каждом кадре
         function updatePvPInterpolation(delta) {
             if (!pvpOppMesh || !pvpOppAlive) return;
             // пакеты перестали приходить — гасим предсказание, чтобы призрак не улетел
@@ -4036,12 +4295,27 @@
             let diff = oppTargetYaw - pvpOppMesh.rotation.y;
             diff = Math.atan2(Math.sin(diff), Math.cos(diff));
             pvpOppMesh.rotation.y += diff * Math.min(1.0, delta * 14);
+            // Анимация ног при движении соперника
+            const pp = pvpOppMesh.userData && pvpOppMesh.userData.parts;
+            if (pp && pp.leftLegPivot && pp.rightLegPivot) {
+                const spd = oppVelocity.length();
+                if (spd > 0.35) {
+                    const cyc = (clock ? clock.getElapsedTime() : performance.now() / 1000) * 14;
+                    pp.leftLegPivot.rotation.x = Math.sin(cyc) * 0.6;
+                    pp.rightLegPivot.rotation.x = Math.sin(cyc + Math.PI) * 0.6;
+                } else {
+                    pp.leftLegPivot.rotation.x = THREE.MathUtils.lerp(pp.leftLegPivot.rotation.x, 0, 0.2);
+                    pp.rightLegPivot.rotation.x = THREE.MathUtils.lerp(pp.rightLegPivot.rotation.x, 0, 0.2);
+                }
+                pp.rightArmPivot.rotation.set(-Math.PI / 2, 0, 0);
+                pp.leftArmPivot.rotation.set(-Math.PI / 2, 0, 0.2);
+            }
         }
 
-        function pvpSendState() {
+        function pvpSendState(force = false) {
             if (!pvpWs || pvpWs.readyState !== 1 || !pvpActive || !pvpMatchId) return;
             const now = performance.now();
-            if (now - pvpLastSend < 60) return; // ~16 раз/сек
+            if (!force && now - pvpLastSend < 55) return; // ~18 раз/сек
             pvpLastSend = now;
             pvpWs.send(JSON.stringify({
                 action: 'utopia_state',
@@ -4057,18 +4331,20 @@
             }));
         }
 
-        // урон по сопернику: вызывается из checkTargetDamage
+        // урон по сопернику: шлём hit_dmg сопернику (НЕ убиваем себя!)
         function pvpDamageOpponent(dmg) {
             if (!pvpActive || !pvpOppAlive || pvpIsAlly) return;
-            pvpOppHp -= dmg;
-            if (pvpOppHp <= 0) {
-                pvpOppHp = 0;
-                if (pvpWs && pvpWs.readyState === 1) {
-                    pvpWs.send(JSON.stringify({
-                        action: 'utopia_state', match_id: pvpMatchId,
-                        state: { hp: 0, alive: false, x: 0, z: 0, yaw: 0 }
-                    }));
-                }
+            pvpOppHp = Math.max(0, pvpOppHp - dmg);
+            if (pvpOppMesh && pvpOppMesh.userData && pvpOppMesh.userData.bar) {
+                pvpOppMesh.userData.bar.style.width = Math.max(0, pvpOppHp) + '%';
+                pvpOppMesh.userData.txt.innerText = Math.round(Math.max(0, pvpOppHp));
+            }
+            if (pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
+                pvpHitSeq++;
+                pvpWs.send(JSON.stringify({
+                    action: 'utopia_state', match_id: pvpMatchId,
+                    state: { hit_dmg: Math.round(dmg), hit_seq: pvpHitSeq }
+                }));
             }
         }
 
@@ -4361,6 +4637,7 @@
         // ── Выход в мессенджер: кнопка в меню/паузе, только внутри iframe ──
         function exitToMessenger() {
             isGameRunning = false;
+            try { pvpCleanup(true); } catch (_) {}
             try { pvpCancel(); } catch (_) {}
             if (window.top !== window.self) {
                 if (window.top.closeGameFullscreen) window.top.closeGameFullscreen();
