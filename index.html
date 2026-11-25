@@ -1408,6 +1408,9 @@
     <div style="text-align:center; padding:10px 0;">
       <div id="clicker-score" style="font-size:42px; font-weight:900; color:#ffd166; text-shadow:0 0 20px rgba(255,209,102,.4);">0</div>
       <div id="clicker-rate" style="font-size:13px; color:var(--text-dim); margin-top:4px;">+1 за клик · 0/сек авто</div>
+      <div style="margin-top:8px; display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:14px; background:rgba(63,185,80,.12); border:1px solid rgba(63,185,80,.35); font-size:13px; color:#3fb950; font-weight:700;">
+        💰 Игровые монеты (на аккаунте): <span id="clicker-game-coins" style="color:#ffd700;">0</span>
+      </div>
     </div>
 
     <!-- Большая кнопка клика -->
@@ -1791,13 +1794,11 @@ async function login(nickname, password) {
       switchChat('general', '🌐 Общий чат');
       checkFriendRequests();
       checkInvites();
-      // подключаем игровой WS сразу — чтобы дуэли приходили всегда
+      // подключаем игровой WS сразу — чтобы дуэли и синхронизация экономики приходили всегда
       setTimeout(() => gameConnect(), 1200);
       loadSettingsFromServer(); // загружаем настройки с сервера
-      // Гранты кликера забираем сразу при входе (а не только при открытии кликера)
-      syncClickerGrants();
-      // Отправляем свою игровую статистику на сервер (для вкладки в профиле)
-      pushProfileGamestats();
+      // Загружаем авторитетный баланс валют/кликера/оружия с сервера (не затирая его пустым localStorage!)
+      if (typeof loadEconomyFromServer === 'function') loadEconomyFromServer(true);
 
       if (!_loginIntervalsStarted) {
         _loginIntervalsStarted = true;
@@ -2269,7 +2270,9 @@ function setChatUnread(chatId, count) {
       b.className = 'chat-unread-badge';
       b.style.cssText = 'background:var(--danger); color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; padding:0 5px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center;';
       b.textContent = count > 99 ? '99+' : String(count);
-      el.appendChild(b);
+      const lastTag = el.lastElementChild;
+      if (lastTag && el.children.length > 1) el.insertBefore(b, lastTag);
+      else el.appendChild(b);
     }
   }
   const meta = (window.chatsMeta || {})[chatId];
@@ -2377,6 +2380,7 @@ function toggleArchiveChat(id) {
   const i = arr.indexOf(id);
   if (i >= 0) arr.splice(i, 1); else arr.push(id);
   setArchivedChats(arr);
+  if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
   return i < 0;
 }
 
@@ -2511,7 +2515,9 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+let _switchChatSeq = 0;
 async function switchChat(chatId, chatName, isDirect = null) {
+    const switchSeq = ++_switchChatSeq;
     activeChatId = chatId;
     if (typeof clearReplyTo === 'function') clearReplyTo();
     if (typeof clearEditMsg === 'function') clearEditMsg();
@@ -2583,6 +2589,8 @@ async function switchChat(chatId, chatName, isDirect = null) {
   box.innerHTML = '';
   const res = await fetch(`${BACKEND_URL}/messages/${chatId}`);
   const list = await res.json();
+  if (switchSeq !== _switchChatSeq || activeChatId !== chatId) return;
+  box.innerHTML = '';
   if (isBot && list.length === 0) {
     box.insertAdjacentHTML('beforeend', `
       <div style="max-width:520px; margin:14px auto; padding:14px 16px; border:1px solid rgba(179,146,240,.35);
@@ -2699,19 +2707,44 @@ async function switchChat(chatId, chatName, isDirect = null) {
       }
     } else if (data.action === 'new_message') {
       const msgChat = data.chat_id || activeChatId;
-      // Непрочитанные: +1 красный счётчик, если это не открытый чат
-      if (msgChat && msgChat !== activeChatId && data.sender !== currentUser) bumpChatUnread(msgChat);
-      else if (msgChat && msgChat === activeChatId && data.sender !== currentUser) markChatRead(msgChat);
-      renderMessage(data);
-      notifyIncomingMessage(data);
+      const fromMe = String(data.sender || '').toLowerCase() === String(currentUser || '').toLowerCase();
+      if (msgChat && (!window.chatsMeta || !window.chatsMeta[msgChat])) {
+        loadChats();
+      }
+      if (msgChat === activeChatId) {
+        renderMessage(data);
+        if (!fromMe) {
+          markChatRead(msgChat);
+          notifyIncomingMessage(data);
+        } else {
+          setChatUnread(msgChat, 0);
+        }
+      } else if (msgChat && !fromMe) {
+        const archived = typeof isChatArchived === 'function' && isChatArchived(msgChat);
+        if (!archived) {
+          bumpChatUnread(msgChat);
+          notifyIncomingMessage(data);
+        }
+      }
     } else if (data.action === 'deleted') {
-      data.message_ids.forEach(mid => document.getElementById(`msg-${mid}`)?.remove());
-      if (data.deleted_by && data.deleted_by !== currentUser) {
+      const dChat = data.chat_id || activeChatId;
+      if (dChat === activeChatId) {
+        (data.message_ids || []).forEach(mid => document.getElementById(`msg-${mid}`)?.remove());
+        const curMeta = (window.chatsMeta || {})[activeChatId];
+        if (curMeta && curMeta.pinned_msg && (data.message_ids || []).some(mid => Number(mid) === Number(curMeta.pinned_msg.id))) {
+          curMeta.pinned_msg = null;
+          if (typeof renderPinnedBar === 'function') renderPinnedBar(activeChatId);
+        }
+      }
+      if (data.deleted_by && String(data.deleted_by).toLowerCase() !== String(currentUser || '').toLowerCase()) {
         showToast(`@${data.deleted_by} удалил(а) сообщение`);
       }
     } else if (data.action === 'reactions') {
-      const el = document.getElementById(`msg-${data.message_id}`);
-      if (el) renderReactions(el, data.reactions || {});
+      const rChat = data.chat_id || activeChatId;
+      if (rChat === activeChatId) {
+        const el = document.getElementById(`msg-${data.message_id}`);
+        if (el) renderReactions(el, data.reactions || {});
+      }
     } else if (data.action === 'error') {
       showToast(data.msg || 'Ошибка сервера', 'error');
     } else if (data.action === 'muted') {
@@ -2747,8 +2780,66 @@ async function switchChat(chatId, chatName, isDirect = null) {
       if (data.id === activeChatId) switchChat('general', '🌐 Общий чат');
       loadChats();
     } else if (data.action === 'chat_cleared') {
-      // История чата очищена (например, ЛС) — перечитываем ленту без перезагрузки
-      if (data.id === activeChatId) switchChat(activeChatId, window.activeChatName || activeChatId);
+      const clearedId = data.chat_id || data.id;
+      if (window.chatsMeta && window.chatsMeta[clearedId]) window.chatsMeta[clearedId].pinned_msg = null;
+      setChatUnread(clearedId, 0);
+      if (clearedId === activeChatId) {
+        const mbox = document.getElementById('messages-box');
+        if (mbox) mbox.innerHTML = '';
+        if (typeof renderPinnedBar === 'function') renderPinnedBar(activeChatId);
+        showToast('🧹 История чата очищена');
+      }
+    } else if (data.action === 'chat_read') {
+      if (data.chat_id) setChatUnread(data.chat_id, 0);
+    } else if (data.action === 'chats_updated') {
+      loadChats();
+    } else if (data.action === 'invites_updated') {
+      checkInvites();
+      const im = document.getElementById('invites-modal');
+      if (im && im.style.display === 'flex' && typeof loadInvites === 'function') loadInvites();
+    } else if (data.action === 'friends_updated') {
+      refreshFriendsBadge();
+      loadChats();
+      const fmUpd = document.getElementById('friends-modal');
+      if (fmUpd && fmUpd.style.display === 'flex') showFriendsTab('online');
+    } else if (data.action === 'chat_renamed') {
+      const cid = data.chat_id;
+      if (cid && data.name) {
+        if (window.chatsMeta && window.chatsMeta[cid]) window.chatsMeta[cid].name = data.name;
+        const cached = (latestChatsCache || []).find(c => c.id === cid);
+        if (cached) cached.name = data.name;
+        if (typeof renderFilteredChatList === 'function') renderFilteredChatList();
+        if (cid === activeChatId) {
+          document.getElementById('chat-title').innerText = data.name;
+          window.activeChatName = data.name;
+        }
+      }
+    } else if (data.action === 'profile_updated') {
+      if (data.nickname) {
+        cacheAvatar(data.nickname, data.avatar_url || '');
+        paintAvatars(data.nickname);
+        if (data.old_nickname && data.old_nickname !== data.nickname) {
+          cacheAvatar(data.old_nickname, data.avatar_url || '');
+          paintAvatars(data.old_nickname);
+        }
+        const curLow = String(currentUser || '').toLowerCase();
+        if (curLow && (String(data.old_nickname || '').toLowerCase() === curLow || String(data.nickname).toLowerCase() === curLow)) {
+          currentUser = data.nickname;
+          myAvatarUrl = data.avatar_url || '';
+          localStorage.setItem('utopia_nickname', currentUser);
+          try {
+            const sv = JSON.parse(localStorage.getItem('utopia_saved_user') || 'null');
+            if (sv && sv.nickname) { sv.nickname = currentUser; localStorage.setItem('utopia_saved_user', JSON.stringify(sv)); }
+          } catch (_) {}
+          renderAvatar(myAvatarUrl, document.getElementById('my-avatar-box'));
+          updateAdminPanelVisibility();
+        }
+        loadChats();
+      }
+    } else if (data.action === 'settings_updated') {
+      if (data.settings && typeof applyServerSettings === 'function') applyServerSettings(data.settings);
+    } else if (data.action === 'economy_sync') {
+      if (data.economy && typeof applyServerEconomy === 'function') applyServerEconomy(data.economy, data.client_id);
     } else if (data.action === 'members_updated') {
       // Состав/роли в группе поменялись (в т.ч. передача владельца)
       if (data.chat_id === activeChatId) {
@@ -2815,18 +2906,21 @@ async function switchChat(chatId, chatName, isDirect = null) {
         if (typeof renderTypingIndicator === 'function') renderTypingIndicator();
       }
     } else if (data.action === 'edited') {
-      const msgEl = document.getElementById(`msg-${data.message_id}`);
-      if (msgEl) {
-        msgEl.dataset.text = (data.text || '').slice(0, 400);
-        const bodyDiv = msgEl.querySelector('.msg-text');
-        if (bodyDiv) {
-          bodyDiv.innerHTML = `${escapeHtml(data.text || '')}<span class="msg-edited">(ред.)</span>`;
+      const eChat = data.chat_id || activeChatId;
+      if (eChat === activeChatId) {
+        const msgEl = document.getElementById(`msg-${data.message_id}`);
+        if (msgEl) {
+          msgEl.dataset.text = (data.text || '').slice(0, 400);
+          const bodyDiv = msgEl.querySelector('.msg-text');
+          if (bodyDiv) {
+            bodyDiv.innerHTML = `${escapeHtml(data.text || '')}<span class="msg-edited">(ред.)</span>`;
+          }
         }
-      }
-      const curMeta = (window.chatsMeta || {})[activeChatId];
-      if (curMeta && curMeta.pinned_msg && Number(curMeta.pinned_msg.id) === Number(data.message_id)) {
-        curMeta.pinned_msg.text = (data.text || '').slice(0, 140);
-        renderPinnedBar(activeChatId);
+        const curMeta = (window.chatsMeta || {})[activeChatId];
+        if (curMeta && curMeta.pinned_msg && Number(curMeta.pinned_msg.id) === Number(data.message_id)) {
+          curMeta.pinned_msg.text = (data.text || '').slice(0, 140);
+          renderPinnedBar(activeChatId);
+        }
       }
     } else if (data.action === 'pinned') {
       const cid = data.chat_id || activeChatId;
@@ -2880,15 +2974,35 @@ document.getElementById('chat-rename-btn').onclick = () => {
   openModal('rename-chat-modal');
 };
 
-// ЛС: локальное переименование (только для себя)
+// ЛС: переименование только для себя (хранится по аккаунту и синхронизируется с сервером)
+function getDmRenamesKey(nick) {
+  const n = String(nick || currentUser || '').trim().toLowerCase();
+  return n ? `utopia_dm_renames_${n}` : 'utopia_dm_renames';
+}
+function getDmRenamesMap() {
+  try {
+    const k = getDmRenamesKey(currentUser);
+    let raw = localStorage.getItem(k);
+    if (!raw && k !== 'utopia_dm_renames') {
+      const legacy = localStorage.getItem('utopia_dm_renames');
+      if (legacy) {
+        localStorage.setItem(k, legacy);
+        raw = legacy;
+      }
+    }
+    const obj = JSON.parse(raw || '{}');
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) { return {}; }
+}
 function getLocalDmName(chatId) {
-  try { return JSON.parse(localStorage.getItem('utopia_dm_renames') || '{}')[chatId] || ''; } catch (_) { return ''; }
+  return getDmRenamesMap()[chatId] || '';
 }
 function setLocalDmName(chatId, name) {
   try {
-    const m = JSON.parse(localStorage.getItem('utopia_dm_renames') || '{}');
+    const m = getDmRenamesMap();
     if (name) m[chatId] = name; else delete m[chatId];
-    localStorage.setItem('utopia_dm_renames', JSON.stringify(m));
+    localStorage.setItem(getDmRenamesKey(currentUser), JSON.stringify(m));
+    if (typeof syncSettingsToServer === 'function') syncSettingsToServer();
   } catch (_) {}
 }
 
@@ -2999,6 +3113,7 @@ function paintAvatars(nick) {
 }
 
 function renderMessage(msg) {
+  if (msg && msg.id && document.getElementById(`msg-${msg.id}`)) return;
   const box = document.getElementById('messages-box');
 
   // Служебное сообщение (мьют/бан): без автора, меню и реакций
@@ -3014,7 +3129,7 @@ function renderMessage(msg) {
     return;
   }
 
-  const isMine = msg.sender === currentUser;
+  const isMine = String(msg.sender || '').toLowerCase() === String(currentUser || '').toLowerCase();
   const el = document.createElement('div');
   el.id = `msg-${msg.id}`;
   el.className = `msg ${isMine ? 'mine' : 'other'}`;
@@ -4153,12 +4268,51 @@ document.addEventListener('click', function notifFirstClick() {
 function msgNotifEnabled() { return localStorage.getItem('utopia_notif_msgs') !== '0'; }
 function msgSoundEnabled() { return localStorage.getItem('utopia_notif_sound') !== '0'; }
 
-// Синхронизация настроек с сервером
+// Синхронизация настроек с сервером (уведомления, архив ЛС, личные имена ЛС)
+function applyServerSettings(s) {
+  if (!s || typeof s !== 'object') return;
+  if (typeof s.notif_msgs === 'boolean') {
+    localStorage.setItem('utopia_notif_msgs', s.notif_msgs ? '1' : '0');
+  }
+  if (typeof s.notif_sound === 'boolean') {
+    localStorage.setItem('utopia_notif_sound', s.notif_sound ? '1' : '0');
+  }
+  let chatUiChanged = false;
+  if (Array.isArray(s.archived_chats) && typeof setArchivedChats === 'function') {
+    setArchivedChats(s.archived_chats);
+    chatUiChanged = true;
+  }
+  if (s.dm_renames && typeof s.dm_renames === 'object' && !Array.isArray(s.dm_renames)) {
+    try {
+      localStorage.setItem(getDmRenamesKey(currentUser), JSON.stringify(s.dm_renames));
+      chatUiChanged = true;
+    } catch (_) {}
+  }
+  updateNotifSettingsUi();
+  if (chatUiChanged) {
+    if (typeof renderFilteredChatList === 'function') renderFilteredChatList();
+    if (activeChatId && activeChatId.startsWith('dm_')) {
+      const meta = (window.chatsMeta || {})[activeChatId];
+      const dn = getLocalDmName(activeChatId) || (meta && meta.name) || '';
+      if (dn) {
+        document.getElementById('chat-title').innerText = dn;
+        window.activeChatName = dn;
+      }
+      const archBtn = document.getElementById('archive-chat-btn');
+      if (archBtn && archBtn.style.display !== 'none' && typeof isChatArchived === 'function') {
+        archBtn.innerText = isChatArchived(activeChatId) ? '📦↩ Вернуть' : '📦 В архив';
+      }
+    }
+  }
+}
+
 async function syncSettingsToServer() {
   if (!currentUser) return;
   const settings = {
     notif_msgs: msgNotifEnabled(),
     notif_sound: msgSoundEnabled(),
+    archived_chats: (typeof getArchivedChats === 'function') ? getArchivedChats() : [],
+    dm_renames: (typeof getDmRenamesMap === 'function') ? getDmRenamesMap() : {},
   };
   try {
     await fetch(`${BACKEND_URL}/user/settings/${encodeURIComponent(currentUser)}`, {
@@ -4174,13 +4328,7 @@ async function loadSettingsFromServer() {
     const r = await fetch(`${BACKEND_URL}/user/settings/${encodeURIComponent(currentUser)}`);
     const d = await r.json();
     if (d.status === 'ok' && d.settings) {
-      if (typeof d.settings.notif_msgs === 'boolean') {
-        localStorage.setItem('utopia_notif_msgs', d.settings.notif_msgs ? '1' : '0');
-      }
-      if (typeof d.settings.notif_sound === 'boolean') {
-        localStorage.setItem('utopia_notif_sound', d.settings.notif_sound ? '1' : '0');
-      }
-      updateNotifSettingsUi();
+      applyServerSettings(d.settings);
     }
   } catch (e) {}
 }
@@ -6866,15 +7014,31 @@ function upRenderStats(s) {
   const row = (k, v) => `<div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06);"><span style="color:var(--text-dim);">${k}</span><span style="font-weight:700;">${v}</span></div>`;
   const sec = (title, body) => `<div style="margin-bottom:12px;"><div style="font-size:12px; font-weight:700; color:var(--neon-cyan); margin-bottom:4px;">${title}</div>${body}</div>`;
 
-  // Кликер
+  // Кликер и монеты
   const clk = s.clicker || {};
   const levels = clk.levels || {};
   const ups = Object.entries(levels).filter(([, lv]) => lv > 0);
-  const UPS_NAMES = { click: '💪 Клик', auto: '🤖 Автоклик', crit: '💥 Крит', luck: '🍀 Удача', multi: '✨ Мульт', bonus: '🎁 Бонус', speed: '⚡ Скорость' };
-  let clickerHtml = row('💰 Монет', num(s.coins || clk.score || 0)) + row('👆 Всего кликов', num(clk.total)) +
+  const UPS_NAMES = {
+    click: '💪 Клик',
+    auto: '🤖 Автоклик',
+    double: '⚡ x2 клик',
+    combo: '🔥 Комбо',
+    crit: '💥 Крит',
+    prestige: '👑 Престиж',
+    luck: '🍀 Удача',
+    multi: '✨ Мульт',
+    bonus: '🎁 Бонус',
+    speed: '⚡ Скорость'
+  };
+  let clickerHtml = row('💰 Игровые монеты', num(s.coins ?? 0)) +
+    row('👆 Клики (в кликере)', num(clk.score || 0)) +
+    row('👆 Всего кликов', num(clk.total)) +
     row('🎖 Престиж', num(clk.prestige));
-  if (ups.length) clickerHtml += row('🛒 Куплено прокачек', ups.map(([id, lv]) => `${UPS_NAMES[id] || id}×${lv}`).join(', '));
+  if (ups.length) clickerHtml += row('🛒 Прокачки', ups.map(([id, lv]) => `${UPS_NAMES[id] || id}×${lv}`).join(', '));
   else clickerHtml += row('🛒 Прокачки', 'нет');
+  if (Array.isArray(s.weapons)) {
+    clickerHtml += row('🔫 Оружие Green Valley', `${s.weapons.length} шт.`);
+  }
 
   // Онлайн-матчи (1х1)
   const on = s.online || {};
@@ -6901,46 +7065,14 @@ function upRenderStats(s) {
     `<div style="font-size:10px; color:var(--text-dim); text-align:right;">Обновлено: ${s.updated_at ? String(s.updated_at).replace('T', ' ').slice(0, 16) : '—'}</div>`;
 }
 
-// Синк грантов кликера (вызывается при входе — начисляем в несгораемые adminCoins)
+// Синк баланса/экономики с сервером
 async function syncClickerGrants() {
-  try {
-    const res = await fetch(`${BACKEND_URL}/clicker/sync`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken })
-    });
-    const d = await res.json();
-    if (d.status === 'ok' && d.bonus !== 0 && typeof d.bonus === 'number') {
-      if (d.bonus > 0) {
-        clickerData.adminCoins = (clickerData.adminCoins || 0) + d.bonus;
-        showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 💰!`);
-      } else {
-        const take = Math.abs(d.bonus);
-        const before = clickerBalance();
-        clickerSpend(take);
-        const real = Math.max(0, before - clickerBalance());
-        showToast(`💰 У вас забрано ${real.toLocaleString('ru-RU')} 💰`, 'warning');
-      }
-      saveClicker();
-      if (document.getElementById('clicker-overlay')?.style.display === 'block') renderClicker();
-    }
-  } catch (_) {}
+  if (typeof loadEconomyFromServer === 'function') await loadEconomyFromServer(false);
 }
 
-// Отправка своей игровой статистики на сервер (кликер + PvE)
+// Отправка изменений кликера на сервер (только если игрок реально нажимал в кликере)
 async function pushProfileGamestats() {
-  try {
-    let pve = {};
-    try { pve = JSON.parse(localStorage.getItem('utopia_pve_stats') || '{}'); } catch (_) {}
-    await fetch(`${BACKEND_URL}/profile/gamestats/sync`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        nickname: currentUser, session_token: currentSessionToken,
-        pve_json: pve, clicker_json: clickerData
-      })
-    });
-  } catch (_) {}
+  if (typeof saveClickerToServer === 'function') await saveClickerToServer(false);
 }
 
 async function openUserProfile(nick, memberData) {
@@ -7139,6 +7271,11 @@ function handleGameEvent(m) {
       break;
     case 'room_solo_start':
       showToast('🏠 Лобби готово — откройте игру в greenu', 'success');
+      break;
+    case 'economy_sync':
+      if (m.economy && typeof applyServerEconomy === 'function') {
+        applyServerEconomy(m.economy, m.client_id);
+      }
       break;
   }
 }
@@ -7958,52 +8095,73 @@ document.getElementById('lb-game-select').onchange = loadLeaderboard;
 }
 
 // ═══════════════════════════════════════════════════════════
-//  👆 КЛИКЕР: прокачка + магазин + сундуки + временные баффы
+//  👆 КЛИКЕР + СЕРВЕРНАЯ ЭКОНОМИКА (сбалансированная прогрессия + синк)
 // ═══════════════════════════════════════════════════════════
 const CLICKER_UPGRADES = [
-  { id: 'click',    name: '💪 Сила клика',       desc: '+1 за клик',              base: 15,     mult: 1.5 },
-  { id: 'auto',     name: '🤖 Автокликер',       desc: '+1/сек автоматически',    base: 50,     mult: 1.6 },
-  { id: 'double',   name: '⚡ Двойной клик',      desc: 'шанс x2 клика (20%)',    base: 200,    mult: 1.8 },
-  { id: 'combo',    name: '🔥 Комбо',            desc: 'каждый 10-й клик x5',    base: 500,    mult: 2.0 },
-  { id: 'crit',     name: '💥 Критический удар', desc: 'шанс x10 клика (5%)',    base: 1500,   mult: 2.2 },
-  { id: 'prestige', name: '👑 Престиж',          desc: 'x2 ко всему (навсегда)',  base: 10000,  mult: 3.0 },
+  { id: 'click',    name: '💪 Сила клика',       desc: '+1 базовый клик за уровень',              base: 40,    mult: 1.75 },
+  { id: 'auto',     name: '🤖 Автокликер',       desc: '+1 клик/сек за уровень',                  base: 100,   mult: 1.75 },
+  { id: 'double',   name: '⚡ Двойной клик',      desc: 'шанс x2 (8% + 5%/ур., до 45%)',          base: 350,   mult: 1.9  },
+  { id: 'combo',    name: '🔥 Комбо',            desc: 'каждый 10-й клик (x1.5..x4 по ур.)',      base: 800,   mult: 2.1  },
+  { id: 'crit',     name: '💥 Критический удар', desc: 'шанс крита x3 (3% + 2%/ур., до 25%)',     base: 2500,  mult: 2.2  },
+  { id: 'prestige', name: '👑 Престиж',          desc: '+25% к кликам навсегда (не сбрасывается)', base: 15000, mult: 2.8  },
 ];
 
-// ── Скины для магазина (постоянные пассивные баффы) ──
+// ── Скины для магазина (постоянные пассивные баффы, активен только надетый) ──
 const CLICKER_SKINS = [
-  { id: 'skin_gold',    emoji: '⭐', name: 'Золотой',      cost: 500,    buff: '+10% к шансу крита',            type: 'crit_chance', val: 0.10, bg: 'rgba(255,200,0,.08)',  btn: '#ffd700', btnGrad: 'radial-gradient(circle at 40% 40%, #fff5c0, #ffd700)' },
-  { id: 'skin_diamond', emoji: '💎', name: 'Алмазный',     cost: 2000,   buff: '+15% к шансу двойного клика',   type: 'double_chance', val: 0.15, bg: 'rgba(0,200,255,.08)', btn: '#00c8ff', btnGrad: 'radial-gradient(circle at 40% 40%, #c0f0ff, #00c8ff)' },
-  { id: 'skin_fire',    emoji: '🔥', name: 'Огненный',     cost: 5000,   buff: 'x1.5 к силе клика',             type: 'click_mult', val: 1.5, bg: 'rgba(255,80,0,.08)',   btn: '#ff5500', btnGrad: 'radial-gradient(circle at 40% 40%, #ffc0a0, #ff5500)' },
-  { id: 'skin_shadow',  emoji: '🌙', name: 'Теневой',      cost: 8000,   buff: '+2 автокликера',                type: 'auto_bonus', val: 2, bg: 'rgba(100,80,180,.08)', btn: '#8866cc', btnGrad: 'radial-gradient(circle at 40% 40%, #d0c0ff, #8866cc)' },
-  { id: 'skin_rainbow', emoji: '🌈', name: 'Радужный',     cost: 15000,  buff: 'x2 ко всему',                   type: 'global_mult', val: 2, bg: 'rgba(255,0,128,.08)',  btn: '#ff44aa', btnGrad: 'radial-gradient(circle at 40% 40%, #ffb0d0, #ff44aa)' },
-  { id: 'skin_cosmic',  emoji: '🌌', name: 'Космический',  cost: 30000,  buff: 'x3 к силе клика + крит x2',     type: 'cosmic', val: 3, bg: 'rgba(40,0,80,.12)',    btn: '#6633cc', btnGrad: 'radial-gradient(circle at 40% 40%, #a080ff, #6633cc)' },
+  { id: 'skin_gold',    emoji: '⭐', name: 'Золотой',      cost: 1200,  buff: '+8% к шансу крита',            type: 'crit_chance',   val: 0.08, bg: 'rgba(255,200,0,.08)',  btn: '#ffd700', btnGrad: 'radial-gradient(circle at 40% 40%, #fff5c0, #ffd700)' },
+  { id: 'skin_diamond', emoji: '💎', name: 'Алмазный',     cost: 3500,  buff: '+10% к шансу двойного клика',  type: 'double_chance', val: 0.10, bg: 'rgba(0,200,255,.08)',  btn: '#00c8ff', btnGrad: 'radial-gradient(circle at 40% 40%, #c0f0ff, #00c8ff)' },
+  { id: 'skin_fire',    emoji: '🔥', name: 'Огненный',     cost: 7000,  buff: '+25% к силе клика',            type: 'click_mult',    val: 1.25, bg: 'rgba(255,80,0,.08)',   btn: '#ff5500', btnGrad: 'radial-gradient(circle at 40% 40%, #ffc0a0, #ff5500)' },
+  { id: 'skin_shadow',  emoji: '🌙', name: 'Теневой',      cost: 12000, buff: '+3 автокликера/сек',           type: 'auto_bonus',    val: 3,    bg: 'rgba(100,80,180,.08)', btn: '#8866cc', btnGrad: 'radial-gradient(circle at 40% 40%, #d0c0ff, #8866cc)' },
+  { id: 'skin_rainbow', emoji: '🌈', name: 'Радужный',     cost: 22000, buff: '+35% ко всем кликам',          type: 'global_mult',   val: 1.35, bg: 'rgba(255,0,128,.08)',  btn: '#ff44aa', btnGrad: 'radial-gradient(circle at 40% 40%, #ffb0d0, #ff44aa)' },
+  { id: 'skin_cosmic',  emoji: '🌌', name: 'Космический',  cost: 45000, buff: '+50% к клику и +5% к криту',   type: 'cosmic',        val: 1.5,  bg: 'rgba(40,0,80,.12)',    btn: '#6633cc', btnGrad: 'radial-gradient(circle at 40% 40%, #a080ff, #6633cc)' },
 ];
 
-// ── Временные баффы из сундука ──
+// ── Временные баффы из сундука (без взрывного перемножения друг на друга) ──
 const CLICKER_CHEST_BUFFS = [
-  { id: 'rush',    emoji: '⚡', name: 'Ярость',       desc: 'x5 к силе клика',       mult: 5,   duration: 15 },
-  { id: 'mega',    emoji: '💥', name: 'Мега-крит',    desc: 'каждый клик — крит x20', mult: 20, duration: 15 },
-  { id: 'auto2x',  emoji: '🤖', name: 'Супер-авто',   desc: 'автоклик x10',          auto: 10,  duration: 15 },
-  { id: 'lucky',   emoji: '🍀', name: 'Удача',        desc: 'все шансы x3',          lucky: 3,  duration: 15 },
-  { id: 'gold',    emoji: '💰', name: 'Золотой дождь', desc: 'авто +50/сек',         auto: 50,  duration: 15 },
-  { id: 'nuke',    emoji: '☢️', name: 'Ядерный клик', desc: 'x100 к одному клику',   mult: 100, duration: 5 },
+  { id: 'rush',   emoji: '⚡', name: 'Ярость',       desc: 'x2.5 к силе клика',         mult: 2.5,             duration: 15 },
+  { id: 'mega',   emoji: '💥', name: 'Мега-крит',    desc: 'каждый клик — крит x3',     guaranteedCrit: 3,   duration: 12 },
+  { id: 'auto2x', emoji: '🤖', name: 'Супер-авто',   desc: 'автоклик x2.5',             autoMult: 2.5,         duration: 15 },
+  { id: 'lucky',  emoji: '🍀', name: 'Удача',        desc: 'все шансы x1.5',            lucky: 1.5,           duration: 15 },
+  { id: 'gold',   emoji: '💰', name: 'Золотой дождь', desc: 'авто +15/сек',             auto: 15,            duration: 15 },
+  { id: 'nuke',   emoji: '☢️', name: 'Ядерный клик', desc: 'x4 к силе клика',           mult: 4,               duration: 8  },
 ];
 
-let clickerData = { score: 0, total: 0, levels: {}, prestige: 0, skins: [], selectedSkin: null, chestBase: 3000, chestOpens: 0, adminCoins: 0 };
+const ECONOMY_CLIENT_ID = 'cli_' + Math.random().toString(36).slice(2, 10);
+let accountCoins = 0;
+let accountWeapons = [0, 7];
+let accountPve = {};
+let _clickerDirty = false;
+let _clickerSaveTimer = null;
+let _convertingClicker = false;
+
+let clickerData = { score: 0, total: 0, levels: {}, prestige: 0, skins: [], selectedSkin: null, chestBase: 2500, chestOpens: 0 };
 function getClickerStorageKey(nick) {
   const n = String(nick || currentUser || '').trim().toLowerCase();
   return n ? `utopia_clicker_${n}` : 'utopia_clicker';
 }
 function normalizeClickerObj(s) {
-  const out = (s && typeof s.score === 'number') ? s : { score: 0, total: 0, levels: {}, prestige: 0, skins: [], selectedSkin: null, chestBase: 3000, chestOpens: 0, adminCoins: 0 };
-  if (!out.levels) out.levels = {};
-  if (!Array.isArray(out.skins)) out.skins = [];
-  if (typeof out.prestige !== 'number') out.prestige = 0;
-  if (!out.chestBase) out.chestBase = 3000;
-  if (!out.chestOpens) out.chestOpens = 0;
-  if (!out.selectedSkin) out.selectedSkin = null;
-  if (typeof out.adminCoins !== 'number' || out.adminCoins < 0) out.adminCoins = 0;
-  return out;
+  const src = (s && typeof s === 'object') ? s : {};
+  const lvIn = (src.levels && typeof src.levels === 'object') ? src.levels : {};
+  const prestige = Math.max(0, Math.min(50, Math.floor(Number(src.prestige) || Number(lvIn.prestige) || 0)));
+  const levels = {};
+  CLICKER_UPGRADES.forEach(u => {
+    if (u.id === 'prestige') return;
+    const v = Math.max(0, Math.min(200, Math.floor(Number(lvIn[u.id]) || 0)));
+    if (v > 0) levels[u.id] = v;
+  });
+  if (prestige > 0) levels.prestige = prestige;
+  const skins = Array.isArray(src.skins) ? Array.from(new Set(src.skins.filter(id => CLICKER_SKINS.some(sk => sk.id === id)))) : [];
+  const selectedSkin = (typeof src.selectedSkin === 'string' && skins.includes(src.selectedSkin)) ? src.selectedSkin : null;
+  return {
+    score: Math.max(0, Math.floor(Number(src.score) || 0)),
+    total: Math.max(0, Math.floor(Number(src.total) || 0)),
+    levels,
+    prestige,
+    skins,
+    selectedSkin,
+    chestBase: Math.max(2500, Math.floor(Number(src.chestBase) || 2500)),
+    chestOpens: Math.max(0, Math.floor(Number(src.chestOpens) || 0)),
+  };
 }
 function loadClickerForUser(nick) {
   const key = getClickerStorageKey(nick);
@@ -8013,7 +8171,6 @@ function loadClickerForUser(nick) {
       const legacy = localStorage.getItem('utopia_clicker');
       if (legacy) {
         localStorage.setItem(key, legacy);
-        localStorage.removeItem('utopia_clicker');
         raw = legacy;
       }
     }
@@ -8028,18 +8185,160 @@ loadClickerForUser('');
 let clickerActiveBuffs = [];
 let clickerShopTab = 'upgrades'; // upgrades | skins | chest
 
-function saveClicker() { try { localStorage.setItem(getClickerStorageKey(currentUser), JSON.stringify(clickerData)); } catch (_) {} }
-function clickerLevel(id) { return clickerData.levels[id] || 0; }
+function saveClickerLocal() {
+  try { localStorage.setItem(getClickerStorageKey(currentUser), JSON.stringify(clickerData)); } catch (_) {}
+}
+function saveClicker(immediate = false) {
+  saveClickerLocal();
+  _clickerDirty = true;
+  if (immediate) saveClickerToServer(true);
+  else scheduleClickerSave();
+}
+function scheduleClickerSave() {
+  if (_clickerSaveTimer) return;
+  _clickerSaveTimer = setTimeout(() => {
+    _clickerSaveTimer = null;
+    saveClickerToServer(false);
+  }, 1500);
+}
+async function saveClickerToServer(force = false) {
+  if (!currentUser || !currentSessionToken) return;
+  if (!force && !_clickerDirty) return;
+  _clickerDirty = false;
+  try {
+    const res = await fetch(`${BACKEND_URL}/economy/clicker/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nickname: currentUser,
+        session_token: currentSessionToken,
+        clicker_json: clickerData,
+        client_id: ECONOMY_CLIENT_ID
+      })
+    });
+    const d = await res.json();
+    if (d && d.status === 'ok' && d.economy) {
+      accountCoins = Math.max(0, Number(d.economy.coins) || 0);
+      accountWeapons = Array.isArray(d.economy.weapons) ? d.economy.weapons : accountWeapons;
+      accountPve = (d.economy.pve && typeof d.economy.pve === 'object') ? d.economy.pve : accountPve;
+      saveEconomyMirrorLocal();
+    }
+  } catch (_) {
+    _clickerDirty = true;
+  }
+}
+function saveEconomyMirrorLocal() {
+  if (!currentUser) return;
+  const low = String(currentUser).trim().toLowerCase();
+  try {
+    localStorage.setItem(`utopia_coins_${low}`, String(accountCoins));
+    localStorage.setItem(`gv_weapons_${low}`, JSON.stringify(accountWeapons));
+    localStorage.setItem(`utopia_pve_stats_${low}`, JSON.stringify(accountPve));
+    localStorage.setItem('utopia_pve_stats', JSON.stringify(accountPve));
+  } catch (_) {}
+}
+function relayEconomyToIframe(eco) {
+  try {
+    const frame = document.getElementById('game-iframe');
+    if (frame && frame.contentWindow && frame.style.display !== 'none') {
+      frame.contentWindow.postMessage({ type: 'utopia_economy_sync', economy: eco }, '*');
+    }
+  } catch (_) {}
+}
+function applyServerEconomy(eco, sourceClientId = '') {
+  if (!eco || typeof eco !== 'object') return;
+  if (eco.nickname && currentUser && String(eco.nickname).toLowerCase() !== String(currentUser).toLowerCase()) return;
+  accountCoins = Math.max(0, Number(eco.coins) || 0);
+  if (Array.isArray(eco.weapons)) accountWeapons = eco.weapons;
+  if (eco.pve && typeof eco.pve === 'object') accountPve = eco.pve;
+  if (eco.clicker && sourceClientId !== ECONOMY_CLIENT_ID) {
+    clickerData = normalizeClickerObj(eco.clicker);
+    _clickerDirty = false;
+    saveClickerLocal();
+  }
+  saveEconomyMirrorLocal();
+  relayEconomyToIframe(eco);
+  if (document.getElementById('clicker-overlay')?.style.display === 'block') {
+    renderClicker();
+  } else {
+    const gcEl = document.getElementById('clicker-game-coins');
+    if (gcEl) gcEl.textContent = Math.floor(accountCoins).toLocaleString('ru-RU');
+  }
+}
+async function loadEconomyFromServer(allowMigrate = false) {
+  if (!currentUser || !currentSessionToken) return;
+  try {
+    const res = await fetch(`${BACKEND_URL}/economy/state/${encodeURIComponent(currentUser)}?token=${encodeURIComponent(currentSessionToken)}`);
+    const d = await res.json();
+    if (!d || d.status !== 'ok' || !d.economy) return;
+    let eco = d.economy;
+    const low = String(currentUser).trim().toLowerCase();
+    const migKey = `utopia_eco_migrated_v2_${low}`;
+    const serverEmpty = eco.clicker && eco.clicker.score === 0 && eco.clicker.total === 0
+      && (!eco.clicker.levels || Object.keys(eco.clicker.levels).length === 0)
+      && (!eco.clicker.skins || eco.clicker.skins.length === 0)
+      && (!eco.weapons || eco.weapons.length <= 2)
+      && (!eco.pve || Object.keys(eco.pve).length === 0);
+
+    if (allowMigrate && serverEmpty && !localStorage.getItem(migKey)) {
+      let localWeapons = [];
+      let localPve = null;
+      let localClk = null;
+      try { localWeapons = JSON.parse(localStorage.getItem(`gv_weapons_${low}`) || localStorage.getItem('gv_weapons') || '[]'); } catch (_) {}
+      try { localPve = JSON.parse(localStorage.getItem(`utopia_pve_stats_${low}`) || localStorage.getItem('utopia_pve_stats') || 'null'); } catch (_) {}
+      try { localClk = JSON.parse(localStorage.getItem(getClickerStorageKey(currentUser)) || 'null'); } catch (_) {}
+      const hasLegacy = (Array.isArray(localWeapons) && localWeapons.some(w => w !== 0 && w !== 7))
+        || (localPve && typeof localPve === 'object' && Object.keys(localPve).length > 0)
+        || (localClk && ((localClk.score || 0) > 0 || (localClk.total || 0) > 0 || (localClk.adminCoins || 0) > 0 || (localClk.skins && localClk.skins.length > 0)));
+      if (hasLegacy) {
+        try {
+          const mr = await fetch(`${BACKEND_URL}/economy/migrate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nickname: currentUser,
+              session_token: currentSessionToken,
+              clicker_json: localClk,
+              weapons: Array.isArray(localWeapons) ? localWeapons : [],
+              pve_json: localPve
+            })
+          });
+          const md = await mr.json();
+          if (md && md.status === 'ok' && md.economy) eco = md.economy;
+        } catch (_) {}
+      }
+      localStorage.setItem(migKey, '1');
+    }
+    applyServerEconomy(eco, '');
+  } catch (_) {}
+}
+
+window.addEventListener('message', (ev) => {
+  const m = ev && ev.data;
+  if (!m || typeof m !== 'object') return;
+  if (m.type === 'utopia_economy_sync' && m.economy) {
+    applyServerEconomy(m.economy, '');
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && _clickerDirty) saveClickerToServer(false);
+});
+window.addEventListener('beforeunload', () => {
+  if (_clickerDirty) saveClickerLocal();
+});
+
+function clickerLevel(id) {
+  if (id === 'prestige') return Math.max(clickerData.prestige || 0, (clickerData.levels && clickerData.levels.prestige) || 0);
+  return (clickerData.levels && clickerData.levels[id]) || 0;
+}
 function clickerCost(u) { return Math.ceil(u.base * Math.pow(u.mult, clickerLevel(u.id))); }
-function clickerPrestigeMult() { return Math.pow(2, clickerData.prestige); }
-// Общий баланс = «клики» (score, сбрасываются) + админ-монеты (adminCoins, НЕ сбрасываются)
-function clickerBalance() { return (clickerData.score || 0) + (clickerData.adminCoins || 0); }
-// Трата: сначала «клики», потом админ-монеты — выданные админкой монеты не пропадают
+function clickerPrestigeMult() { return 1 + clickerLevel('prestige') * 0.25; }
+// Валюта кликера — только натапанные клики (score). Игровые монеты (accountCoins) лежат отдельно на аккаунте!
+function clickerBalance() { return Math.max(0, Math.floor(clickerData.score || 0)); }
 function clickerSpend(n) {
-  const fromScore = Math.min(clickerData.score || 0, n);
-  clickerData.score = (clickerData.score || 0) - fromScore;
-  const rest = n - fromScore;
-  if (rest > 0) clickerData.adminCoins = Math.max(0, (clickerData.adminCoins || 0) - rest);
+  const amt = Math.max(0, Math.floor(n));
+  clickerData.score = Math.max(0, (clickerData.score || 0) - amt);
 }
 function hasSkin(id) { return clickerData.skins.indexOf(id) >= 0; }
 function getActiveSkin() {
@@ -8047,44 +8346,58 @@ function getActiveSkin() {
   return CLICKER_SKINS.find(s => s.id === clickerData.selectedSkin && hasSkin(s.id)) || null;
 }
 
-// Итоговые множители (с учётом ВЫБРАННОГО скина и временных баффов)
+function clickerBuffClickMult() {
+  let m = 1;
+  clickerActiveBuffs.forEach(b => { if (b.data.mult && b.data.mult > m) m = b.data.mult; });
+  return m;
+}
 function clickerClickPower() {
   let p = (1 + clickerLevel('click')) * clickerPrestigeMult();
   const skin = getActiveSkin();
-  if (skin && skin.id === 'skin_fire') p *= 1.5;
-  if (skin && skin.id === 'skin_cosmic') p *= 3;
-  // временные баффы
-  clickerActiveBuffs.forEach(b => { if (b.data.mult) p *= b.data.mult; });
-  return Math.floor(p);
+  if (skin && skin.id === 'skin_fire') p *= 1.25;
+  if (skin && skin.id === 'skin_cosmic') p *= 1.5;
+  p *= clickerBuffClickMult();
+  return Math.max(1, Math.floor(p));
 }
 function clickerAutoRate() {
   let a = clickerLevel('auto') * clickerPrestigeMult();
   const skin = getActiveSkin();
-  if (skin && skin.id === 'skin_shadow') a += 2;
-  clickerActiveBuffs.forEach(b => { if (b.data.auto) a += b.data.auto; });
-  return Math.floor(a);
+  if (skin && skin.id === 'skin_shadow') a += 3;
+  let aMult = 1;
+  clickerActiveBuffs.forEach(b => {
+    if (b.data.auto) a += b.data.auto;
+    if (b.data.autoMult && b.data.autoMult > aMult) aMult = b.data.autoMult;
+  });
+  return Math.max(0, Math.floor(a * aMult));
 }
 function clickerCritChance() {
   const lvl = clickerLevel('crit');
-  let c = lvl > 0 ? Math.min(0.85, 0.05 + (lvl - 1) * 0.03) : 0.01;
+  let c = lvl > 0 ? Math.min(0.25, 0.03 + (lvl - 1) * 0.02) : 0;
   const skin = getActiveSkin();
-  if (skin && skin.id === 'skin_gold') c += 0.10;
-  if (skin && skin.id === 'skin_cosmic') c *= 2;
-  clickerActiveBuffs.forEach(b => { if (b.data.lucky) c *= b.data.lucky; });
-  return Math.min(c, 1);
+  if (skin && skin.id === 'skin_gold') c += 0.08;
+  if (skin && skin.id === 'skin_cosmic') c += 0.05;
+  let luckyMult = 1;
+  clickerActiveBuffs.forEach(b => { if (b.data.lucky && b.data.lucky > luckyMult) luckyMult = b.data.lucky; });
+  return Math.min(c * luckyMult, 0.65);
 }
 function clickerDoubleChance() {
   const lvl = clickerLevel('double');
-  let d = lvl > 0 ? Math.min(0.95, 0.20 + (lvl - 1) * 0.05) : 0.05;
+  let d = lvl > 0 ? Math.min(0.45, 0.08 + (lvl - 1) * 0.05) : 0;
   const skin = getActiveSkin();
-  if (skin && skin.id === 'skin_diamond') d += 0.15;
-  clickerActiveBuffs.forEach(b => { if (b.data.lucky) d *= b.data.lucky; });
-  return Math.min(d, 1);
+  if (skin && skin.id === 'skin_diamond') d += 0.10;
+  let luckyMult = 1;
+  clickerActiveBuffs.forEach(b => { if (b.data.lucky && b.data.lucky > luckyMult) luckyMult = b.data.lucky; });
+  return Math.min(d * luckyMult, 0.80);
+}
+function clickerComboMult() {
+  const lvl = clickerLevel('combo');
+  if (lvl <= 0) return 1;
+  return Math.min(4.0, 1.5 + (lvl - 1) * 0.5);
 }
 function clickerGlobalMult() {
   let g = 1;
   const skin = getActiveSkin();
-  if (skin && skin.id === 'skin_rainbow') g *= 2;
+  if (skin && skin.id === 'skin_rainbow') g *= 1.35;
   return g;
 }
 
@@ -8104,28 +8417,23 @@ function openChest() {
   if (clickerBalance() < cost) return;
   clickerSpend(cost);
   clickerData.chestOpens++;
-  // 50% шанс получить бафф
   if (Math.random() < 0.5) {
     const buff = CLICKER_CHEST_BUFFS[Math.floor(Math.random() * CLICKER_CHEST_BUFFS.length)];
-    // цена растёт ТОЛЬКО при выпадении баффа
-    clickerData.chestBase += 3000;
-    // проверяем, нет ли уже такого же активного — если есть, увеличиваем время
+    clickerData.chestBase += 2500;
     const existing = clickerActiveBuffs.find(b => b.id === buff.id);
     if (existing) {
       existing.expires = Date.now() + buff.duration * 1000;
     } else {
       clickerActiveBuffs.push({ id: buff.id, expires: Date.now() + buff.duration * 1000, data: buff });
     }
-    // эффект на экране
     const ov = document.getElementById('clicker-overlay');
     const rect = ov.getBoundingClientRect();
     clickerFloat(rect.left + rect.width / 2, rect.top + 100, `${buff.emoji} ${buff.name}! ${buff.desc}`, '#ffd166', 22);
     showToast(`🎁 Сундук: ${buff.emoji} ${buff.name} — ${buff.desc} (${buff.duration}сек)`, 'success');
   } else {
-    // пусто — цена НЕ меняется
     showToast('🎁 Сундук пуст... Цена не изменилась!', 'error');
   }
-  saveClicker();
+  saveClicker(true);
   renderClicker();
 }
 
@@ -8133,7 +8441,6 @@ function openChest() {
 function renderActiveBuffs() {
   const box = document.getElementById('clicker-active-buffs');
   if (!box) return;
-  // чистим истёкшие
   const now = Date.now();
   clickerActiveBuffs = clickerActiveBuffs.filter(b => b.expires > now);
   if (!clickerActiveBuffs.length) { box.innerHTML = ''; box.style.display = 'none'; return; }
@@ -8148,11 +8455,13 @@ function renderActiveBuffs() {
 }
 
 function renderClicker() {
-  document.getElementById('clicker-score').textContent = Math.floor(clickerBalance()).toLocaleString('ru-RU');
+  document.getElementById('clicker-score').textContent = `${Math.floor(clickerBalance()).toLocaleString('ru-RU')} 👆`;
+  const gcEl = document.getElementById('clicker-game-coins');
+  if (gcEl) gcEl.textContent = Math.floor(accountCoins).toLocaleString('ru-RU');
+  const prLvl = clickerLevel('prestige');
   document.getElementById('clicker-rate').textContent =
-    `+${clickerClickPower()} за клик · ${clickerAutoRate()}/сек авто${clickerData.prestige ? ' · 👑 x' + clickerPrestigeMult() : ''}${clickerGlobalMult() > 1 ? ' · 🌈 x2' : ''}${clickerData.adminCoins > 0 ? ' · 💰 монеты админки: ' + Math.floor(clickerData.adminCoins).toLocaleString('ru-RU') + ' (не сбрасываются)' : ''}`;
+    `+${clickerClickPower()} за клик · ${clickerAutoRate()}/сек авто${prLvl ? ' · 👑 +' + (prLvl * 25) + '%' : ''}${clickerGlobalMult() > 1 ? ' · 🌈 +35%' : ''}`;
 
-  // Применяем визуал выбранного скина: фон оверлея + кнопка клика
   const ov = document.getElementById('clicker-overlay');
   const clickBtn = document.getElementById('clicker-btn');
   const activeSkin = getActiveSkin();
@@ -8168,7 +8477,6 @@ function renderClicker() {
     clickBtn.style.boxShadow = '0 0 30px rgba(255,209,102,.4)';
   }
 
-  // вкладки магазина
   const tabsBox = document.getElementById('clicker-tabs');
   tabsBox.innerHTML = '';
   const tabs = [
@@ -8187,7 +8495,6 @@ function renderClicker() {
   const box = document.getElementById('clicker-upgrades');
   box.innerHTML = '';
 
-  // ── Вкладка: Прокачка ──
   if (clickerShopTab === 'upgrades') {
     CLICKER_UPGRADES.forEach(u => {
       const lvl = clickerLevel(u.id);
@@ -8201,12 +8508,22 @@ function renderClicker() {
           <div style="font-size:11px; color:${canBuy ? 'var(--text-dim)' : '#555'}; margin-top:2px;">${u.desc}</div>
         </div>
         <div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${cost.toLocaleString('ru-RU')} 👆</div>`;
-      if (canBuy) row.onclick = () => { clickerSpend(cost); clickerData.levels[u.id] = lvl + 1; saveClicker(); renderClicker(); };
+      if (canBuy) row.onclick = () => {
+        clickerSpend(cost);
+        const nextLvl = lvl + 1;
+        if (u.id === 'prestige') {
+          clickerData.prestige = nextLvl;
+          clickerData.levels.prestige = nextLvl;
+        } else {
+          clickerData.levels[u.id] = nextLvl;
+        }
+        saveClicker(true);
+        renderClicker();
+      };
       box.appendChild(row);
     });
   }
 
-  // ── Вкладка: Магазин скинов ──
   if (clickerShopTab === 'skins') {
     CLICKER_SKINS.forEach(s => {
       const owned = hasSkin(s.id);
@@ -8228,23 +8545,21 @@ function renderClicker() {
           : `<div style="font-weight:900; color:${canBuy ? '#ffd166' : '#555'}; white-space:nowrap;">${s.cost.toLocaleString('ru-RU')} 👆</div>`}`;
       if (owned) {
         row.onclick = () => {
-          // надеть/снять — только один скин одновременно
           clickerData.selectedSkin = isSelected ? null : s.id;
-          saveClicker(); renderClicker();
+          saveClicker(true); renderClicker();
         };
       } else if (canBuy) {
         row.onclick = () => {
           clickerSpend(s.cost);
           clickerData.skins.push(s.id);
-          clickerData.selectedSkin = s.id; // автоматически надеваем купленный
-          saveClicker(); renderClicker();
+          clickerData.selectedSkin = s.id;
+          saveClicker(true); renderClicker();
         };
       }
       box.appendChild(row);
     });
   }
 
-  // ── Вкладка: Сундук ──
   if (clickerShopTab === 'chest') {
     const cost = clickerData.chestBase;
     const canBuy = clickerBalance() >= cost;
@@ -8253,14 +8568,13 @@ function renderClicker() {
     chestBtn.innerHTML = `
       <span style="font-size:52px; ${canBuy ? 'animation:pulse 1.5s infinite' : 'opacity:.4'};">🎁</span>
       <div style="font-weight:900; font-size:16px;">Открыть сундук</div>
-      <div style="font-size:12px; color:var(--text-dim);">50% шанс на временный бафф (15 сек)</div>
+      <div style="font-size:12px; color:var(--text-dim);">50% шанс на временный бафф</div>
       <div style="font-size:12px; color:var(--text-dim);">Цена: ${(cost).toLocaleString('ru-RU')} 👆</div>
-      <div style="font-size:11px; color:#ffd166;">Цена растёт (+3000) только при выпадении баффа</div>
+      <div style="font-size:11px; color:#ffd166;">Цена растёт (+2 500) только при выпадении баффа</div>
       <div style="font-size:11px; color:var(--text-dim);">Открыто: ${clickerData.chestOpens}</div>`;
     if (canBuy) chestBtn.onclick = openChest;
     box.appendChild(chestBtn);
 
-    // список возможных баффов
     const hint = document.createElement('div');
     hint.style.cssText = 'margin-top:8px; padding:10px; border-radius:10px; background:rgba(255,255,255,.03); font-size:11px; color:var(--text-dim); line-height:1.8;';
     hint.innerHTML = '<b style="color:#ffd166;">Возможные баффы:</b><br>' +
@@ -8268,12 +8582,11 @@ function renderClicker() {
     box.appendChild(hint);
   }
 
-  // достижения
   const ach = [];
   if (clickerData.total >= 100) ach.push('✅ 100 кликов');
   if (clickerData.total >= 1000) ach.push('✅ 1 000 кликов');
   if (clickerData.total >= 10000) ach.push('✅ 10 000 кликов');
-  if (clickerData.prestige >= 1) ach.push('✅ Престиж x1');
+  if (clickerLevel('prestige') >= 1) ach.push('✅ Престиж');
   if (clickerData.skins.length >= 1) ach.push('✅ Первый скин');
   if (clickerData.skins.length >= 6) ach.push('✅ Все скины');
   if (clickerData.chestOpens >= 10) ach.push('✅ 10 сундуков');
@@ -8281,54 +8594,77 @@ function renderClicker() {
 
   renderActiveBuffs();
 
-  // ── Кнопка сброса: показываем сколько монет получишь ──
+  // ── Кнопка сброса: конвертация кликов и прокачек в ИГРОВЫЕ МОНЕТЫ 💰 ──
   const resetBtn = document.getElementById('clicker-reset-btn');
   const resetInfo = document.getElementById('clicker-reset-info');
   if (resetBtn && resetInfo) {
     const reward = calcResetReward();
     if (reward > 0) {
       resetBtn.style.display = 'inline-block';
-      resetBtn.textContent = `🔄 Сбросить прокачку → баланс кликов ${reward.toLocaleString('ru-RU')}`;
-      resetInfo.textContent = `Обнуляются: баланс кликов, все уровни, счётчик кликов и открытия сундуков. Сохраняются: 💰 монеты админки (${Math.floor(clickerData.adminCoins || 0).toLocaleString('ru-RU')} — не сбрасываются), 🎨 скины, 👑 престиж, наценка сундука.`;
+      resetBtn.disabled = _convertingClicker;
+      resetBtn.textContent = _convertingClicker
+        ? '⏳ Начисляем монеты...'
+        : `💰 Сбросить и получить +${reward.toLocaleString('ru-RU')} игровых монет`;
+      resetInfo.textContent =
+        `Обнуляются: клики (${Math.floor(clickerData.score || 0).toLocaleString('ru-RU')}), прокачки (кроме 👑 Престижа) и счётчик сундуков. ` +
+        `На аккаунт начислятся +${reward.toLocaleString('ru-RU')} 💰 (баланс станет ${(accountCoins + reward).toLocaleString('ru-RU')} 💰) для магазина оружия в Green Valley. Скины и Престиж остаются.`;
     } else {
       resetBtn.style.display = 'none';
-      resetInfo.textContent = '';
+      resetInfo.textContent = 'Натапайте минимум 5 👆 кликов, чтобы обменять их на 💰 игровые монеты (5 👆 = 1 💰 + возврат за прокачки).';
     }
   }
 }
 
-// ── Расчёт награды за сброс: по сумме уровней прокачки ──
+// ── Расчёт награды за сброс (совпадает 1-в-1 с сервером _calc_clicker_reset_reward) ──
 function calcResetReward() {
-  // награда = сумма (уровень × базовая цена прокачки) + бонус за престиж
-  // Сильно урезано (в ~4 раза): после сброса нужно долго копить в кликере
-  let total = 0;
+  const score = Math.max(0, Math.floor(clickerData.score || 0));
+  let spent = 0;
   CLICKER_UPGRADES.forEach(u => {
-    const lvl = clickerLevel(u.id);
-    // считаем сколько было потрачено на эту прокачку
-    let spent = 0;
+    if (u.id === 'prestige') return;
+    const lvl = Math.max(0, Math.min(200, clickerLevel(u.id)));
     for (let i = 0; i < lvl; i++) spent += Math.ceil(u.base * Math.pow(u.mult, i));
-    total += Math.floor(spent * 0.12); // возвращаем 12% потраченного
   });
-  total += clickerData.prestige * 120; // бонус за престиж
-  return total;
+  const prestige = clickerLevel('prestige');
+  const rawPool = score + Math.floor(spent * 0.35);
+  if (rawPool < 5) return 0;
+  return Math.floor(rawPool / 5) + prestige * 50;
 }
 
-// кнопка сброса
+// кнопка сброса → обмен на игровые монеты на сервере
 document.getElementById('clicker-reset-btn').onclick = () => {
+  if (_convertingClicker) return;
   const reward = calcResetReward();
   if (reward <= 0) return;
-  const adminSave = Math.floor(clickerData.adminCoins || 0);
   confirmAction(
-    'Сброс прокачки',
-    `Баланс кликов станет ${reward.toLocaleString('ru-RU')}, все уровни и счётчик кликов обнулятся. Монеты админки (${adminSave.toLocaleString('ru-RU')}), скины, престиж и наценка сундука сохранятся.`,
-    () => {
-      clickerData.score = reward;
-      clickerData.levels = {};
-      clickerData.total = 0;
-      clickerData.chestOpens = 0;
-      saveClicker();
-      showToast(`🔄 Прокачка сброшена! Баланс кликов: ${reward.toLocaleString('ru-RU')}${adminSave ? ` + 💰 админские ${adminSave.toLocaleString('ru-RU')}` : ''}`, 'success');
+    'Обмен кликов на игровые монеты',
+    `Вы получите +${reward.toLocaleString('ru-RU')} 💰 на баланс аккаунта (итого будет ${(accountCoins + reward).toLocaleString('ru-RU')} 💰). Клики, уровни прокачек и счётчик сундуков обнулятся; скины, 👑 Престиж и наценка сундука сохранятся.`,
+    async () => {
+      if (_convertingClicker) return;
+      _convertingClicker = true;
       renderClicker();
+      try {
+        const res = await fetch(`${BACKEND_URL}/economy/clicker/convert`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nickname: currentUser,
+            session_token: currentSessionToken,
+            clicker_json: clickerData
+          })
+        });
+        const d = await res.json();
+        if (d && d.status === 'ok' && d.economy) {
+          applyServerEconomy(d.economy, '');
+          showToast(`💰 Начислено +${Number(d.reward || reward).toLocaleString('ru-RU')} игровых монет! Баланс: ${Number(d.coins || accountCoins).toLocaleString('ru-RU')} 💰`, 'success');
+        } else {
+          showToast((d && d.msg) || 'Ошибка конвертации', 'error');
+        }
+      } catch (_) {
+        showToast('Нет связи с сервером при начислении монет', 'error');
+      } finally {
+        _convertingClicker = false;
+        renderClicker();
+      }
     }
   );
 };
@@ -8337,38 +8673,36 @@ document.getElementById('clicker-reset-btn').onclick = () => {
 document.getElementById('clicker-btn').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
 });
-// blur после клика — чтобы Enter не повторял
-document.getElementById('clicker-btn').addEventListener('blur', () => {});
 
 document.getElementById('clicker-btn').addEventListener('click', (e) => {
-  document.getElementById('clicker-btn').blur(); // фикс: снимаем фокус, Enter больше не спамит
+  document.getElementById('clicker-btn').blur();
   let mult = 1;
-  // двойной клик
   if (Math.random() < clickerDoubleChance()) mult *= 2;
-  // критический удар
-  if (Math.random() < clickerCritChance()) mult *= 10;
-  // комбо: каждый 10-й клик x5
+  const hasMegaCrit = clickerActiveBuffs.some(b => b.data.guaranteedCrit);
+  if (hasMegaCrit) {
+    mult *= 3;
+  } else if (Math.random() < clickerCritChance()) {
+    mult *= 3;
+  }
   clickerData.total++;
-  if (clickerLevel('combo') && clickerData.total % 10 === 0) mult *= 5;
-  // временные баффы mega (x20) и nuke (x100) уже учтены в clickerClickPower() — без двойного умножения
+  const cLvl = clickerLevel('combo');
+  if (cLvl > 0 && clickerData.total % 10 === 0) mult *= clickerComboMult();
+
   const hasBigBuff = clickerActiveBuffs.some(b => b.data.id === 'mega' || b.data.id === 'nuke');
-  const gained = Math.floor(clickerClickPower() * mult * clickerGlobalMult());
+  const gained = Math.max(1, Math.floor(clickerClickPower() * mult * clickerGlobalMult()));
   clickerData.score += gained;
-  // цвет числа по размеру
-  const color = (gained >= 1000 || hasBigBuff) ? '#ff5555' : (gained > 1 ? '#ffd166' : '#fff');
-  const size = (gained >= 1000 || hasBigBuff) ? 26 : (mult > 1 ? 22 : 16);
-  clickerFloat(e.clientX, e.clientY - 10, `+${gained}`, color, size);
-  // кнопка — анимация нажатия
+  const color = (gained >= 200 || hasBigBuff) ? '#ff5555' : (mult > 1 ? '#ffd166' : '#fff');
+  const size = (gained >= 200 || hasBigBuff) ? 26 : (mult > 1 ? 22 : 16);
+  clickerFloat(e.clientX, e.clientY - 10, `+${gained} 👆`, color, size);
   const btn = document.getElementById('clicker-btn');
   btn.style.transform = 'scale(0.9)';
   setTimeout(() => btn.style.transform = 'scale(1)', 80);
-  saveClicker();
+  saveClicker(false);
   renderClicker();
 });
 
 // авто-клик каждую секунду
 setInterval(() => {
-  // чистим истёкшие баффы
   const now = Date.now();
   if (clickerActiveBuffs.some(b => b.expires <= now)) {
     clickerActiveBuffs = clickerActiveBuffs.filter(b => b.expires > now);
@@ -8377,7 +8711,7 @@ setInterval(() => {
   if (rate > 0) {
     clickerData.score += rate;
     clickerData.total += rate;
-    saveClicker();
+    saveClicker(false);
   }
   if (document.getElementById('clicker-overlay').style.display === 'block') renderClicker();
 }, 1000);
@@ -8386,35 +8720,17 @@ setInterval(() => {
 document.getElementById('open-clicker-btn').onclick = async () => {
   document.getElementById('clicker-overlay').style.display = 'block';
   renderClicker();
-  // Забираем монеты, выданные админкой
-  try {
-    const res = await fetch(`${BACKEND_URL}/clicker/sync`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ nickname: currentUser, session_token: currentSessionToken })
-    });
-    const d = await res.json();
-    if (d.status === 'ok' && d.bonus > 0) {
-      // Монеты админки идут в adminCoins — они НЕ сбрасываются вместе с прокачкой
-      clickerData.adminCoins = (clickerData.adminCoins || 0) + d.bonus;
-      saveClicker();
-      renderClicker();
-      showToast(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} 💰 (монеты админки — при сбросе прокачки не потеряются)`);
-    } else if (d.status === 'ok' && d.bonus < 0) {
-      // Забор: сначала «клики», потом админ-монеты
-      clickerSpend(Math.abs(d.bonus));
-      saveClicker();
-      renderClicker();
-      showToast(`💸 Админ забрал ${Math.abs(d.bonus).toLocaleString('ru-RU')} 💰`);
-    }
-  } catch (_) {}
+  await loadEconomyFromServer(false);
+  renderClicker();
 };
 document.getElementById('clicker-close-btn').onclick = () => {
   document.getElementById('clicker-overlay').style.display = 'none';
-  pushProfileGamestats(); // сохранили прогресс кликера на сервер
+  if (_clickerDirty) saveClickerToServer(true);
 };
-// Периодически сливаем статистику на сервер (кликер + PvE-результаты из игр)
-setInterval(() => { if (currentUser && currentSessionToken) pushProfileGamestats(); }, 60000);
+// Периодически синхронизируем натапанные клики, только если игрок кликал
+setInterval(() => {
+  if (currentUser && currentSessionToken && _clickerDirty) saveClickerToServer(false);
+}, 20000);
 </script>
 </body>
 </html>

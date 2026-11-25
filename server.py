@@ -421,6 +421,9 @@ _safe_alters = [
     ("chats", "server_name", "TEXT DEFAULT ''"),
     ("chats", "channel_kind", "TEXT DEFAULT 'text'"),
     ("chats", "pinned_msg_id", "INTEGER DEFAULT NULL"),
+    # Серверная экономика (валюты и купленное оружие Green Valley по аккаунту)
+    ("profile_game_stats", "weapons_json", "TEXT DEFAULT '[0, 7]'"),
+    ("profile_game_stats", "currencies_json", "TEXT DEFAULT '{}'"),
 ]
 for tbl, col, ctype in _safe_alters:
     try:
@@ -794,7 +797,7 @@ async def post_bot_message(chat_id: str, text: str):
                    (chat_id, BOT_NICK, text))
     conn.commit()
     mid = cursor.lastrowid
-    await manager.broadcast_chat(chat_id, {
+    await manager.broadcast_chat_event(chat_id, {
         "action": "new_message", "id": mid, "chat_id": chat_id,
         "sender": BOT_NICK, "text": text,
         "time": datetime.now().strftime("%H:%M"),
@@ -985,7 +988,7 @@ async def post_system_message(chat_id: str, text: str) -> int:
                    (chat_id, "Система", text))
     conn.commit()
     mid = cursor.lastrowid
-    await manager.broadcast_chat(chat_id, {
+    await manager.broadcast_chat_event(chat_id, {
         "action": "new_message", "id": mid, "chat_id": chat_id,
         "sender": "Система", "text": text,
         "time": datetime.now().strftime("%H:%M"), "is_system": True,
@@ -1202,6 +1205,35 @@ class ProfileGameStatsData(BaseModel):
     pve_json: dict = {}
     clicker_json: dict = {}
 
+class EconomyMigrateData(BaseModel):
+    nickname: str
+    session_token: str
+    clicker_json: Optional[dict] = None
+    weapons: Optional[List[int]] = None
+    pve_json: Optional[dict] = None
+
+class EconomyClickerSaveData(BaseModel):
+    nickname: str
+    session_token: str
+    clicker_json: dict = {}
+    client_id: str = ""
+
+class EconomyConvertData(BaseModel):
+    nickname: str
+    session_token: str
+    clicker_json: Optional[dict] = None
+
+class EconomyWeaponBuyData(BaseModel):
+    nickname: str
+    session_token: str
+    weapon_idx: int
+
+class EconomyPveRecordData(BaseModel):
+    nickname: str
+    session_token: str
+    game_key: str
+    won: bool
+
 class SupportTicketData(BaseModel):
     from_user: str
     subject: str
@@ -1284,6 +1316,38 @@ class ConnectionManager:
                 await ws.send_json(payload)
             except Exception:
                 pass
+
+    def _chat_participant_lows(self, chat_id: str, include_nick: str = "") -> List[str]:
+        if chat_id == "general":
+            users = set(self.user_sockets.keys())
+        elif chat_id.startswith("bot_"):
+            target = chat_id[4:].strip().lower()
+            users = {target} if target else set()
+        else:
+            cursor.execute("SELECT nickname FROM members WHERE chat_id=?", (chat_id,))
+            users = {str(r[0]).lower() for r in cursor.fetchall() if r[0]}
+        if include_nick:
+            users.add(include_nick.lower())
+        return list(users)
+
+    async def broadcast_chat_event(self, chat_id: str, payload: dict, sender_nick: str = ""):
+        """Рассылает событие в открытый чат И на все остальные устройства/вкладки участников (включая свои)."""
+        chat_socks = self.chat_sockets.get(chat_id, set())
+        delivered = set()
+        for ws in list(chat_socks):
+            try:
+                await ws.send_json(payload)
+                delivered.add(ws)
+            except Exception:
+                pass
+        for u_low in self._chat_participant_lows(chat_id, include_nick=sender_nick):
+            for ws in list(self.user_sockets.get(u_low, set())):
+                if ws in delivered:
+                    continue
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    pass
 
     async def broadcast_all(self, payload: dict):
         """Отправить событие ВСЕМ пользователям на сайте, а не только своему чату."""
@@ -1519,7 +1583,7 @@ def change_password(data: PwdChangeData):
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/profile/update")
-def update_profile(data: ProfileUpdateData):
+async def update_profile(data: ProfileUpdateData):
     cursor.execute("SELECT nickname, last_username_change FROM users WHERE LOWER(nickname)=LOWER(?)", (data.current_nickname.strip(),))
     user = cursor.fetchone()
     if not user:
@@ -1582,6 +1646,15 @@ def update_profile(data: ProfileUpdateData):
         cursor.execute("UPDATE users SET bio=? WHERE nickname=?", (" ".join(words), target_nick))
     conn.commit()
 
+    cursor.execute("SELECT avatar_url, bio FROM users WHERE nickname=?", (target_nick,))
+    pr = cursor.fetchone()
+    await manager.broadcast_all({
+        "action": "profile_updated",
+        "old_nickname": real_current,
+        "nickname": target_nick,
+        "avatar_url": (pr[0] or "") if pr else (data.avatar_url or ""),
+        "bio": (pr[1] or "") if pr else (data.bio or ""),
+    })
     return {"status": "ok", "msg": "Профиль успешно сохранён!", "new_nickname": target_nick}
 
 # ═══════════════════════════════════════════════════════════
@@ -1613,6 +1686,7 @@ async def manage_friend(data: FriendActionData):
         cursor.execute("INSERT INTO friends (user1, user2, status) VALUES (?, ?, 'pending')", (data.from_user, canonical_target))
         conn.commit()
         await manager.send_to_user(canonical_target, {"action": "friend_request", "from": data.from_user})
+        await manager.send_to_user(data.from_user, {"action": "friends_updated"})
         return {"status": "ok", "msg": f"Заявка в друзья отправлена @{canonical_target}!"}
 
     elif data.action == "accept":
@@ -1637,9 +1711,11 @@ async def manage_friend(data: FriendActionData):
             cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (dm_id, canonical_target))
             conn.commit()
 
-        # Обе стороны узнают сразу — без перезагрузки
+        # Обе стороны и все их устройства узнают сразу — без перезагрузки
         await manager.send_to_user(canonical_target, {"action": "friend_accepted", "by": data.from_user})
         await manager.send_to_user(data.from_user, {"action": "friend_accepted", "by": canonical_target})
+        await manager.send_to_user(canonical_target, {"action": "chats_updated"})
+        await manager.send_to_user(data.from_user, {"action": "chats_updated"})
         return {"status": "ok", "msg": f"Заявка от @{canonical_target} принята! Чат создан."}
 
     elif data.action in ("decline", "remove"):
@@ -1662,6 +1738,8 @@ async def manage_friend(data: FriendActionData):
                 cursor.execute("DELETE FROM messages WHERE chat_id=?", (dm_id,))
                 conn.commit()
                 await manager.broadcast_all({"action": "chat_deleted", "id": dm_id})
+        await manager.send_to_user(canonical_target, {"action": "friends_updated"})
+        await manager.send_to_user(data.from_user, {"action": "friends_updated"})
         return {"status": "ok", "msg": "Удалено из друзей."}
 
     return {"status": "error", "msg": "Неизвестное действие"}
@@ -1705,7 +1783,7 @@ def get_friends(nickname: str):
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/chats/rename")
-def rename_chat(data: ChatRenameData):
+async def rename_chat(data: ChatRenameData):
     if data.chat_id == "general":
         return {"status": "error", "msg": "Общий чат переименовывать нельзя!"}
 
@@ -1731,6 +1809,9 @@ def rename_chat(data: ChatRenameData):
     final_name = " ".join(words)
     cursor.execute("UPDATE chats SET name=? WHERE id=?", (final_name, data.chat_id))
     conn.commit()
+    await manager.broadcast_chat_event(data.chat_id, {
+        "action": "chat_renamed", "chat_id": data.chat_id, "name": final_name
+    })
     return {"status": "ok", "msg": "Чат успешно переименован!", "name": final_name}
 
 # ═══════════════════════════════════════════════════════════
@@ -1765,7 +1846,7 @@ def get_invites(nickname: str):
     return [{"id": r[0], "chat_id": r[1], "chat_name": r[2], "from_user": r[3]} for r in cursor.fetchall()]
 
 @app.post("/invite/respond")
-def respond_invite(data: InviteAction):
+async def respond_invite(data: InviteAction):
     cursor.execute("SELECT chat_id, to_user FROM invites WHERE id=?", (data.invite_id,))
     row = cursor.fetchone()
     if not row or row[1].lower() != data.nickname.lower():
@@ -1776,6 +1857,10 @@ def respond_invite(data: InviteAction):
         cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (chat_id, data.nickname))
     cursor.execute("DELETE FROM invites WHERE id=?", (data.invite_id,))
     conn.commit()
+    await manager.send_to_user(data.nickname, {"action": "invites_updated"})
+    if data.action == "accept":
+        await manager.send_to_user(data.nickname, {"action": "chats_updated"})
+        await manager.broadcast_chat_event(chat_id, {"action": "members_updated", "chat_id": chat_id})
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════
@@ -1783,7 +1868,7 @@ def respond_invite(data: InviteAction):
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/direct-chat")
-def get_or_create_direct_chat(data: DirectChatData):
+async def get_or_create_direct_chat(data: DirectChatData):
     if data.from_user.lower() == data.target_user.lower():
         return {"status": "error", "msg": "Нельзя писать самому себе!"}
 
@@ -1814,6 +1899,8 @@ def get_or_create_direct_chat(data: DirectChatData):
     cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, data.from_user))
     cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (cid, canonical_target))
     conn.commit()
+    await manager.send_to_user(data.from_user, {"action": "chats_updated", "chat_id": cid})
+    await manager.send_to_user(canonical_target, {"action": "chats_updated", "chat_id": cid})
     return {"status": "ok", "chat_id": cid, "chat_name": cname}
 
 _voice_rooms: Dict[str, List[str]] = {}  # chat_id -> list of active voice participants
@@ -1884,14 +1971,15 @@ def get_user_chats(nickname: str):
     return chats
 
 @app.post("/chats/{chat_id}/read")
-def mark_chat_read(chat_id: str, user: str):
-    """Чат открыт — сбрасываем красный счётчик непрочитанных."""
+async def mark_chat_read(chat_id: str, user: str):
+    """Чат открыт — сбрасываем красный счётчик непрочитанных (на всех устройствах юзера)."""
     cursor.execute("SELECT COALESCE(MAX(id), 0) FROM messages WHERE chat_id=?", (chat_id,))
     last = cursor.fetchone()[0]
     cursor.execute("""INSERT INTO chat_reads (chat_id, nickname, last_read_id) VALUES (?,?,?)
                       ON CONFLICT(chat_id, nickname) DO UPDATE SET last_read_id=excluded.last_read_id""",
                    (chat_id, user, last))
     conn.commit()
+    await manager.send_to_user(user, {"action": "chat_read", "chat_id": chat_id})
     return {"status": "ok", "unread": 0}
 
 @app.get("/features")
@@ -1980,7 +2068,7 @@ async def clear_chat(chat_id: str, user: str):
     _purge_files_for("chat_id=?", (chat_id,))
     cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
     conn.commit()
-    await manager.broadcast_chat(chat_id, {"action": "chat_cleared", "id": chat_id})
+    await manager.broadcast_chat_event(chat_id, {"action": "chat_cleared", "id": chat_id, "chat_id": chat_id})
     return {"status": "ok", "msg": "История очищена"}
 
 
@@ -2070,7 +2158,7 @@ async def set_member_role(chat_id: str, data: MemberRoleData):
         cursor.execute("UPDATE members SET role='owner', title='' WHERE chat_id=? AND LOWER(nickname)=LOWER(?)",
                        (chat_id, data.target))
         conn.commit()
-        await manager.broadcast_chat(chat_id, {"action": "members_updated", "chat_id": chat_id})
+        await manager.broadcast_chat_event(chat_id, {"action": "members_updated", "chat_id": chat_id})
         return {"status": "ok", "msg": f"Группа теперь принадлежит @{data.target}!"}
 
     # ── Смена роли ──
@@ -2113,7 +2201,7 @@ async def set_member_role(chat_id: str, data: MemberRoleData):
                        (json.dumps(clean), chat_id, data.target))
 
     conn.commit()
-    await manager.broadcast_chat(chat_id, {"action": "members_updated", "chat_id": chat_id})
+    await manager.broadcast_chat_event(chat_id, {"action": "members_updated", "chat_id": chat_id})
     return {"status": "ok", "msg": "Роль обновлена!"}
 
 
@@ -2138,7 +2226,8 @@ async def remove_member(chat_id: str, target: str, by: str = ""):
 
     cursor.execute("DELETE FROM members WHERE chat_id=? AND LOWER(nickname)=LOWER(?)", (chat_id, target))
     conn.commit()
-    await manager.broadcast_chat(chat_id, {"action": "members_updated", "chat_id": chat_id})
+    await manager.broadcast_chat_event(chat_id, {"action": "members_updated", "chat_id": chat_id})
+    await manager.send_to_user(target, {"action": "chats_updated"})
     if leaving_self:
         return {"status": "ok", "msg": "Вы покинули группу"}
     return {"status": "ok", "msg": f"@{target} исключён из группы"}
@@ -2401,19 +2490,20 @@ def get_user_settings(nickname: str):
     return {"status": "ok", "settings": {}}
 
 @app.post("/user/settings/{nickname}")
-def save_user_settings(nickname: str, data: dict = None):
+async def save_user_settings(nickname: str, data: dict = None):
     import json as _json
     if not data: return {"status": "error", "msg": "Нет данных"}
     settings = data.get("settings", {})
     # Ограничиваем размер — не храним мегабайты
     s = _json.dumps(settings, ensure_ascii=False)
-    if len(s) > 10000:
+    if len(s) > 50000:
         return {"status": "error", "msg": "Настройки слишком большие"}
     cursor.execute("""INSERT INTO user_settings (nickname, settings_json, updated_at)
                       VALUES (?, ?, datetime('now'))
                       ON CONFLICT(nickname) DO UPDATE SET settings_json=excluded.settings_json, updated_at=datetime('now')""",
                    (nickname, s))
     conn.commit()
+    await manager.send_to_user(nickname, {"action": "settings_updated", "settings": settings})
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════
@@ -2961,11 +3051,253 @@ async def set_admin_permissions(data: AdminPermsData):
         await manager.send_to_user(data.target_nick, {"action": "admin_revoked", "revoked_by": data.admin_nick})
         return {"status": "ok", "msg": f"Все права у @{data.target_nick} отозваны!"}
 
+import math
+
+GV_WEAPON_COSTS = {
+    1: 2000,   # АВТОМАТ
+    2: 3500,   # ДРОБОВИК
+    4: 1500,   # НОЖИ
+    5: 8000,   # СНАЙПЕРКА
+    6: 12000,  # РПГ
+}
+GV_DEFAULT_WEAPONS = [0, 7]
+
+CLICKER_UPGRADE_CFG = {
+    "click":    {"base": 40,    "mult": 1.75},
+    "auto":     {"base": 100,   "mult": 1.75},
+    "double":   {"base": 350,   "mult": 1.9},
+    "combo":    {"base": 800,   "mult": 2.1},
+    "crit":     {"base": 2500,  "mult": 2.2},
+    "prestige": {"base": 15000, "mult": 2.8},
+}
+VALID_CLICKER_SKINS = {
+    "skin_gold", "skin_diamond", "skin_fire", "skin_shadow", "skin_rainbow", "skin_cosmic"
+}
+
+
+def _canonical_nick(nick: str) -> str:
+    n = (nick or "").strip()
+    if not n:
+        return ""
+    cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (n,))
+    r = cursor.fetchone()
+    return r[0] if r and r[0] else n
+
+
+def _default_clicker_state() -> dict:
+    return {
+        "score": 0,
+        "total": 0,
+        "levels": {},
+        "prestige": 0,
+        "skins": [],
+        "selectedSkin": None,
+        "chestBase": 2500,
+        "chestOpens": 0,
+    }
+
+
+def _sanitize_clicker(raw) -> dict:
+    if not isinstance(raw, dict):
+        return _default_clicker_state()
+    def _int(v, lo, hi, default=0):
+        try:
+            x = int(float(v))
+        except (TypeError, ValueError):
+            return default
+        return max(lo, min(hi, x))
+
+    lv_in = raw.get("levels") if isinstance(raw.get("levels"), dict) else {}
+    levels = {}
+    for uid in CLICKER_UPGRADE_CFG:
+        if uid == "prestige":
+            continue
+        val = _int(lv_in.get(uid, 0), 0, 200, 0)
+        if val > 0:
+            levels[uid] = val
+
+    prestige = max(
+        _int(raw.get("prestige", 0), 0, 50, 0),
+        _int(lv_in.get("prestige", 0), 0, 50, 0),
+    )
+    if prestige > 0:
+        levels["prestige"] = prestige
+
+    skins = []
+    for s in (raw.get("skins") or []):
+        if isinstance(s, str) and s in VALID_CLICKER_SKINS and s not in skins:
+            skins.append(s)
+
+    sel = raw.get("selectedSkin")
+    if not isinstance(sel, str) or sel not in skins:
+        sel = None
+
+    return {
+        "score": _int(raw.get("score", 0), 0, 10**9, 0),
+        "total": _int(raw.get("total", 0), 0, 10**10, 0),
+        "levels": levels,
+        "prestige": prestige,
+        "skins": skins,
+        "selectedSkin": sel,
+        "chestBase": _int(raw.get("chestBase", 2500), 2500, 10**7, 2500),
+        "chestOpens": _int(raw.get("chestOpens", 0), 0, 10**6, 0),
+    }
+
+
+def _sanitize_weapons(raw) -> List[int]:
+    out = set(GV_DEFAULT_WEAPONS)
+    if isinstance(raw, list):
+        for x in raw:
+            try:
+                idx = int(x)
+                if 0 <= idx <= 7:
+                    out.add(idx)
+            except (TypeError, ValueError):
+                pass
+    return sorted(out)
+
+
+def _calc_clicker_reset_reward(clk: dict) -> int:
+    score = max(0, int(clk.get("score") or 0))
+    levels = clk.get("levels") or {}
+    spent = 0
+    for uid, cfg in CLICKER_UPGRADE_CFG.items():
+        if uid == "prestige":
+            continue
+        lvl = max(0, min(200, int(levels.get(uid) or 0)))
+        for i in range(lvl):
+            spent += math.ceil(cfg["base"] * (cfg["mult"] ** i))
+    prestige = max(0, int(clk.get("prestige") or levels.get("prestige") or 0))
+    raw_pool = score + int(spent * 0.35)
+    if raw_pool < 5:
+        return 0
+    return (raw_pool // 5) + prestige * 50
+
+
+def _save_economy_row(canon: str, pve: dict, clk: dict, coins: int, weapons: List[int], currencies: dict):
+    currencies = dict(currencies or {})
+    currencies["v2"] = True
+    currencies["coins"] = int(coins)
+    currencies["clicks"] = int(clk.get("score") or 0)
+    currencies["prestige"] = int(clk.get("prestige") or 0)
+    cursor.execute("DELETE FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?) AND nickname<>?", (canon, canon))
+    cursor.execute("""
+        INSERT INTO profile_game_stats (nickname, pve_json, clicker_json, coins, weapons_json, currencies_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(nickname) DO UPDATE SET
+          pve_json=excluded.pve_json,
+          clicker_json=excluded.clicker_json,
+          coins=excluded.coins,
+          weapons_json=excluded.weapons_json,
+          currencies_json=excluded.currencies_json,
+          updated_at=CURRENT_TIMESTAMP
+    """, (
+        canon,
+        json.dumps(pve or {}, ensure_ascii=False),
+        json.dumps(clk or _default_clicker_state(), ensure_ascii=False),
+        max(0, int(coins)),
+        json.dumps(weapons or GV_DEFAULT_WEAPONS),
+        json.dumps(currencies, ensure_ascii=False),
+    ))
+    conn.commit()
+
+
+def _get_or_init_economy(nick: str) -> dict:
+    canon = _canonical_nick(nick)
+    cursor.execute("""
+        SELECT nickname, pve_json, clicker_json, coins, weapons_json, currencies_json, updated_at
+        FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?) ORDER BY updated_at DESC LIMIT 1
+    """, (canon,))
+    row = cursor.fetchone()
+
+    changed = False
+    if row:
+        try:
+            pve = json.loads(row[1] or "{}")
+            if not isinstance(pve, dict):
+                pve = {}
+        except Exception:
+            pve = {}
+        try:
+            raw_clk = json.loads(row[2] or "{}")
+            if not isinstance(raw_clk, dict):
+                raw_clk = {}
+        except Exception:
+            raw_clk = {}
+        old_admin = 0
+        try:
+            old_admin = max(0, int(raw_clk.get("adminCoins") or 0))
+        except Exception:
+            old_admin = 0
+        clk = _sanitize_clicker(raw_clk)
+        coins = max(0, int(row[3] or 0))
+        try:
+            weapons = _sanitize_weapons(json.loads(row[4] or "[0, 7]"))
+        except Exception:
+            weapons = list(GV_DEFAULT_WEAPONS)
+        try:
+            currencies = json.loads(row[5] or "{}")
+            if not isinstance(currencies, dict):
+                currencies = {}
+        except Exception:
+            currencies = {}
+        updated = row[6]
+        if row[0] != canon:
+            changed = True
+        if not currencies.get("v2"):
+            # Миграция v2: adminCoins -> coins, при этом прежние набитые монеты не теряются
+            if old_admin > 0 and coins < old_admin:
+                coins = old_admin
+            currencies["v2"] = True
+            changed = True
+    else:
+        pve = {}
+        clk = _default_clicker_state()
+        coins = 0
+        weapons = list(GV_DEFAULT_WEAPONS)
+        currencies = {"v2": True}
+        updated = now_str()
+        changed = True
+
+    # Автоприменение ожидающих грантов из clicker_grants прямо на серверный баланс coins
+    cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (canon,))
+    gr = cursor.fetchone()
+    if gr and gr[0]:
+        bonus = int(gr[0])
+        coins = max(0, coins + bonus)
+        cursor.execute("UPDATE clicker_grants SET bonus_coins=0, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)", (canon,))
+        changed = True
+
+    if changed:
+        _save_economy_row(canon, pve, clk, coins, weapons, currencies)
+
+    currencies = dict(currencies)
+    currencies["coins"] = coins
+    currencies["clicks"] = clk["score"]
+    currencies["prestige"] = clk["prestige"]
+
+    return {
+        "nickname": canon,
+        "coins": coins,
+        "clicker": clk,
+        "weapons": weapons,
+        "pve": pve,
+        "currencies": currencies,
+        "updated_at": updated,
+    }
+
+
+async def _broadcast_economy(nick: str, client_id: str = ""):
+    st = _get_or_init_economy(nick)
+    payload = {"action": "economy_sync", "economy": st, "client_id": client_id}
+    await manager.send_to_user(st["nickname"], payload)
+    await _gsend(st["nickname"], payload)
+
+
 @app.post("/admin/give-coins")
 async def admin_give_coins(data: GiveCoinsData):
-    """Выдача/забор клыкер-монет из админ-панели. Требует права can_give_coins."""
+    """Выдача/забор игровых монет из админ-панели. Требует права can_give_coins."""
     require_admin(data.admin_nick)
-    # Строгая проверка: монеты трогает только тот, у кого есть can_give_coins
     if not (has_perm(data.admin_nick, "can_give_coins")
             or can_manage_everything(data.admin_nick) or is_assistant(data.admin_nick)):
         return {"status": "error", "msg": "Нет права «Выдача/забор монет» — его должен выдать Главный Администратор!"}
@@ -2979,29 +3311,35 @@ async def admin_give_coins(data: GiveCoinsData):
         return {"status": "error", "msg": "Сумма не может быть нулевой!"}
     if amount > 10**9 or amount < -10**9:
         return {"status": "error", "msg": "Сумма слишком большая!"}
-    cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
-    row = cursor.fetchone()
-    pending = row[0] if row else 0
-    new_total = pending + amount
-    if amount < 0:
-        # Забор: сверяемся с последним известным балансом юзера + уже висящий грант
-        cursor.execute("SELECT coins FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?)", (data.target_nick,))
-        cr = cursor.fetchone()
-        balance = int(cr[0] or 0) if cr else 0
-        avail = balance + pending
-        if avail < abs(amount):
-            return {"status": "error",
-                    "msg": f"У @{data.target_nick} всего {max(0, avail)} 💰 — забрать {abs(amount)} нельзя!"}
-    if row:
-        cursor.execute("UPDATE clicker_grants SET bonus_coins=?, granted_by=?, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)",
-                       (new_total, data.admin_nick, data.target_nick))
+
+    canon = _canonical_nick(data.target_nick)
+    st = _get_or_init_economy(canon)
+    cur_coins = int(st["coins"])
+    if amount < 0 and cur_coins < abs(amount):
+        return {"status": "error",
+                "msg": f"У @{canon} всего {cur_coins} 💰 — забрать {abs(amount)} нельзя!"}
+
+    new_coins = max(0, cur_coins + amount)
+    _save_economy_row(canon, st["pve"], st["clicker"], new_coins, st["weapons"], st["currencies"])
+
+    cursor.execute("SELECT 1 FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (canon,))
+    if cursor.fetchone():
+        cursor.execute("UPDATE clicker_grants SET bonus_coins=0, granted_by=?, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)",
+                       (data.admin_nick, canon))
     else:
-        cursor.execute("INSERT INTO clicker_grants (nickname, bonus_coins, granted_by) VALUES (?,?,?)",
-                       (data.target_nick, new_total, data.admin_nick))
+        cursor.execute("INSERT INTO clicker_grants (nickname, bonus_coins, granted_by) VALUES (?,0,?)",
+                       (canon, data.admin_nick))
     conn.commit()
+
+    await _broadcast_economy(canon)
+    note = (f"⚡ Админ @{data.admin_nick} выдал вам {amount} 💰!" if amount > 0
+            else f"💸 Админ @{data.admin_nick} забрал {abs(amount)} 💰.")
+    await manager.send_to_user(canon, {"action": "notify", "msg": note})
+
     if amount > 0:
-        return {"status": "ok", "msg": f"@{data.target_nick} получает {amount} 💰 (всего грант: {new_total})."}
-    return {"status": "ok", "msg": f"У @{data.target_nick} забрано {abs(amount)} 💰 (всего грант: {new_total})."}
+        return {"status": "ok", "msg": f"@{canon} получает {amount} 💰 (баланс: {new_coins} 💰)."}
+    return {"status": "ok", "msg": f"У @{canon} забрано {abs(amount)} 💰 (баланс: {new_coins} 💰)."}
+
 
 @app.get("/admin/clicker-coins")
 def admin_get_clicker_coins(admin: str, target: str):
@@ -3009,73 +3347,190 @@ def admin_get_clicker_coins(admin: str, target: str):
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
-    # Смотреть баланс монет юзеров — только с can_give_coins
     if not (row[0] or is_super(admin) or is_assistant(admin)
             or json.loads(row[2] or '{}').get("can_give_coins")):
         return {"error": "Нет права «Выдача/забор монет»"}
-    cursor.execute("SELECT bonus_coins, granted_by FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (target,))
+    st = _get_or_init_economy(target)
+    cursor.execute("SELECT granted_by FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (target,))
     r = cursor.fetchone()
-    return {"bonus_coins": (r[0] if r else 0), "granted_by": (r[1] if r else "")}
+    return {"bonus_coins": st["coins"], "coins": st["coins"], "granted_by": (r[0] if r else "")}
+
+
+@app.get("/economy/state/{nickname}")
+def economy_get_state(nickname: str, token: str = ""):
+    _auth_session(nickname, token)
+    st = _get_or_init_economy(nickname)
+    return {"status": "ok", "economy": st}
+
+
+@app.post("/economy/migrate")
+async def economy_migrate(data: EconomyMigrateData):
+    """Однократная миграция старых локальных данных (если серверная запись ещё пустая)."""
+    _auth_session(data.nickname, data.session_token)
+    st = _get_or_init_economy(data.nickname)
+    canon = st["nickname"]
+    clk = st["clicker"]
+    coins = st["coins"]
+    weapons = list(st["weapons"])
+    pve = dict(st["pve"])
+    changed = False
+
+    if data.weapons and set(weapons) == set(GV_DEFAULT_WEAPONS):
+        merged_w = _sanitize_weapons(weapons + list(data.weapons))
+        if merged_w != weapons:
+            weapons = merged_w
+            changed = True
+
+    if data.clicker_json and clk["score"] == 0 and clk["total"] == 0 and not clk["levels"] and not clk["skins"]:
+        raw_c = data.clicker_json or {}
+        try:
+            old_adm = max(0, int(raw_c.get("adminCoins") or 0))
+        except Exception:
+            old_adm = 0
+        if old_adm > 0 and coins == 0:
+            coins = old_adm
+            changed = True
+        san = _sanitize_clicker(raw_c)
+        if san["score"] > 0 or san["total"] > 0 or san["levels"] or san["skins"] or san["prestige"] > 0:
+            clk = san
+            changed = True
+
+    if data.pve_json and not pve and isinstance(data.pve_json, dict):
+        pve = data.pve_json
+        changed = True
+
+    if changed:
+        _save_economy_row(canon, pve, clk, coins, weapons, st["currencies"])
+        await _broadcast_economy(canon)
+        st = _get_or_init_economy(canon)
+
+    return {"status": "ok", "economy": st}
+
+
+@app.post("/economy/clicker/save")
+async def economy_clicker_save(data: EconomyClickerSaveData):
+    """Сохраняет прогресс кликера (клики/уровни/скины) и синхронизирует все устройства."""
+    _auth_session(data.nickname, data.session_token)
+    st = _get_or_init_economy(data.nickname)
+    canon = st["nickname"]
+    san = _sanitize_clicker(data.clicker_json)
+    _save_economy_row(canon, st["pve"], san, st["coins"], st["weapons"], st["currencies"])
+    await _broadcast_economy(canon, client_id=data.client_id or "")
+    return {"status": "ok", "economy": _get_or_init_economy(canon)}
+
+
+@app.post("/economy/clicker/convert")
+async def economy_clicker_convert(data: EconomyConvertData):
+    """Обнуляет клики и уровни кликера, начисляя монеты на игровой баланс аккаунта."""
+    _auth_session(data.nickname, data.session_token)
+    st = _get_or_init_economy(data.nickname)
+    canon = st["nickname"]
+    clk = st["clicker"]
+
+    # Учитываем последние несохранённые клики клиента, если он передал актуальное состояние
+    if isinstance(data.clicker_json, dict):
+        cli = _sanitize_clicker(data.clicker_json)
+        if cli["total"] >= clk["total"] and (cli["score"] - clk["score"]) <= 5000000:
+            clk = cli
+
+    reward = _calc_clicker_reset_reward(clk)
+    if reward <= 0:
+        return {"status": "error", "msg": "Сначала натапайте хотя бы 5 кликов!", "reward": 0}
+
+    new_coins = int(st["coins"]) + reward
+    new_clk = {
+        "score": 0,
+        "total": 0,
+        "levels": ({"prestige": clk["prestige"]} if clk["prestige"] > 0 else {}),
+        "prestige": clk["prestige"],
+        "skins": clk["skins"],
+        "selectedSkin": clk["selectedSkin"],
+        "chestBase": clk["chestBase"],
+        "chestOpens": 0,
+    }
+    _save_economy_row(canon, st["pve"], new_clk, new_coins, st["weapons"], st["currencies"])
+    await _broadcast_economy(canon)
+    return {"status": "ok", "reward": reward, "coins": new_coins, "economy": _get_or_init_economy(canon)}
+
+
+@app.post("/economy/weapon/buy")
+async def economy_weapon_buy(data: EconomyWeaponBuyData):
+    """Покупка оружия Green Valley за серверный баланс монет."""
+    _auth_session(data.nickname, data.session_token)
+    st = _get_or_init_economy(data.nickname)
+    canon = st["nickname"]
+    idx = int(data.weapon_idx)
+    if idx in st["weapons"]:
+        return {"status": "ok", "already": True, "economy": st}
+    if idx not in GV_WEAPON_COSTS:
+        return {"status": "error", "msg": "Неизвестное оружие"}
+    cost = GV_WEAPON_COSTS[idx]
+    if st["coins"] < cost:
+        return {"status": "error", "msg": f"Недостаточно монет (нужно {cost} 💰)", "economy": st}
+    new_coins = st["coins"] - cost
+    new_weapons = sorted(set(st["weapons"]) | {idx})
+    _save_economy_row(canon, st["pve"], st["clicker"], new_coins, new_weapons, st["currencies"])
+    await _broadcast_economy(canon)
+    return {"status": "ok", "weapon_idx": idx, "coins": new_coins, "economy": _get_or_init_economy(canon)}
+
+
+@app.post("/economy/pve/record")
+async def economy_pve_record(data: EconomyPveRecordData):
+    """Атомарно записывает итог PvE-матча на сервер."""
+    _auth_session(data.nickname, data.session_token)
+    key = (data.game_key or "").strip()
+    if key not in ("greenu_match", "utopia_duel"):
+        return {"status": "error", "msg": "Неизвестный режим"}
+    st = _get_or_init_economy(data.nickname)
+    canon = st["nickname"]
+    pve = dict(st["pve"] or {})
+    cur = pve.get(key)
+    if not isinstance(cur, dict):
+        cur = {"wins": 0, "losses": 0, "matches": 0}
+    cur["matches"] = int(cur.get("matches") or 0) + 1
+    if data.won:
+        cur["wins"] = int(cur.get("wins") or 0) + 1
+    else:
+        cur["losses"] = int(cur.get("losses") or 0) + 1
+    pve[key] = cur
+    _save_economy_row(canon, pve, st["clicker"], st["coins"], st["weapons"], st["currencies"])
+    await _broadcast_economy(canon)
+    return {"status": "ok", "economy": _get_or_init_economy(canon)}
+
 
 @app.post("/clicker/sync")
 async def clicker_sync(data: ClickerSyncData):
-    """Клиент при открытии кликера забирает выданные админкой монеты."""
-    cursor.execute("SELECT session_token, nickname FROM user_sessions WHERE session_token=?", (data.session_token,))
-    sess = cursor.fetchone()
-    if not sess or sess[1].lower() != data.nickname.lower():
-        return {"status": "error", "bonus": 0}
-    cursor.execute("SELECT bonus_coins FROM clicker_grants WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
-    r = cursor.fetchone()
-    bonus = r[0] if r else 0
-    if bonus != 0:
-        # грант применяется один раз: и выдача, и забор (отрицательная сумма)
-        cursor.execute("UPDATE clicker_grants SET bonus_coins=0, updated_at=CURRENT_TIMESTAMP WHERE LOWER(nickname)=LOWER(?)", (data.nickname,))
-        conn.commit()
-    return {"status": "ok", "bonus": bonus}
+    """Обратная совместимость: возвращает текущий серверный баланс монет (бонусы применяются сразу)."""
+    _auth_session(data.nickname, data.session_token)
+    st = _get_or_init_economy(data.nickname)
+    return {"status": "ok", "bonus": 0, "coins": st["coins"], "economy": st}
+
 
 @app.post("/profile/gamestats/sync")
 async def profile_gamestats_sync(data: ProfileGameStatsData):
-    """Клиент сохраняет игровую статистику профиля: PvE-матчи, кликер и баланс монет."""
-    cursor.execute("SELECT session_token, nickname FROM user_sessions WHERE session_token=?", (data.session_token,))
-    sess = cursor.fetchone()
-    if not sess or sess[1].lower() != data.nickname.lower():
-        return {"status": "error"}
-    pve = json.dumps(data.pve_json or {}, ensure_ascii=False)
-    clk_dict = data.clicker_json or {}
-    clk = json.dumps(clk_dict, ensure_ascii=False)
-    try:
-        coins = int((clk_dict.get("score") or 0) + (clk_dict.get("adminCoins") or 0))
-    except (TypeError, ValueError):
-        coins = 0
-    cursor.execute("""
-        INSERT INTO profile_game_stats (nickname, pve_json, clicker_json, coins, updated_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(nickname) DO UPDATE SET
-          pve_json=excluded.pve_json, clicker_json=excluded.clicker_json,
-          coins=excluded.coins, updated_at=CURRENT_TIMESTAMP
-    """, (data.nickname, pve, clk, coins))
-    conn.commit()
-    return {"status": "ok", "coins": coins}
+    """Обратная совместимость: НЕ затирает сервер пустыми локальными данными и НЕ трогает coins."""
+    _auth_session(data.nickname, data.session_token)
+    st = _get_or_init_economy(data.nickname)
+    canon = st["nickname"]
+    return {"status": "ok", "coins": st["coins"], "economy": st}
+
 
 @app.get("/profile/gamestats/{nickname}")
 def profile_gamestats_get(nickname: str):
     """Публичная игровая статистика для вкладки профиля (видят все, редактировать нельзя)."""
-    cursor.execute("""SELECT pve_json, clicker_json, coins, updated_at
-                      FROM profile_game_stats WHERE LOWER(nickname)=LOWER(?)""", (nickname,))
-    row = cursor.fetchone()
-    pve, clk, coins, updated = ({}, {}, 0, None) if not row else (row[0], row[1], row[2] or 0, row[3])
-    try:
-        pve = json.loads(pve or "{}")
-    except Exception:
-        pve = {}
-    try:
-        clk = json.loads(clk or "{}")
-    except Exception:
-        clk = {}
-    # Онлайн-матчи (1х1) — из общей таблицы статистики
-    online = _stats_payload(nickname)
-    return {"status": "ok", "nickname": nickname, "pve": pve, "clicker": clk,
-            "coins": coins, "online": online, "updated_at": updated}
+    st = _get_or_init_economy(nickname)
+    online = _stats_payload(st["nickname"])
+    return {
+        "status": "ok",
+        "nickname": st["nickname"],
+        "pve": st["pve"],
+        "clicker": st["clicker"],
+        "coins": st["coins"],
+        "weapons": st["weapons"],
+        "currencies": st["currencies"],
+        "online": online,
+        "updated_at": st["updated_at"],
+    }
 
 # ═══════════════════════════════════════════════════════════
 #  ПОДДЕРЖКА (SUPPORT)
@@ -3871,6 +4326,10 @@ async def games_websocket(websocket: WebSocket, nickname: str):
     _game_sockets[nickname] = websocket
     await websocket.send_json(_lobby_state())
     await websocket.send_json({"action": "my_stats", "stats": _stats_payload(nickname)})
+    try:
+        await websocket.send_json({"action": "economy_sync", "economy": _get_or_init_economy(nickname)})
+    except Exception:
+        pass
     await _lobby_broadcast()
     try:
         while True:
@@ -4157,6 +4616,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
         await websocket.accept()
         await websocket.close(code=4401)
         return
+    nickname = _canonical_nick(nickname)
     await manager.connect(chat_id, websocket, nickname)
     try:
         while True:
@@ -4222,30 +4682,10 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 data["id"] = cursor.lastrowid
                 data["action"] = "new_message"
                 data["chat_id"] = chat_id
-                await manager.broadcast_chat(chat_id, data)
-
-                # Уведомляем участников этого чата, которые онлайн в других чатах (чтобы тикали непрочитанные!)
-                chat_socks = manager.chat_sockets.get(chat_id, set())
-                if chat_id == "general":
-                    target_users = list(manager.user_sockets.keys())
-                elif chat_id.startswith("bot_"):
-                    target_users = []
-                else:
-                    cursor.execute("SELECT nickname FROM members WHERE chat_id=?", (chat_id,))
-                    target_users = [r[0].lower() for r in cursor.fetchall()]
-                for u_low in target_users:
-                    if u_low == nickname.lower():
-                        continue
-                    u_socks = manager.user_sockets.get(u_low, set())
-                    if not u_socks or any(s in chat_socks for s in u_socks):
-                        continue
-                    await manager.send_to_user(u_low, {
-                        "action": "chat_unread_hint",
-                        "chat_id": chat_id,
-                        "sender": nickname,
-                        "text": data.get("text", ""),
-                        "file_url": data.get("file_url"),
-                    })
+                if not data.get("time"):
+                    data["time"] = datetime.now().strftime("%H:%M")
+                # Мгновенно доставляем и в открытый чат, и на все остальные устройства/вкладки участников и самого отправителя
+                await manager.broadcast_chat_event(chat_id, data, sender_nick=nickname)
 
                 # Личный чат с ботом-помощником: он отвечает отдельной задачей
                 if chat_id.startswith("bot_"):
@@ -4277,12 +4717,12 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     continue
                 cursor.execute("UPDATE messages SET text=?, is_edited=1 WHERE id=?", (new_text, mid))
                 conn.commit()
-                await manager.broadcast_chat(chat_id, {
+                await manager.broadcast_chat_event(chat_id, {
                     "action": "edited",
                     "chat_id": chat_id,
                     "message_id": mid,
                     "text": new_text,
-                })
+                }, sender_nick=nickname)
 
             elif action in ("pin", "unpin"):
                 if chat_id.startswith("bot_"):
@@ -4296,7 +4736,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 if action == "unpin":
                     cursor.execute("UPDATE chats SET pinned_msg_id=NULL WHERE id=?", (chat_id,))
                     conn.commit()
-                    await manager.broadcast_chat(chat_id, {"action": "pinned", "chat_id": chat_id, "pinned_msg": None})
+                    await manager.broadcast_chat_event(chat_id, {"action": "pinned", "chat_id": chat_id, "pinned_msg": None}, sender_nick=nickname)
                 else:
                     try:
                         mid = int(data.get("message_id"))
@@ -4304,11 +4744,11 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                         continue
                     cursor.execute("UPDATE chats SET pinned_msg_id=? WHERE id=?", (mid, chat_id))
                     conn.commit()
-                    await manager.broadcast_chat(chat_id, {
+                    await manager.broadcast_chat_event(chat_id, {
                         "action": "pinned",
                         "chat_id": chat_id,
                         "pinned_msg": _get_pinned_preview(chat_id, mid),
-                    })
+                    }, sender_nick=nickname)
 
             elif action == "react":
                 mid = data.get("message_id")
@@ -4329,7 +4769,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     agg: Dict[str, List[str]] = {}
                     for e, n in cursor.fetchall():
                         agg.setdefault(e, []).append(n)
-                    await manager.broadcast_chat(chat_id, {"action": "reactions", "message_id": mid, "reactions": agg})
+                    await manager.broadcast_chat_event(chat_id, {
+                        "action": "reactions", "chat_id": chat_id, "message_id": mid, "reactions": agg
+                    }, sender_nick=nickname)
 
             elif action == "delete":
                 mid = data.get("message_id")
@@ -4361,7 +4803,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                 conn.commit()
                 # Файл (фото/голос/вложение) убираем с диска — в чате его больше нет
                 delete_upload_file(row[2])
-                await manager.broadcast_chat(chat_id, {"action": "deleted", "message_ids": [mid], "deleted_by": nickname})
+                await manager.broadcast_chat_event(chat_id, {
+                    "action": "deleted", "chat_id": chat_id, "message_ids": [mid], "deleted_by": nickname
+                }, sender_nick=nickname)
 
     except WebSocketDisconnect:
         pass

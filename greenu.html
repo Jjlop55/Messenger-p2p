@@ -717,95 +717,146 @@
         let isFireBtnPressed = false; 
         let semiAutoLock = false;
 
-        // ── Разблокировка оружия: только пистолет (0) и плазмоган (7) по умолчанию ──
-        let gvOwnedWeapons = [0, 7]; // индексы купленного оружия
-        try {
-            const saved = JSON.parse(localStorage.getItem('gv_weapons') || 'null');
-            if (Array.isArray(saved) && saved.length) gvOwnedWeapons = saved;
-        } catch (_) {}
-        function gvSaveWeapons() { try { localStorage.setItem('gv_weapons', JSON.stringify(gvOwnedWeapons)); } catch (_) {} }
-        function gvHasWeapon(idx) { return gvOwnedWeapons.indexOf(idx) >= 0; }
-        function _gvClickerKey() {
-            try {
-                const nick = (localStorage.getItem('utopia_nickname') || JSON.parse(localStorage.getItem('utopia_saved_user') || '{}').nickname || '').trim().toLowerCase();
-                if (nick) {
-                    const k = 'utopia_clicker_' + nick;
-                    if (!localStorage.getItem(k) && localStorage.getItem('utopia_clicker')) {
-                        localStorage.setItem(k, localStorage.getItem('utopia_clicker'));
-                    }
-                    return k;
-                }
-            } catch (_) {}
-            return 'utopia_clicker';
-        }
-        // Монеты Green Valley = баланс кликера (клики score + админ-монеты adminCoins)
-        function gvGetCoins() {
-            try { const c = JSON.parse(localStorage.getItem(_gvClickerKey()) || '{}'); return Math.floor((c.score || 0) + (c.adminCoins || 0)); } catch (_) { return 0; }
-        }
-        function gvAddCoins(n) {
-            // читаем текущий счёт кликера
-            try {
-                const k = _gvClickerKey();
-                const c = JSON.parse(localStorage.getItem(k) || '{}');
-                c.score = (c.score || 0) + n;
-                localStorage.setItem(k, JSON.stringify(c));
-            } catch (_) {}
-        }
-        function gvSpendCoins(n) {
-            // трата: сначала «клики» (score), потом админ-монеты (adminCoins)
-            try {
-                const k = _gvClickerKey();
-                const c = JSON.parse(localStorage.getItem(k) || '{}');
-                const score = c.score || 0, admin = c.adminCoins || 0;
-                if (score + admin < n) return false;
-                const fromScore = Math.min(score, n);
-                c.score = score - fromScore;
-                const rest = n - fromScore;
-                if (rest > 0) c.adminCoins = Math.max(0, admin - rest);
-                localStorage.setItem(k, JSON.stringify(c));
-                return true;
-            } catch (_) { return false; }
-        }
-        // Забираем монеты, выданные админкой (если админ выдал, а кликер не открывали)
-        async function gvSyncAdminCoins() {
+        // ── Серверная экономика аккаунта: монеты 💰 отдельно от кликов, синхронное оружие ──
+        let gvOwnedWeapons = [0, 7]; // индексы купленного оружия (по умолчанию пистолет и плазмоган)
+        let gvAccountCoins = 0;
+        let _gvBuyingWeapon = false;
+
+        function _gvUserNickAndToken() {
+            let nick = '';
             try {
                 const saved = JSON.parse(localStorage.getItem('utopia_saved_user') || '{}');
-                const nick = saved.nickname || saved.nick || '';
-                const token = localStorage.getItem('utopia_session_token');
-                if (!nick || !token) return;
-                const res = await fetch(`${PVP_BACKEND}/clicker/sync`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nickname: nick, session_token: token })
+                nick = saved.nickname || saved.nick || localStorage.getItem('utopia_nickname') || '';
+            } catch (_) {}
+            const token = localStorage.getItem('utopia_session_token') || '';
+            return { nick: String(nick || '').trim(), token: String(token || '').trim() };
+        }
+        function _gvUserLow() {
+            return _gvUserNickAndToken().nick.toLowerCase();
+        }
+        function _gvSanitizeWeapons(list) {
+            const set = new Set([0, 7]);
+            if (Array.isArray(list)) {
+                list.forEach(x => {
+                    const n = parseInt(x, 10);
+                    if (!isNaN(n) && n >= 0 && n <= 7) set.add(n);
                 });
-                const d = await res.json();
-                if (d.status === 'ok' && d.bonus) {
-                    const k = _gvClickerKey();
-                    const c = JSON.parse(localStorage.getItem(k) || '{}');
-                    if (d.bonus > 0) {
-                        c.adminCoins = (c.adminCoins || 0) + d.bonus;
-                        if (typeof showNotify === 'function') showNotify(`⚡ Админ выдал ${d.bonus.toLocaleString('ru-RU')} монет!`);
-                    } else {
-                        gvSpendCoins(Math.abs(d.bonus));
-                        return;
-                    }
-                    localStorage.setItem(k, JSON.stringify(c));
+            }
+            return Array.from(set).sort((a, b) => a - b);
+        }
+        (function _gvInitLocalCache() {
+            try {
+                const low = _gvUserLow();
+                const wk = low ? ('gv_weapons_' + low) : 'gv_weapons';
+                const savedW = JSON.parse(localStorage.getItem(wk) || localStorage.getItem('gv_weapons') || 'null');
+                if (Array.isArray(savedW) && savedW.length) gvOwnedWeapons = _gvSanitizeWeapons(savedW);
+                if (low) {
+                    const sc = parseInt(localStorage.getItem('utopia_coins_' + low) || '0', 10);
+                    if (!isNaN(sc) && sc > 0) gvAccountCoins = sc;
+                }
+            } catch (_) {}
+        })();
+
+        function gvSaveWeapons() {
+            try {
+                const low = _gvUserLow();
+                if (low) localStorage.setItem('gv_weapons_' + low, JSON.stringify(gvOwnedWeapons));
+                else localStorage.setItem('gv_weapons', JSON.stringify(gvOwnedWeapons));
+            } catch (_) {}
+        }
+        function gvHasWeapon(idx) { return gvOwnedWeapons.indexOf(idx) >= 0; }
+        function gvGetCoins() { return Math.max(0, Math.floor(gvAccountCoins || 0)); }
+
+        function gvNotifyParentEconomy(eco) {
+            if (!eco) return;
+            try {
+                if (window.top && window.top !== window.self) {
+                    window.top.postMessage({ type: 'utopia_economy_sync', economy: eco }, '*');
                 }
             } catch (_) {}
         }
+
+        function gvApplyEconomy(eco) {
+            if (!eco || typeof eco !== 'object') return;
+            const low = _gvUserLow();
+            if (eco.nickname && low && String(eco.nickname).toLowerCase() !== low) return;
+            if (typeof eco.coins === 'number') gvAccountCoins = Math.max(0, Math.floor(eco.coins));
+            if (Array.isArray(eco.weapons)) gvOwnedWeapons = _gvSanitizeWeapons(eco.weapons);
+            try {
+                if (low) {
+                    localStorage.setItem('utopia_coins_' + low, String(gvAccountCoins));
+                    localStorage.setItem('gv_weapons_' + low, JSON.stringify(gvOwnedWeapons));
+                    if (eco.pve && typeof eco.pve === 'object') {
+                        localStorage.setItem('utopia_pve_stats_' + low, JSON.stringify(eco.pve));
+                    }
+                }
+                if (eco.pve && typeof eco.pve === 'object') {
+                    localStorage.setItem('utopia_pve_stats', JSON.stringify(eco.pve));
+                }
+            } catch (_) {}
+            updateWeaponMenuLocks();
+            const ov = document.getElementById('weaponShopOverlay');
+            if (ov && ov.style.display === 'flex') renderWeaponShop();
+        }
+
+        async function gvLoadEconomyFromServer() {
+            const { nick, token } = _gvUserNickAndToken();
+            if (!nick || !token || typeof PVP_BACKEND === 'undefined') return;
+            try {
+                const res = await fetch(`${PVP_BACKEND}/economy/state/${encodeURIComponent(nick)}?token=${encodeURIComponent(token)}`);
+                const d = await res.json();
+                if (d && d.status === 'ok' && d.economy) {
+                    gvApplyEconomy(d.economy);
+                }
+            } catch (_) {}
+        }
+
+        async function gvRecordPveMatch(won) {
+            const { nick, token } = _gvUserNickAndToken();
+            const low = (nick || '').toLowerCase();
+            try {
+                const k = low ? ('utopia_pve_stats_' + low) : 'utopia_pve_stats';
+                const st = JSON.parse(localStorage.getItem(k) || localStorage.getItem('utopia_pve_stats') || '{}');
+                if (!st.greenu_match) st.greenu_match = { wins: 0, losses: 0, matches: 0 };
+                st.greenu_match.matches++;
+                if (won) st.greenu_match.wins++; else st.greenu_match.losses++;
+                localStorage.setItem('utopia_pve_stats', JSON.stringify(st));
+                if (low) localStorage.setItem(k, JSON.stringify(st));
+            } catch (_) {}
+            if (!nick || !token || typeof PVP_BACKEND === 'undefined') return;
+            try {
+                const res = await fetch(`${PVP_BACKEND}/economy/pve/record`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nickname: nick, session_token: token, game_key: 'greenu_match', won: !!won })
+                });
+                const d = await res.json();
+                if (d && d.status === 'ok' && d.economy) {
+                    gvApplyEconomy(d.economy);
+                    gvNotifyParentEconomy(d.economy);
+                }
+            } catch (_) {}
+        }
+
+        window.addEventListener('message', (ev) => {
+            const m = ev && ev.data;
+            if (m && m.type === 'utopia_economy_sync' && m.economy) {
+                gvApplyEconomy(m.economy);
+            }
+        });
 
         // Каталог оружия для магазина
         const GV_WEAPON_SHOP = [
             { idx: 1, name: 'АВТОМАТ',     emoji: '🔫', cost: 2000,  desc: '30 патронов, средний урон, автоогонь' },
             { idx: 2, name: 'ДРОБОВИК',    emoji: '💥', cost: 3500,  desc: '8 патронов, огромный урон вблизи' },
             { idx: 4, name: 'НОЖИ',        emoji: '🔪', cost: 1500,  desc: 'Бесконечные ножи, метание' },
-            { idx: 5, name: 'СНАЙПЕРКА',   emoji: '🎯', cost: 8000,  desc: '1 патрон, x10 урона, перезарядка 15с' },
+            { idx: 5, name: 'СНАЙПЕРКА',   emoji: '🎯', cost: 8000,  desc: '1 патрон, высокий урон, перезарядка 15с' },
             { idx: 6, name: 'РПГ',         emoji: '🚀', cost: 12000, desc: '1 ракета, взрывной урон, перезарядка 15с' },
         ];
 
         // ── Магазин оружия ──
         function openWeaponShop() {
-            gvSyncAdminCoins(); // подтягиваем монеты, выданные админкой (без ожидания)
+            gvLoadEconomyFromServer();
             let ov = document.getElementById('weaponShopOverlay');
             if (!ov) {
                 ov = document.createElement('div');
@@ -829,11 +880,11 @@
                 + '<div style="color:#3fb950;font-weight:900;font-size:17px;">🛒 МАГАЗИН ОРУЖИЯ</div>'
                 + '<div style="color:#ffd700;font-weight:800;font-size:14px;">💰 ' + coins.toLocaleString('ru-RU') + '</div>'
                 + '</div>'
-                + '<div style="color:#888;font-size:11px;margin-bottom:12px;">Пистолет и плазмоган бесплатны. Остальное — за монеты клыкера. Монеты общие с клыкером.</div>';
+                + '<div style="color:#9ab;font-size:11px;margin-bottom:12px;">Пистолет и плазмоган бесплатны. Игровые монеты 💰 получаются за сброс/обмен кликов в кликере (и от админа) и хранятся на аккаунте.</div>';
             GV_WEAPON_SHOP.forEach(w => {
                 const owned = gvHasWeapon(w.idx);
-                const canBuy = !owned && coins >= w.cost;
-                const short = !owned ? w.cost - coins : 0;
+                const canBuy = !owned && coins >= w.cost && !_gvBuyingWeapon;
+                const short = !owned ? Math.max(0, w.cost - coins) : 0;
                 html += '<div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);border:1px solid ' + (owned ? '#3fb950' : 'rgba(255,255,255,.15)') + ';border-radius:10px;padding:10px 12px;margin-bottom:8px;">'
                     + '<div style="font-size:26px;">' + w.emoji + '</div>'
                     + '<div style="flex:1;">'
@@ -842,9 +893,9 @@
                 if (owned) {
                     html += '<div style="color:#3fb950;font-size:12px;font-weight:700;margin-top:3px;">✔ Куплено</div>';
                 } else {
-                    html += '<div style="color:' + (canBuy ? '#ffd700' : '#ff7070') + ';font-size:12px;font-weight:700;margin-top:3px;">'
+                    html += '<div style="color:' + (coins >= w.cost ? '#ffd700' : '#ff7070') + ';font-size:12px;font-weight:700;margin-top:3px;">'
                         + '💰 ' + w.cost.toLocaleString('ru-RU')
-                        + (canBuy ? '' : ' <span style="color:#ff7070;">(не хватает ' + short.toLocaleString('ru-RU') + ')</span>')
+                        + (coins >= w.cost ? '' : ' <span style="color:#ff7070;">(не хватает ' + short.toLocaleString('ru-RU') + ')</span>')
                         + '</div>';
                 }
                 html += '</div>';
@@ -859,18 +910,42 @@
                 btn.onclick = () => buyWeapon(parseInt(btn.dataset.widx, 10));
             });
         }
-        function buyWeapon(idx) {
+        async function buyWeapon(idx) {
+            if (_gvBuyingWeapon) return;
             const w = GV_WEAPON_SHOP.find(x => x.idx === idx);
             if (!w || gvHasWeapon(idx)) return;
-            if (!gvSpendCoins(w.cost)) { renderWeaponShop(); return; }
-            gvOwnedWeapons.push(idx);
-            gvSaveWeapons();
-            // подсветка в меню оружия
-            const card = document.getElementById('menuWpn' + idx);
-            if (card) { card.style.borderColor = '#3fb950'; card.style.opacity = '1'; }
-            showNotify('🛒 ' + w.name + ' КУПЛЕНО!');
+            const { nick, token } = _gvUserNickAndToken();
+            if (!nick || !token) {
+                showNotify('ВОЙДИТЕ В АККАУНТ В МЕССЕНДЖЕРЕ ДЛЯ ПОКУПОК!');
+                return;
+            }
+            if (gvGetCoins() < w.cost) { renderWeaponShop(); return; }
+            _gvBuyingWeapon = true;
             renderWeaponShop();
-            updateWeaponMenuLocks();
+            try {
+                const res = await fetch(`${PVP_BACKEND}/economy/weapon/buy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nickname: nick, session_token: token, weapon_idx: idx })
+                });
+                const d = await res.json();
+                if (d && d.status === 'ok' && d.economy) {
+                    gvApplyEconomy(d.economy);
+                    gvNotifyParentEconomy(d.economy);
+                    const card = document.getElementById('menuWpn' + idx);
+                    if (card) { card.style.borderColor = '#3fb950'; card.style.opacity = '1'; }
+                    showNotify('🛒 ' + w.name + ' КУПЛЕНО!');
+                } else {
+                    if (d && d.economy) gvApplyEconomy(d.economy);
+                    showNotify((d && d.msg) || 'ОШИБКА ПОКУПКИ!');
+                }
+            } catch (_) {
+                showNotify('НЕТ СВЯЗИ С СЕРВЕРОМ!');
+            } finally {
+                _gvBuyingWeapon = false;
+                renderWeaponShop();
+                updateWeaponMenuLocks();
+            }
         }
         function updateWeaponMenuLocks() {
             for (let i = 0; i < 8; i++) {
@@ -880,9 +955,14 @@
                 else { card.style.opacity = '0.45'; card.style.filter = 'grayscale(.7)'; }
             }
         }
-        // блокировка незакупленного оружия при загрузке
-        document.addEventListener('DOMContentLoaded', updateWeaponMenuLocks);
-        if (document.readyState !== 'loading') updateWeaponMenuLocks();
+        document.addEventListener('DOMContentLoaded', () => {
+            updateWeaponMenuLocks();
+            gvLoadEconomyFromServer();
+        });
+        if (document.readyState !== 'loading') {
+            updateWeaponMenuLocks();
+            setTimeout(gvLoadEconomyFromServer, 0);
+        }
 
         let playerHp = 100; const maxPlayerHp = 100;
         let velocityY = 0; let isGrounded = true; const gravity = -24; const jumpForce = 10;
@@ -933,8 +1013,11 @@
         }
 
         function showNotify(text) {
-            let b = document.getElementById('notifyBox'); b.innerText = text; b.style.display = 'block';
-            setTimeout(() => b.style.display = 'none', 1800);
+            let b = document.getElementById('notifyBox');
+            b.innerText = text;
+            b.style.display = 'block';
+            if (b._notifyTimer) clearTimeout(b._notifyTimer);
+            b._notifyTimer = setTimeout(() => { b.style.display = 'none'; }, 1800);
         }
 
         function changeScreen(id, displayType) { document.getElementById(id).style.display = displayType; }
@@ -1146,6 +1229,19 @@
             navDirty = false;
         }
 
+        function hasGridLOS(r0, c0, r1, c1) {
+            let dr = r1 - r0, dc = c1 - c0;
+            const steps = Math.max(Math.abs(dr), Math.abs(dc)) * 2;
+            if (steps <= 0) return true;
+            for (let s = 1; s < steps; s++) {
+                const t = s / steps;
+                const r = Math.floor(r0 + dr * t + 0.5);
+                const c = Math.floor(c0 + dc * t + 0.5);
+                if (r < 0 || c < 0 || r >= NAV_N || c >= NAV_N || navBlocked[r * NAV_N + c]) return false;
+            }
+            return true;
+        }
+
         function findCorridorPath(startPos, targetPos) {
             if (!navBlocked || navDirty) buildNavGrid();
             const cc = v => Math.max(0, Math.min(NAV_N - 1, v));
@@ -1196,10 +1292,29 @@
 
             if (found < 0) return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
 
+            const path = [];
             let step = found;
-            while (prev[step] !== startIdx && prev[step] !== -1) step = prev[step];
-            const wr = (step / NAV_N) | 0;
-            const wc = step - wr * NAV_N;
+            while (step !== -1 && step !== startIdx) {
+                path.push(step);
+                step = prev[step];
+            }
+            if (!path.length) return new THREE.Vector3(targetPos.x, 1.1, targetPos.z);
+
+            // Сглаживание угла: выбираем самую дальнюю видимую точку пути (до 7 шагов вперёд)
+            path.reverse();
+            let chosen = path[0];
+            const lookMax = Math.min(path.length - 1, 7);
+            for (let k = lookMax; k >= 1; k--) {
+                const node = path[k];
+                const nr = (node / NAV_N) | 0;
+                const nc = node - nr * NAV_N;
+                if (hasGridLOS(sr, sc, nr, nc)) {
+                    chosen = node;
+                    break;
+                }
+            }
+            const wr = (chosen / NAV_N) | 0;
+            const wc = chosen - wr * NAV_N;
             return new THREE.Vector3(wc - NAV_HALF + 0.5, 1.1, wr - NAV_HALF + 0.5);
         }
 
@@ -1388,7 +1503,9 @@
                 doorOpenCooldown: 0, doorHaltTimer: 0,
                 energy: 100, maxEnergy: 100, waitingForEnergy: false,
                 velocity: new THREE.Vector3(), prevPos: botGroup.position.clone(),
-                velocityY: 0, jumpCooldown: 0
+                velocityY: 0, jumpCooldown: 0,
+                lastKnownPos: null, lastSeenTime: -99,
+                walkPhase: Math.random() * 6.28, rpgCooldownUntil: 0, fireRecoil: 0
             });
         }
 
@@ -1406,13 +1523,16 @@
             bot.parts.rightHandMount.add(bot.wpnMesh);
         }
 
-        // ФИКС ВРАЩЕНИЯ: плавный поворот модели к точке (вместо резкого lookAt)
+        // ФИКС ВРАЩЕНИЯ: модель смотрит по локальному -Z (очки и ствол вперед), поэтому -dx, -dz
         function botSmoothLook(bot, tx, tz, rate, delta) {
-            const targetAngle = Math.atan2(tx - bot.mesh.position.x, tz - bot.mesh.position.z);
+            const dx = tx - bot.mesh.position.x;
+            const dz = tz - bot.mesh.position.z;
+            if (dx * dx + dz * dz < 0.0001) return;
+            const targetAngle = Math.atan2(-dx, -dz);
             let diff = targetAngle - bot.mesh.rotation.y;
             while (diff < -Math.PI) diff += Math.PI * 2;
             while (diff > Math.PI) diff -= Math.PI * 2;
-            bot.mesh.rotation.y += diff * rate * delta;
+            bot.mesh.rotation.y += diff * Math.min(1, rate * delta);
         }
 
         // Выстрел бота (хитскан с трассером) — цель бот кладёт в bot._aimTarget
@@ -1440,6 +1560,7 @@
                 if (target.isPlayer && !isSpectator) {
                     playerHp -= dmg; if (playerHp < 0) playerHp = 0;
                     updateHPUI();
+                    flashDamageEffect();
                 } else if (target.botRef) {
                     target.botRef.hp -= dmg; if (target.botRef.hp < 0) target.botRef.hp = 0;
                     target.botRef.bar.style.width = (target.botRef.hp / target.botRef.maxHp * 100) + '%';
@@ -1448,11 +1569,69 @@
             }
         }
 
+        function botFireWeapon(bot, startRay, baseDir, spread, dmgOverride) {
+            const now = clock.getElapsedTime();
+            bot.lastFire = now;
+            bot.ammo--;
+            bot.fireRecoil = 0.32;
+            playShootSound(bot.currentWeapon);
+
+            if (bot.currentWeapon === 6) {
+                const distToAim = bot._aimTarget ? bot.mesh.position.distanceTo(bot._aimTarget.pos) : 20;
+                raycaster.set(startRay, baseDir);
+                const wCheck = raycaster.intersectObjects(wallMeshes, true);
+                const wallTooClose = wCheck.length > 0 && wCheck[0].distance < 6.5;
+                if (distToAim < 7.5 || wallTooClose) {
+                    updateBotWeaponMesh(bot, 1);
+                    bot.lastFire = now;
+                    bot.ammo--;
+                    fireBotBullet(bot, startRay, baseDir, 15);
+                    return;
+                }
+                const rStart = startRay.clone().addScaledVector(baseDir, 1.35);
+                spawnRocket(rStart, baseDir, false);
+                bot.rpgCooldownUntil = now + 9.0;
+                bot.isReloading = true;
+                bot.reloadTimer = 0;
+                bot.reloadDuration = 2.8;
+                return;
+            }
+
+            if (bot.currentWeapon === 2) {
+                const pellets = 5;
+                const pDmg = dmgOverride || 8;
+                const pSpread = spread + 0.09;
+                for (let p = 0; p < pellets; p++) {
+                    const pDir = baseDir.clone();
+                    pDir.x += (Math.random() - 0.5) * pSpread;
+                    pDir.y += (Math.random() - 0.5) * pSpread * 0.5;
+                    pDir.z += (Math.random() - 0.5) * pSpread;
+                    fireBotBullet(bot, startRay, pDir.normalize(), pDmg);
+                }
+            } else {
+                const d = baseDir.clone();
+                if (spread > 0) {
+                    d.x += (Math.random() - 0.5) * spread;
+                    d.y += (Math.random() - 0.5) * spread * 0.4;
+                    d.z += (Math.random() - 0.5) * spread;
+                }
+                const defDmg = (bot.currentWeapon === 5) ? 45 : (bot.currentWeapon === 7 ? 15 : 14);
+                fireBotBullet(bot, startRay, d.normalize(), dmgOverride || defDmg);
+            }
+
+            if (bot.ammo <= 0) {
+                bot.isReloading = true;
+                bot.reloadTimer = 0;
+                bot.reloadDuration = (bot.currentWeapon === 5) ? 4.5 : (bot.diff === 'pro' ? 1.8 : (bot.diff === 'mid' ? 2.4 : 3.2));
+            }
+        }
+
         // ═══ ИИ БОТОВ: 3 УРОВНЯ ═══
-        // PRO: точный prediction, ваншот вблизи при <50% HP, прыжки при стрейфе
+        // PRO: выбор оружия по дистанции, реальный РПГ (spawnRocket), точный хитскан и прыжки
         function updateProBot(bot, delta, target) {
             if (!target) return;
             bot._aimTarget = target;
+            const now = clock.getElapsedTime();
             let dist = bot.mesh.position.distanceTo(target.pos);
             let startRay = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
             let targetCenter = target.pos.clone().add(new THREE.Vector3(0, 0.9, 0));
@@ -1461,53 +1640,60 @@
             botSmoothLook(bot, target.pos.x, target.pos.z, 12, delta);
 
             let desiredWpn = 1;
-            if (bot.hp <= bot.maxHp * 0.5 && dist < 12 && hasLOS) {
-                desiredWpn = dist < 6 ? 2 : 6; // ближе — дробовик, дальше — РПГ (ваншот)
-            } else {
-                if (dist > 25) desiredWpn = 5; // снайперка вдаль
-                else if (dist > 15) desiredWpn = 7; // плазмоган
+            const canRpg = (now >= (bot.rpgCooldownUntil || 0)) && dist > 8.5 && dist < 34 && hasLOS;
+            if (bot.hp <= bot.maxHp * 0.55 && dist < 13 && hasLOS) {
+                desiredWpn = dist < 7 ? 2 : (canRpg ? 6 : 1);
+            } else if (dist > 28) {
+                desiredWpn = 5;
+            } else if (dist > 16) {
+                desiredWpn = 7;
+            } else if (dist < 6.5) {
+                desiredWpn = 2;
             }
             updateBotWeaponMesh(bot, desiredWpn);
 
             if (hasLOS) {
                 let forwardVec = new THREE.Vector3().subVectors(target.pos, bot.mesh.position);
-                forwardVec.y = 0; forwardVec.normalize();
+                forwardVec.y = 0;
+                if (forwardVec.lengthSq() > 0.0001) forwardVec.normalize();
                 let rightVec = new THREE.Vector3(-forwardVec.z, 0, forwardVec.x);
                 bot.strafeTimer += delta;
-                if (bot.strafeTimer > 0.4) {
+                if (bot.strafeTimer > 0.42) {
                     bot.strafeTimer = 0; bot.strafeDir = Math.random() > 0.5 ? 1 : -1;
                 }
                 if (dist < 7 && bot.currentWeapon !== 2) {
-                    moveBotBy(bot.mesh.position, forwardVec.negate(), 8.0 * delta);
+                    moveBotBy(bot.mesh.position, forwardVec.clone().negate(), 8.0 * delta);
                 } else if (dist > 15) {
                     moveBotBy(bot.mesh.position, forwardVec, 8.5 * delta);
                 }
                 moveBotBy(bot.mesh.position, rightVec, bot.strafeDir * 7.5 * delta);
-                // прыжки при стрейфе — хуже попасть в pro
                 if (bot.mesh.position.y <= 1.2 && bot.jumpCooldown <= 0 && Math.random() < delta * 0.7) {
                     bot.velocityY = 8.5;
                     bot.jumpCooldown = 1.2 + Math.random() * 1.5;
                 }
             }
 
-            // Стрельба: точное упреждение, снайперка летит быстрее
-            if (hasLOS && !bot.isReloading && (clock.getElapsedTime() - bot.lastFire > 0.35)) {
-                bot.lastFire = clock.getElapsedTime(); bot.ammo--; playShootSound(bot.currentWeapon);
+            const fireInterval = (bot.currentWeapon === 5) ? 1.5 : (bot.currentWeapon === 2 ? 0.8 : (bot.currentWeapon === 6 ? 1.4 : 0.28));
+            if (hasLOS && !bot.isReloading && (now - bot.lastFire > fireInterval)) {
                 let targetVel = target.isPlayer ? playerVelocity : (target.botRef ? target.botRef.velocity : new THREE.Vector3());
-                let bulletSpeed = (bot.currentWeapon === 5) ? 120.0 : 70.0;
-                let timeToHit = dist / bulletSpeed;
-                let predictedPos = target.pos.clone().add(targetVel.clone().multiplyScalar(timeToHit));
-                predictedPos.y += 0.9;
-                let aimDir = new THREE.Vector3().subVectors(predictedPos, startRay).normalize();
-                fireBotBullet(bot, startRay, aimDir, (bot.currentWeapon === 5) ? 50 : 25);
-                if (bot.ammo <= 0) { bot.isReloading = true; bot.reloadTimer = 0; bot.reloadDuration = 2.0; }
+                let aimPos = targetCenter.clone();
+                if (bot.currentWeapon === 6) {
+                    // Упреждение нужно именно для летящей ракеты РПГ (скорость 28 м/с)
+                    aimPos.addScaledVector(targetVel, Math.min(1.1, dist / 28.0));
+                } else {
+                    // Хитскан-пули: лёгкий микро-лид слежения без промаха мимо цели
+                    aimPos.addScaledVector(targetVel, 0.04);
+                }
+                let aimDir = new THREE.Vector3().subVectors(aimPos, startRay).normalize();
+                botFireWeapon(bot, startRay, aimDir, 0.015, (bot.currentWeapon === 5) ? 45 : (bot.currentWeapon === 2 ? 9 : 18));
             }
         }
 
-        // MID: упреждение хуже, разброс небольшой, ваншот-дробовик при низком HP
+        // MID: среднее упреждение/точность, стрейф, дробовик вблизи
         function updateMidBot(bot, delta, target) {
             if (!target) return;
             bot._aimTarget = target;
+            const now = clock.getElapsedTime();
             let dist = bot.mesh.position.distanceTo(target.pos);
             let startRay = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
             let targetCenter = target.pos.clone().add(new THREE.Vector3(0, 0.9, 0));
@@ -1516,50 +1702,49 @@
             botSmoothLook(bot, target.pos.x, target.pos.z, 8, delta);
 
             if (bot.hp <= bot.maxHp * 0.5 && dist < 10 && hasLOS) {
-                updateBotWeaponMesh(bot, 2); // дробовик для ваншота
+                updateBotWeaponMesh(bot, 2);
             } else {
-                updateBotWeaponMesh(bot, dist > 15 ? 1 : 2);
+                updateBotWeaponMesh(bot, dist > 12 ? 1 : 2);
             }
 
             if (hasLOS) {
-                let rightVec = new THREE.Vector3(-(target.pos.z - bot.mesh.position.z), 0, (target.pos.x - bot.mesh.position.x)).normalize();
+                let toT = new THREE.Vector3(target.pos.x - bot.mesh.position.x, 0, target.pos.z - bot.mesh.position.z);
+                if (toT.lengthSq() > 0.0001) toT.normalize();
+                let rightVec = new THREE.Vector3(-toT.z, 0, toT.x);
                 bot.strafeTimer += delta;
                 if (bot.strafeTimer > 0.8) { bot.strafeTimer = 0; bot.strafeDir = Math.random() > 0.5 ? 1 : -1; }
                 moveBotBy(bot.mesh.position, rightVec, bot.strafeDir * 5.0 * delta);
-                if (dist > 15) moveBotBy(bot.mesh.position, new THREE.Vector3(target.pos.x - bot.mesh.position.x, 0, target.pos.z - bot.mesh.position.z).normalize(), 5.0 * delta);
+                if (dist > 15) moveBotBy(bot.mesh.position, toT, 5.0 * delta);
+                else if (dist < 4.5 && bot.currentWeapon !== 2) moveBotBy(bot.mesh.position, toT.clone().negate(), 4.2 * delta);
             }
 
-            if (hasLOS && !bot.isReloading && (clock.getElapsedTime() - bot.lastFire > 0.6)) {
-                bot.lastFire = clock.getElapsedTime(); bot.ammo--; playShootSound(bot.currentWeapon);
-                let targetVel = target.isPlayer ? playerVelocity : new THREE.Vector3();
-                let predictedPos = target.pos.clone().add(targetVel.clone().multiplyScalar((dist / 70.0) * 0.6));
-                let aimDir = new THREE.Vector3().subVectors(predictedPos.add(new THREE.Vector3(0, 0.9, 0)), startRay).normalize();
-                aimDir.x += (Math.random() - 0.5) * 0.05;
-                aimDir.z += (Math.random() - 0.5) * 0.05;
-                fireBotBullet(bot, startRay, aimDir.normalize(), 15);
-                if (bot.ammo <= 0) { bot.isReloading = true; bot.reloadTimer = 0; bot.reloadDuration = 2.5; }
+            const fireInterval = (bot.currentWeapon === 2) ? 0.9 : 0.48;
+            if (hasLOS && !bot.isReloading && (now - bot.lastFire > fireInterval)) {
+                let aimDir = new THREE.Vector3().subVectors(targetCenter, startRay).normalize();
+                botFireWeapon(bot, startRay, aimDir, 0.055, bot.currentWeapon === 2 ? 7 : 13);
             }
         }
 
-        // NOOB: идёт по прямой, сильный разброс, без упреждения
+        // NOOB: идёт по прямой, заметный разброс, медленный огонь
         function updateNoobBot(bot, delta, target) {
             if (!target) return;
             bot._aimTarget = target;
+            const now = clock.getElapsedTime();
             let dist = bot.mesh.position.distanceTo(target.pos);
+            let startRay = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+            let targetCenter = target.pos.clone().add(new THREE.Vector3(0, 0.9, 0));
+            let hasLOS = hasLineOfSight(startRay, targetCenter);
+
             botSmoothLook(bot, target.pos.x, target.pos.z, 4, delta);
             updateBotWeaponMesh(bot, 1);
             if (dist > 10) {
-                let toWaypoint = new THREE.Vector3(target.pos.x - bot.mesh.position.x, 0, target.pos.z - bot.mesh.position.z).normalize();
+                let toWaypoint = new THREE.Vector3(target.pos.x - bot.mesh.position.x, 0, target.pos.z - bot.mesh.position.z);
+                if (toWaypoint.lengthSq() > 0.0001) toWaypoint.normalize();
                 moveBotBy(bot.mesh.position, toWaypoint, 3.5 * delta);
             }
-            if (!bot.isReloading && (clock.getElapsedTime() - bot.lastFire > 1.2)) {
-                bot.lastFire = clock.getElapsedTime(); bot.ammo--; playShootSound(bot.currentWeapon);
-                let startRay = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
-                let aimDir = new THREE.Vector3().subVectors(target.pos.clone().add(new THREE.Vector3(0, 0.9, 0)), startRay).normalize();
-                aimDir.x += (Math.random() - 0.5) * 0.15;
-                aimDir.z += (Math.random() - 0.5) * 0.15;
-                fireBotBullet(bot, startRay, aimDir.normalize(), 10);
-                if (bot.ammo <= 0) { bot.isReloading = true; bot.reloadTimer = 0; bot.reloadDuration = 3.5; }
+            if (hasLOS && !bot.isReloading && (now - bot.lastFire > 1.15)) {
+                let aimDir = new THREE.Vector3().subVectors(targetCenter, startRay).normalize();
+                botFireWeapon(bot, startRay, aimDir, 0.14, 9);
             }
         }
 
@@ -1680,7 +1865,7 @@
 
                 if (intersects.length > 0) {
                     hitPoint.copy(intersects[0].point); 
-                    createDecal(hitPoint, intersects[0].face.normal, intersects[0].object);
+                    if (intersects[0].face) createDecal(hitPoint, intersects[0].face.normal, intersects[0].object);
                     let dmg = 20;
                     if (currentWeapon === 0) dmg = 22;
                     else if (currentWeapon === 1) dmg = 11;
@@ -1786,6 +1971,7 @@
         }
 
         function createDecal(pos, normal, obj) {
+            if (!normal) return;
             const decalGeo = new THREE.PlaneGeometry(0.15, 0.15);
             const decalMat = new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
             const decal = new THREE.Mesh(decalGeo, decalMat);
@@ -2555,14 +2741,8 @@
                         changeScreen('hud', 'none');
                         const blueWon = blueRoundWins > redRoundWins;
                         const finalWinner = blueWon ? "ПОБЕДА СИНИХ!" : "ПОБЕДА КРАСНЫХ!";
-                        // Статистика PvE в профиль (игрок всегда на стороне синих)
-                        try {
-                            const st = JSON.parse(localStorage.getItem('utopia_pve_stats') || '{}');
-                            if (!st.greenu_match) st.greenu_match = { wins: 0, losses: 0, matches: 0 };
-                            st.greenu_match.matches++;
-                            if (blueWon) st.greenu_match.wins++; else st.greenu_match.losses++;
-                            localStorage.setItem('utopia_pve_stats', JSON.stringify(st));
-                        } catch (_) {}
+                        // Статистика PvE на сервер и в профиль
+                        if (typeof gvRecordPveMatch === 'function') gvRecordPveMatch(blueWon);
                         document.getElementById('matchEndTitle').innerText = finalWinner;
                         document.getElementById('matchEndTitle').style.color = (blueRoundWins > redRoundWins) ? '#44aaff' : '#ff4444';
                         document.getElementById('matchEndSub').innerText = `Итоговый счёт: ${blueRoundWins} - ${redRoundWins}`;
@@ -2585,6 +2765,8 @@
         function lobbyMatchEnd(won) {
             if (pvpCoOp && pvpMatchId && pvpWs && pvpWs.readyState === 1) {
                 try { pvpWs.send(JSON.stringify({ action: 'room_finish', match_id: pvpMatchId, won: won })); } catch (_) {}
+            } else if (pvpSolo && typeof gvRecordPveMatch === 'function') {
+                gvRecordPveMatch(won);
             }
             pvpActive = false;
             setTimeout(() => pvpShowResult(won, won ? 'Все враги зачищены!' : 'Вы пали в бою'), 900);
@@ -2598,6 +2780,15 @@
             document.getElementById('blueWins').innerText = 0;
             document.getElementById('redWins').innerText = 0;
             document.getElementById('roundText').innerText = `РАУНД 1 / 3`;
+            isSpectator = false;
+            isReloading = false;
+            reloadTimer = 0;
+            reloadDuration = 0;
+            if (fpsWeaponMount) fpsWeaponMount.visible = true;
+            const specHud = document.getElementById('spectatorHUD');
+            if (specHud) specHud.style.display = 'none';
+            const relBar = document.getElementById('reloadBarContainer');
+            if (relBar) relBar.style.display = 'none';
             changeScreen('matchEndScreen', 'none');
             changeScreen('hud', 'block');
             resetRoundEntities();
@@ -2789,6 +2980,15 @@
 
             floatingWeaponsInMenu.forEach(w => w.mesh.visible = true);
 
+            isSpectator = false;
+            isReloading = false;
+            reloadTimer = 0;
+            reloadDuration = 0;
+            if (fpsWeaponMount) fpsWeaponMount.visible = true;
+            const specHud = document.getElementById('spectatorHUD');
+            if (specHud) specHud.style.display = 'none';
+            const relBar = document.getElementById('reloadBarContainer');
+            if (relBar) relBar.style.display = 'none';
             changeScreen('matchEndScreen', 'none');
             changeScreen('pauseMenu', 'none'); 
             changeScreen('hud', 'none'); 
@@ -3426,7 +3626,7 @@
                     rocketsInWorld.splice(i, 1);
 
                     if (!isSpectator && playerContainer.position.distanceTo(boomPos) < 7.5) {
-                        playerHp -= 75; if(playerHp<0) playerHp=0; updateHPUI();
+                        playerHp -= 75; if(playerHp<0) playerHp=0; updateHPUI(); flashDamageEffect();
                     }
                     bots.forEach(b => {
                         if (b.hp > 0 && b.mesh.position.distanceTo(boomPos) < 8.0) {
@@ -3547,9 +3747,7 @@
                     if (!nearClosed) bot.waitingForEnergy = false;
                 }
 
-                if (doorHaltReason || bot.waitingForEnergy || bot.doorHaltTimer > 0) {
-                    return; // бот ждёт/стоит у двери, не двигается
-                }
+                const canMove = !(doorHaltReason || bot.waitingForEnergy || bot.doorHaltTimer > 0);
 
                 let potentialTargets = [];
                 if (bot.team === 'enemy') {
@@ -3569,12 +3767,10 @@
 
                     // Штраф за отсутствие линии огня — не гнаться за целью сквозь стены
                     if (!los) score += 25;
-                    // PRO: сильнее штраф за отсутствие LOS, сильнее бонус за видимую цель
                     if (bot.diff === 'pro') {
                         if (cand.hp <= 45) score -= 40;
                         else if (cand.hp <= 65) score -= 20;
-                        if (los) score -= 35; // PRO активно выбирает видимые цели
-                        // Штраф за дальность — PRO предпочитает среднюю дистанцию
+                        if (los) score -= 35;
                         if (d > 30) score += 10;
                     } else if (bot.diff === 'mid') {
                         if (cand.hp <= 40) score -= 16;
@@ -3583,13 +3779,34 @@
                         if (cand.hp <= 30) score -= 10;
                         if (los) score -= 4;
                     }
-                    // Приоритет игрока для врагов (но не в ущерб видимой цели)
                     if (cand.isPlayer && bot.team === 'enemy' && los) score -= 8;
 
                     if (score < bestScore) {
                         bestScore = score;
                         target = cand;
                     }
+                }
+
+                // Даже если бот ждёт открытия двери — он отстреливается по видимой цели
+                if (!canMove) {
+                    if (target) {
+                        const startRay = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+                        const targetCenter = target.pos.clone().add(new THREE.Vector3(0, 0.9, 0));
+                        if (hasLineOfSight(startRay, targetCenter)) {
+                            botSmoothLook(bot, target.pos.x, target.pos.z, bot.diff === 'pro' ? 12 : 8, delta);
+                            const fInt = bot.diff === 'pro' ? 0.35 : (bot.diff === 'mid' ? 0.6 : 1.15);
+                            if (!bot.isReloading && (time - bot.lastFire > fInt)) {
+                                bot._aimTarget = target;
+                                const aimDir = new THREE.Vector3().subVectors(targetCenter, startRay).normalize();
+                                botFireWeapon(bot, startRay, aimDir, bot.diff === 'pro' ? 0.02 : (bot.diff === 'mid' ? 0.06 : 0.14), bot.diff === 'pro' ? 16 : 12);
+                            }
+                        }
+                    }
+                    if (bot.parts) {
+                        bot.parts.leftLegPivot.rotation.x *= 0.85;
+                        bot.parts.rightLegPivot.rotation.x *= 0.85;
+                    }
+                    return;
                 }
 
                 // АНТИ-ЗАСТРЕВАНИЕ: если бот не двигался 1.5с — сбрасываем путь и мягко сдвигаемся
@@ -3599,8 +3816,7 @@
                         bot._stuckTimer = (bot._stuckTimer || 0) + delta;
                         if (bot._stuckTimer > 1.5) {
                             bot._stuckTimer = 0;
-                            bot.pathTarget = null; // сброс пути — пересчитаем
-                            // Мягкий дрейф в сторону (без телепорта сквозь стены)
+                            bot.pathTarget = null;
                             const driftAngle = Math.random() * Math.PI * 2;
                             const driftDir = new THREE.Vector3(Math.cos(driftAngle), 0, Math.sin(driftAngle));
                             moveBotBy(bot.mesh.position, driftDir, 1.2);
@@ -3611,13 +3827,25 @@
                 }
                 bot._lastPos = bot.mesh.position.clone();
 
+                // РАЗБИВАНИЕ ЯЩИКОВ: если путь/угловая хилка перекрыты ящиком, mid/pro простреливают его
+                if (bot.diff !== 'noob' && !bot.isReloading && (bot._stuckTimer || 0) > 0.35 && destructibleCrates.length && (time - bot.lastFire > 0.35)) {
+                    const startRay = bot.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+                    const blockingCrate = destructibleCrates.find(cr => cr.hp > 0 && cr.mesh.position.distanceTo(bot.mesh.position) < 4.5);
+                    if (blockingCrate && hasLineOfSight(startRay, blockingCrate.mesh.position)) {
+                        bot.lastFire = time;
+                        bot.fireRecoil = 0.25;
+                        playShootSound(bot.currentWeapon);
+                        createBotTracer(startRay, blockingCrate.mesh.position.clone(), 0xffcc00);
+                        checkTargetDamage(blockingCrate.mesh, 20);
+                    }
+                }
+
                 let isRetreating = false;
-                // РЕЖИМ ДОБИВАНИЯ: если цель ранена и рядом — добиваем, не отступаем
                 let finishingMode = target && target.hp <= 35 && bot.mesh.position.distanceTo(target.pos) < 18 && bot.hp > 20;
-                // PRO отступает реже — только при критическом HP
                 let retreatHp = bot.diff === 'pro' ? 30 : (bot.diff === 'mid' ? 40 : 45);
-                if (!finishingMode && ((bot.hp < retreatHp && !bot.hasHealed) || (bot.isReloading && bot.hp < 60))) {
+                if (!finishingMode && ((bot.hp < retreatHp) || (bot.isReloading && (bot.diff !== 'noob' ? bot.hp < 80 : bot.hp < 60)))) {
                     let retreatTarget = null;
+                    let usingCornerPillar = false;
                     if (!bot.hasHealed) {
                         if (bot.team === 'ally' && !blueMedkitUsed && bot.mesh.position.distanceTo(blueBasePos) < 45) {
                             retreatTarget = blueBasePos;
@@ -3626,32 +3854,52 @@
                         } else if (bot.team === 'enemy' && !redMedkitUsed) {
                             retreatTarget = redBasePos;
                         }
-                    } else if (bot.isReloading && target) {
-                        retreatTarget = bot.mesh.position.clone().add(new THREE.Vector3().subVectors(bot.mesh.position, target.pos).normalize().multiplyScalar(10));
+                    }
+                    if (!retreatTarget && bot.hp < retreatHp && bot.diff !== 'noob' && cornerHealPillars.length) {
+                        let bestPillar = null, bestPDist = Infinity;
+                        cornerHealPillars.forEach(p => {
+                            const pd = bot.mesh.position.distanceTo(p.pos);
+                            if (pd < bestPDist) { bestPDist = pd; bestPillar = p.pos; }
+                        });
+                        if (bestPillar) {
+                            retreatTarget = bestPillar;
+                            usingCornerPillar = true;
+                        }
+                    }
+                    if (!retreatTarget && bot.isReloading && target) {
+                        const away = new THREE.Vector3().subVectors(bot.mesh.position, target.pos);
+                        away.y = 0;
+                        if (away.lengthSq() > 0.001) away.normalize();
+                        else away.set(1, 0, 0);
+                        retreatTarget = bot.mesh.position.clone().addScaledVector(away, 10);
                     }
 
                     if (retreatTarget) {
                         isRetreating = true;
-                        bot.pathUpdateTimer += delta;
-                        if (!bot.pathTarget || bot.pathUpdateTimer > (bot.diff === 'pro' ? 0.2 : 0.4)) {
-                            bot.pathTarget = findCorridorPath(bot.mesh.position, retreatTarget);
-                            bot.pathUpdateTimer = 0;
-                        }
+                        const distToRetreat = bot.mesh.position.distanceTo(retreatTarget);
+                        if (!(usingCornerPillar && distToRetreat < 2.2)) {
+                            bot.pathUpdateTimer += delta;
+                            if (!bot.pathTarget || bot.pathUpdateTimer > (bot.diff === 'pro' ? 0.2 : 0.4)) {
+                                bot.pathTarget = findCorridorPath(bot.mesh.position, retreatTarget);
+                                bot.pathUpdateTimer = 0;
+                            }
 
-                        let toWaypoint = new THREE.Vector3().subVectors(bot.pathTarget, bot.mesh.position);
-                        toWaypoint.y = 0; toWaypoint.normalize();
+                            let toWaypoint = new THREE.Vector3().subVectors(bot.pathTarget, bot.mesh.position);
+                            toWaypoint.y = 0;
+                            if (toWaypoint.lengthSq() > 0.0001) toWaypoint.normalize();
 
-                        let strafeVec = new THREE.Vector3(-toWaypoint.z, 0, toWaypoint.x);
-                        bot.strafeTimer += delta;
-                        if (bot.strafeTimer > 0.7) {
-                            bot.strafeTimer = 0;
-                            bot.strafeDir = Math.random() > 0.5 ? 1 : -1;
-                        }
+                            let strafeVec = new THREE.Vector3(-toWaypoint.z, 0, toWaypoint.x);
+                            bot.strafeTimer += delta;
+                            if (bot.strafeTimer > 0.7) {
+                                bot.strafeTimer = 0;
+                                bot.strafeDir = Math.random() > 0.5 ? 1 : -1;
+                            }
 
-                        let runSpeed = bot.diff === 'pro' ? 9.2 : (bot.diff === 'mid' ? 7.8 : 5.8);
-                        moveBotBy(bot.mesh.position, toWaypoint, runSpeed * delta);
-                        if (bot.diff !== 'noob') {
-                            moveBotBy(bot.mesh.position, strafeVec, bot.strafeDir * 2.8 * delta);
+                            let runSpeed = bot.diff === 'pro' ? 9.2 : (bot.diff === 'mid' ? 7.8 : 5.8);
+                            moveBotBy(bot.mesh.position, toWaypoint, runSpeed * delta);
+                            if (bot.diff !== 'noob') {
+                                moveBotBy(bot.mesh.position, strafeVec, bot.strafeDir * 2.8 * delta);
+                            }
                         }
 
                         if (target && bot.diff === 'pro' && !bot.isReloading) {
@@ -3659,35 +3907,40 @@
                             let endRay = target.pos.clone().add(new THREE.Vector3(0, 0.9, 0));
                             if (hasLineOfSight(startRay, endRay)) {
                                 botSmoothLook(bot, target.pos.x, target.pos.z, 10, delta);
-                                if (time - bot.lastFire > 0.7) {
-                                    bot.lastFire = time;
-                                    bot.ammo--;
-                                    playShootSound(bot.currentWeapon);
-                                    createBotTracer(startRay, target.pos.clone().add(new THREE.Vector3(0, 1.0, 0)));
-                                    if (target.isPlayer && !isSpectator) { playerHp -= 12; if(playerHp<0) playerHp=0; updateHPUI(); }
-                                    if (bot.ammo <= 0) { bot.isReloading = true; bot.reloadTimer = 0; bot.reloadDuration = 2.2; }
+                                if (time - bot.lastFire > 0.55) {
+                                    bot._aimTarget = target;
+                                    let aimDir = new THREE.Vector3().subVectors(endRay, startRay).normalize();
+                                    botFireWeapon(bot, startRay, aimDir, 0.03, 15);
                                 }
-                            } else { botSmoothLook(bot, bot.pathTarget.x, bot.pathTarget.z, 8, delta); }
-                        } else { botSmoothLook(bot, bot.pathTarget.x, bot.pathTarget.z, 8, delta); }
+                            } else if (bot.pathTarget) {
+                                botSmoothLook(bot, bot.pathTarget.x, bot.pathTarget.z, 8, delta);
+                            }
+                        } else if (bot.pathTarget) {
+                            botSmoothLook(bot, bot.pathTarget.x, bot.pathTarget.z, 8, delta);
+                        }
 
-                        if (bot.mesh.position.distanceTo(retreatTarget) < 3.2 && !bot.hasHealed) {
-                            bot.hasHealed = true;
-                            if (retreatTarget === centerBunkerPos) {
+                        if (!usingCornerPillar && distToRetreat < 3.2 && !bot.hasHealed) {
+                            if (retreatTarget === centerBunkerPos && !centerMedkitUsed) {
+                                bot.hasHealed = true;
                                 centerMedkitUsed = true;
                                 bot.hp = Math.min(bot.maxHp, bot.hp + 75);
                                 if (centerMedkitMesh) centerMedkitMesh.visible = false;
-                            } else if (retreatTarget === blueBasePos) {
+                                playMedkitSound();
+                            } else if (retreatTarget === blueBasePos && !blueMedkitUsed) {
+                                bot.hasHealed = true;
                                 blueMedkitUsed = true;
                                 bot.hp = Math.min(bot.maxHp, bot.hp + 50);
                                 if (blueMedkitMesh) blueMedkitMesh.visible = false;
-                            } else {
+                                playMedkitSound();
+                            } else if (retreatTarget === redBasePos && !redMedkitUsed) {
+                                bot.hasHealed = true;
                                 redMedkitUsed = true;
                                 bot.hp = Math.min(bot.maxHp, bot.hp + 50);
                                 if (redMedkitMesh) redMedkitMesh.visible = false;
+                                playMedkitSound();
                             }
                             bot.bar.style.width = (bot.hp/bot.maxHp*100) + '%';
                             bot.text.innerText = Math.round(bot.hp);
-                            playMedkitSound();
                         }
                     }
                 }
@@ -3698,26 +3951,63 @@
                     let hasLOS = hasLineOfSight(startRay, endRay);
 
                     if (!hasLOS) {
-                        // ПОГОНЯ ПО КОРИДОРАМ до линии огня
                         bot.pathUpdateTimer += delta;
                         if (!bot.pathTarget || bot.pathUpdateTimer > (bot.diff === 'pro' ? 0.15 : (bot.diff === 'mid' ? 0.3 : 0.5))) {
                             bot.pathTarget = findCorridorPath(bot.mesh.position, target.pos);
                             bot.pathUpdateTimer = 0;
                         }
                         let toWaypoint = new THREE.Vector3().subVectors(bot.pathTarget, bot.mesh.position);
-                        toWaypoint.y = 0; toWaypoint.normalize();
+                        toWaypoint.y = 0;
+                        if (toWaypoint.lengthSq() > 0.0001) toWaypoint.normalize();
                         let chaseSpd = bot.diff === 'pro' ? 8.5 : (bot.diff === 'mid' ? 6.0 : 4.5);
                         moveBotBy(bot.mesh.position, toWaypoint, chaseSpd * delta);
                         botSmoothLook(bot, bot.pathTarget.x, bot.pathTarget.z, 8, delta);
                     } else {
+                        bot.lastKnownPos = target.pos.clone();
+                        bot.lastSeenTime = time;
                         if (bot.diff === 'pro') updateProBot(bot, delta, target);
                         else if (bot.diff === 'mid') updateMidBot(bot, delta, target);
                         else updateNoobBot(bot, delta, target);
                     }
                 }
 
+                // Расталкивание ботов, чтобы не стояли друг в друге
+                for (let bi = 0; bi < bots.length; bi++) {
+                    const ob = bots[bi];
+                    if (ob === bot || ob.hp <= 0) continue;
+                    const dx = bot.mesh.position.x - ob.mesh.position.x;
+                    const dz = bot.mesh.position.z - ob.mesh.position.z;
+                    const d2 = dx * dx + dz * dz;
+                    if (d2 > 0.0001 && d2 < 2.1) {
+                        const d = Math.sqrt(d2);
+                        const push = (1.45 - d) * 0.5;
+                        bot.mesh.position.x += (dx / d) * push;
+                        bot.mesh.position.z += (dz / d) * push;
+                    }
+                }
+
                 resolveEntityCollisions(bot.mesh.position, 0.6);
                 if (bot.mesh.position.y < 1.1) bot.mesh.position.y = 1.1;
+
+                // Анимация конечностей бота при ходьбе, прыжке и отдаче
+                if (bot.parts) {
+                    const hSpd = Math.hypot(bot.velocity.x, bot.velocity.z);
+                    if (bot.mesh.position.y > 1.28) {
+                        bot.parts.leftLegPivot.rotation.x = 0.32;
+                        bot.parts.rightLegPivot.rotation.x = -0.25;
+                    } else if (hSpd > 0.35) {
+                        bot.walkPhase = (bot.walkPhase || 0) + delta * Math.min(14, hSpd * 1.45);
+                        const swing = Math.sin(bot.walkPhase) * 0.52;
+                        bot.parts.leftLegPivot.rotation.x = swing;
+                        bot.parts.rightLegPivot.rotation.x = -swing;
+                    } else {
+                        bot.parts.leftLegPivot.rotation.x *= 0.8;
+                        bot.parts.rightLegPivot.rotation.x *= 0.8;
+                    }
+                    bot.fireRecoil = Math.max(0, (bot.fireRecoil || 0) - delta * 2.4);
+                    bot.parts.rightArmPivot.rotation.x = bot.fireRecoil;
+                    bot.parts.leftArmPivot.rotation.x = hSpd > 0.35 ? -Math.sin(bot.walkPhase || 0) * 0.25 : 0;
+                }
             });
 
             for (let i = bots.length - 1; i >= 0; i--) {
@@ -3864,6 +4154,7 @@
 
         function pvpHandle(d) {
             const status = document.getElementById('pvpStatus');
+            if (d.action === 'economy_sync' && d.economy) { gvApplyEconomy(d.economy); return; }
             if (d.action === 'lobby_state' || d.action === 'my_stats') return;
             if (d.action === 'queued') { status.textContent = `⏳ Ищем соперника... (${d.title || 'Green Valley'})`; return; }
             if (d.action === 'game_found') {

@@ -2901,14 +2901,37 @@ function pvpHandleMsg(d) {
   }
 }
 
-// ── PvE: конец матча с ботом (до 5 фрагов) + статистика профиля ──
-function pveRecordResult(gameKey, won) {
+// ── PvE: конец матча с ботом (до 5 фрагов) + статистика профиля на сервере ──
+async function pveRecordResult(gameKey, won) {
+    let nick = '', token = '';
     try {
-        const st = JSON.parse(localStorage.getItem('utopia_pve_stats') || '{}');
+        const saved = JSON.parse(localStorage.getItem('utopia_saved_user') || '{}');
+        nick = (saved.nickname || localStorage.getItem('utopia_nickname') || '').trim();
+        token = (localStorage.getItem('utopia_session_token') || '').trim();
+        const low = nick.toLowerCase();
+        const k = low ? ('utopia_pve_stats_' + low) : 'utopia_pve_stats';
+        const st = JSON.parse(localStorage.getItem(k) || localStorage.getItem('utopia_pve_stats') || '{}');
         if (!st[gameKey]) st[gameKey] = { wins: 0, losses: 0, matches: 0 };
         st[gameKey].matches++;
         if (won) st[gameKey].wins++; else st[gameKey].losses++;
         localStorage.setItem('utopia_pve_stats', JSON.stringify(st));
+        if (low) localStorage.setItem(k, JSON.stringify(st));
+    } catch (_) {}
+    if (!nick || !token || typeof PVP_BACKEND === 'undefined') return;
+    try {
+        const res = await fetch(`${PVP_BACKEND}/economy/pve/record`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: nick, session_token: token, game_key: gameKey, won: !!won })
+        });
+        const d = await res.json();
+        if (d && d.status === 'ok' && d.economy) {
+            try {
+                if (window.top && window.top !== window.self) {
+                    window.top.postMessage({ type: 'utopia_economy_sync', economy: d.economy }, '*');
+                }
+            } catch (_) {}
+        }
     } catch (_) {}
 }
 
