@@ -129,9 +129,9 @@
     .avatar-box img { width: 100%; height: 100%; object-fit: cover; }
 
     .chat-controls { padding: 10px 14px; display: flex; gap: 8px; border-bottom: var(--glass-border); }
-    .chat-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .chat-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 7px; }
     .chat-item {
-      padding: 12px 14px; border-radius: var(--radius-md); cursor: pointer; display: flex;
+      padding: 11px 13px; border-radius: var(--radius-md); cursor: pointer; display: flex;
       justify-content: space-between; align-items: center; border: 1px solid transparent; background: rgba(255, 255, 255, 0.02); transition: all 0.2s;
     }
     .chat-item:hover { background: var(--bg-card-hover); border-color: rgba(0, 240, 255, 0.3); transform: translateX(2px); }
@@ -148,12 +148,30 @@
     }
 
     main { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); height: 100%; min-width: 0; position: relative; }
-    .chat-header { min-height: 64px; height: auto; padding: 8px 18px; background: var(--bg-panel); backdrop-filter: blur(18px); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-bottom: var(--glass-border); }
+    .chat-header { min-height: 62px; height: auto; padding: 10px 20px; background: var(--bg-panel); backdrop-filter: blur(18px); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: var(--glass-border); position: relative; z-index: 15; }
+    .chat-more-wrap { position: relative; display: inline-flex; }
+    #chat-more-menu {
+      display: none; position: absolute; right: 0; top: calc(100% + 8px); min-width: 196px;
+      background: rgba(10, 15, 28, 0.98); backdrop-filter: blur(18px);
+      border: 1px solid rgba(0, 240, 255, 0.28); border-radius: 14px; padding: 6px;
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.72); z-index: 500;
+      flex-direction: column; gap: 3px;
+    }
+    #chat-more-menu.open { display: flex; animation: msgMenuIn .14s ease; }
+    .chat-more-item {
+      width: 100%; padding: 9px 12px !important; border-radius: 10px !important; border: none !important;
+      background: transparent !important; color: var(--text) !important; font-size: 13px !important;
+      font-weight: 600 !important; text-align: left !important; cursor: pointer;
+      display: flex; align-items: center; gap: 8px; transition: background .14s;
+    }
+    .chat-more-item:hover { background: rgba(0, 240, 255, 0.14) !important; }
+    .chat-more-item.danger { color: var(--danger) !important; }
+    .chat-more-item.danger:hover { background: rgba(255, 51, 102, 0.16) !important; }
 
     /* Таймеры очистки сообщений в шапке */
     #cleanup-timer-badge {
-      display: flex; background: rgba(0, 240, 255, 0.08); border-bottom: 1px solid rgba(0, 240, 255, 0.2);
-      padding: 6px 18px; font-size: 12px; font-weight: 600; color: var(--neon-cyan); align-items: center; gap: 8px;
+      display: flex; background: rgba(255, 255, 255, 0.015); border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 4px 20px; font-size: 11px; font-weight: 600; color: var(--text-dim); align-items: center; gap: 8px;
     }
 
     #net-warning-banner {
@@ -998,7 +1016,7 @@
 </div>
 
 <!-- Модалка текстового ввода (замена нативного prompt) -->
-<div class="modal-overlay" id="prompt-modal" style="z-index: 19500;">
+<div class="modal-overlay" id="prompt-modal" style="z-index: 21000;">
   <div class="modal-card" style="max-width: 370px;">
     <h3 class="modal-title" id="prompt-title">Ввод</h3>
     <p id="prompt-text" style="font-size: 13px; color: var(--text-dim);"></p>
@@ -1011,7 +1029,7 @@
 </div>
 
 <!-- Модалка подтверждения -->
-<div class="modal-overlay" id="confirm-modal" style="z-index: 12000;">
+<div class="modal-overlay" id="confirm-modal" style="z-index: 21500;">
   <div class="modal-card" style="max-width: 350px; text-align: center;">
     <h3 class="modal-title" id="confirm-title" style="font-size: 1.15rem;">Подтверждение</h3>
     <p id="confirm-text" style="font-size: 13px; color: var(--text-dim);"></p>
@@ -1116,16 +1134,21 @@
           <div id="chat-subtitle" style="font-size: 10px; color: var(--neon-cyan); font-weight: 600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">🔒 E2EE ШИФРОВАНИЕ</div>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <button class="icon-btn" id="chat-search-btn" title="Поиск сообщений в чате">🔍</button>
-        <button class="icon-btn" id="members-drawer-toggle" title="Панель участников Discord" style="font-size:16px;">👤</button>
-        <button class="icon-btn" id="members-btn" title="Участники и роли группы" style="display:none;">👥</button>
-        <button class="pill-btn" id="voice-room-join-btn" style="padding: 5px 10px; font-size: 11px; display:none; border-color:var(--success); color:var(--success);">🔊 Войти в голос</button>
-        <button class="pill-btn" id="chat-rename-btn" style="padding: 5px 10px; font-size: 11px;">✏️ Название</button>
-        <button class="pill-btn" id="chat-invite-btn" style="padding: 5px 10px; font-size: 11px;">+ Пригласить</button>
+        <button class="icon-btn" id="members-drawer-toggle" title="Панель участников" style="font-size:16px;">👤</button>
+        <button class="pill-btn" id="voice-room-join-btn" style="padding: 6px 12px; font-size: 12px; display:none; border-color:var(--success); color:var(--success);" title="Подключиться к голосовому каналу">🔊 Войти в голос</button>
+        <button class="pill-btn" id="chat-invite-btn" style="padding: 6px 12px; font-size: 12px;" title="Пригласить друга в этот чат">+ Пригласить</button>
         <button class="icon-btn" id="call-header-btn" style="color: var(--success);" title="Позвонить">📞</button>
-        <button class="pill-btn" id="archive-chat-btn" style="padding: 5px 10px; font-size: 11px; display:none;">📦 В архив</button>
-        <button class="icon-btn" id="delete-chat-btn" style="color: var(--danger); display: none;" title="Удалить чат">🗑️</button>
+        <div class="chat-more-wrap">
+          <button class="icon-btn" id="chat-more-btn" title="Ещё: название, роли, архив, удаление" onclick="event.stopPropagation(); document.getElementById('chat-more-menu').classList.toggle('open');">⋯</button>
+          <div id="chat-more-menu" onclick="this.classList.remove('open')">
+            <button class="chat-more-item" id="chat-rename-btn" title="Изменить название чата">✏️ Изменить название</button>
+            <button class="chat-more-item" id="members-btn" title="Участники и роли группы" style="display:none;">👥 Участники и роли</button>
+            <button class="chat-more-item" id="archive-chat-btn" title="Скрыть чат в архив" style="display:none;">📦 В архив</button>
+            <button class="chat-more-item danger" id="delete-chat-btn" title="Удалить чат навсегда" style="display:none;">🗑️ Удалить чат</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -7172,6 +7195,13 @@ function syncCallModeUI() {
     qDock.style.display = (isGroup && callState === 'active') ? 'flex' : 'none';
   }
 }
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('chat-more-menu');
+  if (menu && menu.classList.contains('open') && !e.target.closest('.chat-more-wrap')) {
+    menu.classList.remove('open');
+  }
+});
 
 function cleanupAllCallFeatures() {
   const ov = document.getElementById('call-overlay');
