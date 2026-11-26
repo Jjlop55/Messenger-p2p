@@ -910,6 +910,30 @@
       #call-header-btn { order: 99; }
       .call-tile { min-height: 150px; }
     }
+
+    /* ── Встроенный музыкальный мини-плеер ── */
+    #music-mini-bar {
+      display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+      padding: 7px 16px; background: rgba(10, 16, 30, 0.94); border-bottom: var(--glass-border);
+      backdrop-filter: blur(14px); z-index: 12;
+    }
+    #music-mini-bar.active { display: flex; }
+    .music-mini-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 160px; }
+    .music-mini-title { font-size: 12px; font-weight: 700; color: var(--neon-cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .music-mini-ctrls { display: flex; align-items: center; gap: 5px; flex: none; }
+    .music-ctrl-btn {
+      padding: 4px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06); color: #fff; font-size: 12px; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+    }
+    .music-ctrl-btn:hover { background: rgba(0,240,255,0.2); border-color: var(--neon-cyan); }
+    .music-seek-wrap { display: flex; align-items: center; gap: 6px; flex: 1 1 140px; max-width: 240px; font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    #music-seek { flex: 1; accent-color: var(--neon-cyan); cursor: pointer; height: 4px; }
+    .music-track-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px;
+      border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    }
+    .music-track-row.playing { border-color: var(--neon-cyan); background: rgba(0,240,255,0.1); }
   </style>
 </head>
 <body>
@@ -1120,6 +1144,54 @@
   </div>
 </div>
 
+<!-- Модалка музыки (Геймеры / Фембои / Предложка / Админ) -->
+<div class="modal-overlay" id="music-modal">
+  <div class="modal-card" style="max-width: 560px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 class="modal-title" style="margin:0;">🎵 Музыка проекта</h3>
+      <button class="icon-btn" onclick="closeModal('music-modal')">✕</button>
+    </div>
+    <div class="discord-tabs" id="music-tabs">
+      <button class="discord-tab-btn active" data-mtab="gamer" onclick="switchMusicTab('gamer')">🎮 Для геймеров</button>
+      <button class="discord-tab-btn" data-mtab="femboy" onclick="switchMusicTab('femboy')">🎀 Для фембоев</button>
+      <button class="discord-tab-btn" data-mtab="suggest" onclick="switchMusicTab('suggest')">📩 Предложить</button>
+      <button class="discord-tab-btn" id="music-admin-tab-btn" data-mtab="admin" style="display:none;" onclick="switchMusicTab('admin')">⚡ Админ</button>
+    </div>
+    <div id="music-fandom-banner" style="font-size:12px; color:var(--text-dim); padding:8px 11px; border-radius:11px; background:rgba(255,255,255,0.04); border:var(--glass-border);"></div>
+    <div id="music-pane-list" style="display:flex; flex-direction:column; gap:7px; max-height:320px; overflow-y:auto;"></div>
+
+    <div id="music-pane-suggest" style="display:none; flex-direction:column; gap:10px;">
+      <div style="font-size:12px; color:var(--text-dim);">Предложить свой трек можно <b>1 раз в неделю</b>. Укажите ссылку, выберите раздел и коротко напишите (до 300 символов).</div>
+      <select id="music-req-fandom" class="modal-input">
+        <option value="gamer">🎮 В плейлист для геймеров</option>
+        <option value="femboy">🎀 В плейлист для фембоев</option>
+      </select>
+      <input type="text" id="music-req-url" class="modal-input" placeholder="Ссылка на трек (https://...)">
+      <div>
+        <textarea id="music-req-note" class="modal-input" maxlength="300" style="height:84px; resize:none;" placeholder="Здравствуйте, я хочу чтобы данный трек был добавлен в этот раздел..." oninput="document.getElementById('music-req-cnt').textContent = this.value.length + '/300'"></textarea>
+        <div id="music-req-cnt" style="font-size:11px; color:var(--neon-cyan); text-align:right; margin-top:3px;">0/300</div>
+      </div>
+      <button class="pill-btn" onclick="submitMusicRequest()" style="background:var(--neon-cyan); color:#000; font-weight:700;">📩 Отправить заявку админу</button>
+    </div>
+
+    <div id="music-pane-admin" style="display:none; flex-direction:column; gap:10px; max-height:360px; overflow-y:auto;">
+      <div style="font-size:12px; font-weight:700; color:var(--neon-cyan);">➕ Добавить трек в плейлист:</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+        <select id="music-adm-fandom" class="modal-input" style="padding:8px;">
+          <option value="gamer">🎮 Для геймеров</option>
+          <option value="femboy">🎀 Для фембоев</option>
+        </select>
+        <input type="text" id="music-adm-artist" class="modal-input" style="padding:8px;" placeholder="Исполнитель">
+      </div>
+      <input type="text" id="music-adm-title" class="modal-input" style="padding:8px;" placeholder="Название трека">
+      <input type="text" id="music-adm-url" class="modal-input" style="padding:8px;" placeholder="Прямая ссылка на аудио (mp3/ogg/wav) или URL">
+      <button class="pill-btn" onclick="adminAddMusicTrack()" style="background:var(--success); color:#000; font-weight:700;">➕ Добавить трек</button>
+      <div style="font-size:12px; font-weight:700; color:var(--neon-cyan); margin-top:6px;">📥 Заявки пользователей:</div>
+      <div id="music-adm-requests" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Вход -->
 <div id="auth-screen" style="position: fixed; inset: 0; background: var(--bg-main); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
   <div class="modal-card" style="max-width: 370px;">
@@ -1151,6 +1223,7 @@
     <button class="rail-btn rail-action-btn" id="rail-invites-btn" title="Приглашения в чаты и каналы" onclick="document.getElementById('open-invites-btn').click()">📩<span class="rail-dot" id="rail-invites-badge">0</span></button>
     <button class="rail-btn rail-action-btn" title="Игровой зал" style="color:#b392f0;" onclick="document.getElementById('open-games-btn').click()">🎮</button>
     <button class="rail-btn rail-action-btn" title="Кликер" style="color:#ffd166;" onclick="document.getElementById('open-clicker-btn').click()">👆</button>
+    <button class="rail-btn rail-action-btn" title="Музыка: для геймеров и фембоев" style="color:#ff77c8;" onclick="openMusicModal()">🎵</button>
     <button class="rail-btn rail-action-btn" title="Мониторинг сервера" onclick="document.getElementById('open-monitoring-btn').click()">📊</button>
     <button class="rail-btn rail-action-btn" title="Поддержка" onclick="document.getElementById('open-support-btn').click()">🎧</button>
     <button class="rail-btn rail-action-btn" title="Устройства и сессии" onclick="document.getElementById('open-sessions-btn').click()">📱</button>
@@ -1169,6 +1242,7 @@
         <button class="icon-btn" id="open-invites-btn" title="Приглашения в чаты">📩<span class="badge-count" id="invites-badge" style="display:none;">0</span></button>
         <button class="icon-btn" id="open-games-btn" title="Игровой зал: поиск соперника и игры" style="color:#b392f0; text-shadow:0 0 8px rgba(179,146,240,.8);">🎮</button>
         <button class="icon-btn" id="open-clicker-btn" title="Кликер: прокачка и автоматизация" style="color:#ffd166; text-shadow:0 0 8px rgba(255,209,102,.8);">👆</button>
+        <button class="icon-btn" id="open-music-btn" title="Музыка: плейлисты для геймеров и фембоев" style="color:#ff77c8;" onclick="openMusicModal()">🎵</button>
         <button class="icon-btn" id="open-monitoring-btn" title="Мониторинг сервера">📊</button>
         <button class="icon-btn" id="open-support-btn" title="Поддержка">🎧</button>
         <button class="icon-btn" id="open-sessions-btn" title="Устройства и сессии">📱</button>
@@ -1241,6 +1315,25 @@
     </div>
 
     <!-- Закреплённое сообщение (Telegram / Discord Pin) -->
+    <div id="music-mini-bar">
+      <div class="music-mini-info">
+        <span id="music-mini-badge">🎵</span>
+        <span class="music-mini-title" id="music-mini-title">Трек не выбран</span>
+      </div>
+      <div class="music-seek-wrap">
+        <span id="music-time-cur">0:00</span>
+        <input type="range" id="music-seek" min="0" max="100" value="0">
+        <span id="music-time-dur">0:00</span>
+      </div>
+      <div class="music-mini-ctrls">
+        <button class="music-ctrl-btn" onclick="musicPrev()" title="Предыдущий трек">⏮</button>
+        <button class="music-ctrl-btn" id="music-play-btn" onclick="musicTogglePlay()" title="Пауза / Продолжить">▶</button>
+        <button class="music-ctrl-btn" onclick="musicNext()" title="Пропустить / Следующий трек">⏭</button>
+        <button class="music-ctrl-btn" id="music-speed-btn" onclick="musicCycleSpeed()" title="Скорость (0.5x, 1x, 1.5x, 2x)">1× </button>
+        <button class="music-ctrl-btn" onclick="musicStopClose()" title="Закрыть плеер">✕</button>
+      </div>
+      <audio id="music-audio-el" preload="metadata" style="display:none;"></audio>
+    </div>
     <div id="pinned-bar">
       <span style="color:var(--neon-cyan); flex:none;">📌</span>
       <div id="pinned-bar-text"></div>
@@ -1438,6 +1531,7 @@
           <div id="up-handle" style="font-size:12px; color:var(--neon-cyan);">@—</div>
           <div id="up-title" style="display:none; margin-top:6px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:8px; background:rgba(88,166,255,.16); color:#58a6ff;"></div>
           <div id="up-status" style="font-size:11px; color:var(--text-dim); margin-top:6px;">—</div>
+          <div id="up-fav-track" style="display:none; margin-top:6px; font-size:11.5px; color:#ff77c8; font-weight:600; cursor:pointer;" title="Любимый трек профиля"></div>
         </div>
         <div id="up-badges" style="display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-bottom:8px;"></div>
         <div id="up-bio" style="font-size:13px; color:var(--text-sec); background:var(--bg-sec); border-radius:10px; padding:8px 10px; margin-bottom:10px; min-height:18px;">—</div>
@@ -9417,6 +9511,11 @@ async function openUserProfile(nick, memberData) {
   if (md.title) { tEl.style.display = 'inline-block'; tEl.textContent = md.title; }
 
   document.getElementById('up-bio').textContent = d.bio || 'Без описания';
+  const ftEl = document.getElementById('up-fav-track');
+  if (ftEl) {
+    if (d.fav_track) { ftEl.textContent = '🎵 Любимый трек: ' + d.fav_track; ftEl.style.display = 'block'; }
+    else { ftEl.style.display = 'none'; }
+  }
   document.getElementById('up-status').textContent =
     (d.is_online ? '🟢 в сети' : `⚪ не в сети · был(а) ${d.last_login || 'давно'}`) +
     (d.common_chats ? ` · общих чатов: ${d.common_chats}` : '');
@@ -11037,6 +11136,295 @@ document.getElementById('clicker-close-btn').onclick = () => {
 setInterval(() => {
   if (currentUser && currentSessionToken && _clickerDirty) saveClickerToServer(false);
 }, 20000);
+</script>
+<script>
+let musicTracksCache = [];
+let musicCurrentTab = 'gamer';
+let musicQueue = [];
+let musicIdx = -1;
+const MUSIC_SPEEDS = [0.5, 1, 1.5, 2];
+let musicSpeedIdx = 1;
+
+function fmtMusicTime(sec) {
+  if (!isFinite(sec) || sec < 0) return '0:00';
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+async function openMusicModal() {
+  openModal('music-modal');
+  const admBtn = document.getElementById('music-admin-tab-btn');
+  if (admBtn) {
+    const isAdm = (typeof isAdminUser !== 'undefined' && isAdminUser) || (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+    admBtn.style.display = isAdm ? 'inline-block' : 'none';
+  }
+  await loadMusicTracks();
+  switchMusicTab(musicCurrentTab);
+}
+
+async function loadMusicTracks() {
+  try {
+    const r = await fetch(`${BACKEND_URL}/music/tracks`);
+    const d = await r.json();
+    if (d && d.status === 'ok') musicTracksCache = d.tracks || [];
+  } catch (_) {}
+}
+
+function switchMusicTab(tab) {
+  musicCurrentTab = tab;
+  document.querySelectorAll('#music-tabs .discord-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mtab === tab);
+  });
+  const banner = document.getElementById('music-fandom-banner');
+  const listEl = document.getElementById('music-pane-list');
+  const sugEl = document.getElementById('music-pane-suggest');
+  const admEl = document.getElementById('music-pane-admin');
+  listEl.style.display = (tab === 'gamer' || tab === 'femboy') ? 'flex' : 'none';
+  sugEl.style.display = (tab === 'suggest') ? 'flex' : 'none';
+  admEl.style.display = (tab === 'admin') ? 'flex' : 'none';
+
+  if (tab === 'gamer') {
+    banner.style.display = 'block';
+    banner.innerHTML = '🎮 <b>Плейлист для геймеров:</b> Админ этого проекта советует вам послушать эти треки, пока вы играете в какую-то игру!';
+    renderMusicList('gamer');
+  } else if (tab === 'femboy') {
+    banner.style.display = 'block';
+    banner.innerHTML = '🎀 <b>Плейлист для фембоев:</b> Идеально подходит, когда вы переписываетесь со своим семпаем~ :3';
+    renderMusicList('femboy');
+  } else {
+    banner.style.display = 'none';
+    if (tab === 'admin') loadMusicAdminRequests();
+  }
+}
+
+function renderMusicList(fandom) {
+  const listEl = document.getElementById('music-pane-list');
+  if (!listEl) return;
+  const items = musicTracksCache.filter(t => t.fandom === fandom);
+  if (!items.length) {
+    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-dim); font-size:12.5px;">В этом разделе пока нет треков — админ скоро добавит плейлист (или предложи свой во вкладке «Предложить»)!</div>';
+    return;
+  }
+  const isAdm = (typeof isAdminUser !== 'undefined' && isAdminUser) || (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+  listEl.innerHTML = '';
+  items.forEach((tr, idx) => {
+    const row = document.createElement('div');
+    const cur = musicQueue[musicIdx];
+    row.className = 'music-track-row' + (cur && cur.id === tr.id ? ' playing' : '');
+    const label = (tr.artist ? tr.artist + ' — ' : '') + tr.title;
+    row.innerHTML = `
+      <div style="min-width:0; flex:1;">
+        <div style="font-size:13px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(tr.title)}</div>
+        <div style="font-size:11px; color:var(--text-dim);">${escapeHtml(tr.artist || 'Рекомендация админа')}</div>
+      </div>
+      <div style="display:flex; gap:5px; flex:none;">
+        <button class="music-ctrl-btn" title="Включить трек">▶</button>
+        <button class="music-ctrl-btn" title="Закрепить в профиле как любимый трек">⭐</button>
+        ${isAdm ? '<button class="music-ctrl-btn" style="color:var(--danger);" title="Удалить трек">🗑</button>' : ''}
+      </div>`;
+    const btns = row.querySelectorAll('button');
+    btns[0].onclick = () => playMusicFromList(items, idx);
+    btns[1].onclick = () => setFavProfileTrack(label);
+    if (isAdm && btns[2]) btns[2].onclick = () => adminDeleteMusicTrack(tr.id);
+    listEl.appendChild(row);
+  });
+}
+
+function playMusicFromList(items, idx) {
+  musicQueue = items.slice();
+  musicIdx = idx;
+  startCurrentMusicTrack();
+}
+
+function startCurrentMusicTrack() {
+  const tr = musicQueue[musicIdx];
+  const au = document.getElementById('music-audio-el');
+  const bar = document.getElementById('music-mini-bar');
+  if (!tr || !au || !bar) return;
+  bar.classList.add('active');
+  document.getElementById('music-mini-badge').textContent = tr.fandom === 'femboy' ? '🎀' : '🎮';
+  document.getElementById('music-mini-title').textContent = (tr.artist ? tr.artist + ' — ' : '') + tr.title;
+  au.src = tr.url;
+  au.playbackRate = MUSIC_SPEEDS[musicSpeedIdx];
+  au.play().then(() => {
+    document.getElementById('music-play-btn').textContent = '⏸';
+  }).catch(() => {
+    document.getElementById('music-play-btn').textContent = '▶';
+    showToast('Ссылка не является прямым аудио-потоком — открываю в новой вкладке', 'warning');
+    window.open(tr.url, '_blank');
+  });
+  if (musicCurrentTab === 'gamer' || musicCurrentTab === 'femboy') renderMusicList(musicCurrentTab);
+}
+
+function musicTogglePlay() {
+  const au = document.getElementById('music-audio-el');
+  if (!au || !au.src) return;
+  if (au.paused) {
+    au.play().then(() => { document.getElementById('music-play-btn').textContent = '⏸'; }).catch(() => {});
+  } else {
+    au.pause();
+    document.getElementById('music-play-btn').textContent = '▶';
+  }
+}
+
+function musicNext() {
+  if (!musicQueue.length) return;
+  musicIdx = (musicIdx + 1) % musicQueue.length;
+  startCurrentMusicTrack();
+}
+
+function musicPrev() {
+  if (!musicQueue.length) return;
+  musicIdx = (musicIdx - 1 + musicQueue.length) % musicQueue.length;
+  startCurrentMusicTrack();
+}
+
+function musicCycleSpeed() {
+  musicSpeedIdx = (musicSpeedIdx + 1) % MUSIC_SPEEDS.length;
+  const spd = MUSIC_SPEEDS[musicSpeedIdx];
+  const au = document.getElementById('music-audio-el');
+  if (au) au.playbackRate = spd;
+  const btn = document.getElementById('music-speed-btn');
+  if (btn) btn.textContent = spd + '×';
+}
+
+function musicStopClose() {
+  const au = document.getElementById('music-audio-el');
+  if (au) { au.pause(); au.src = ''; }
+  const bar = document.getElementById('music-mini-bar');
+  if (bar) bar.classList.remove('active');
+}
+
+(function initMusicPlayerEvents() {
+  const au = document.getElementById('music-audio-el');
+  const seek = document.getElementById('music-seek');
+  if (!au || !seek) return;
+  au.ontimeupdate = () => {
+    if (!au.duration) return;
+    seek.value = Math.round((au.currentTime / au.duration) * 100);
+    document.getElementById('music-time-cur').textContent = fmtMusicTime(au.currentTime);
+    document.getElementById('music-time-dur').textContent = fmtMusicTime(au.duration);
+  };
+  au.onended = () => musicNext();
+  seek.oninput = () => {
+    if (au.duration) au.currentTime = (seek.value / 100) * au.duration;
+  };
+})();
+
+async function setFavProfileTrack(label) {
+  if (!currentUser) return showToast('Сначала войдите в аккаунт', 'warning');
+  try {
+    const r = await fetch(`${BACKEND_URL}/user/fav-track`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: currentUser, fav_track: label })
+    });
+    const d = await r.json();
+    if (d && d.status === 'ok') showToast('⭐ Любимый трек закреплён в профиле: ' + label, 'success');
+  } catch (_) {}
+}
+
+async function submitMusicRequest() {
+  if (!currentUser) return showToast('Сначала войдите в аккаунт', 'warning');
+  const fandom = document.getElementById('music-req-fandom').value;
+  const url = document.getElementById('music-req-url').value.trim();
+  const note = document.getElementById('music-req-note').value.trim();
+  if (!url) return showToast('Вставьте ссылку на трек', 'warning');
+  if (!note || note.length > 300) return showToast('Сообщение от 1 до 300 символов', 'warning');
+  try {
+    const r = await fetch(`${BACKEND_URL}/music/request`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: currentUser, fandom, url, note })
+    });
+    const d = await r.json();
+    if (d && d.status === 'ok') {
+      document.getElementById('music-req-url').value = '';
+      document.getElementById('music-req-note').value = '';
+      document.getElementById('music-req-cnt').textContent = '0/300';
+      showToast('📩 Заявка отправлена! Следующую можно через 7 дней', 'success');
+    } else {
+      showToast((d && (d.msg || d.detail)) || 'Ошибка отправки', 'warning');
+    }
+  } catch (_) { showToast('Ошибка сети', 'error'); }
+}
+
+async function loadMusicAdminRequests() {
+  const box = document.getElementById('music-adm-requests');
+  if (!box || !currentUser) return;
+  box.innerHTML = '<div style="font-size:11px; color:var(--text-dim);">Загрузка...</div>';
+  try {
+    const r = await fetch(`${BACKEND_URL}/music/requests?admin=${encodeURIComponent(currentUser)}`);
+    const d = await r.json();
+    const reqs = (d && d.requests) || [];
+    if (!reqs.length) { box.innerHTML = '<div style="font-size:11px; color:var(--text-dim);">Заявок пока нет.</div>'; return; }
+    box.innerHTML = '';
+    reqs.forEach(rq => {
+      const el = document.createElement('div');
+      el.className = 'music-track-row';
+      el.style.flexDirection = 'column';
+      el.style.alignItems = 'stretch';
+      el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; font-size:11px;">
+          <b>@${escapeHtml(rq.nickname)} · ${rq.fandom === 'femboy' ? '🎀 Фембои' : '🎮 Геймеры'}</b>
+          <span style="color:var(--neon-cyan);">${escapeHtml(rq.status)}</span>
+        </div>
+        <div style="font-size:11.5px; color:var(--text);">${escapeHtml(rq.note)}</div>
+        <div style="font-size:10.5px; color:var(--text-dim); word-break:break-all;">${escapeHtml(rq.url)}</div>
+        ${rq.status === 'pending' ? `<div style="display:flex; gap:6px; margin-top:4px;">
+          <button class="music-ctrl-btn" style="background:rgba(0,255,136,0.2);" onclick="adminApproveReq(${rq.id}, '${escapeHtml(rq.fandom)}', '${escapeHtml(rq.url)}')">✅ В плейлист</button>
+          <button class="music-ctrl-btn" style="color:var(--danger);" onclick="adminRejectReq(${rq.id})">✕ Отклонить</button>
+        </div>` : ''}`;
+      box.appendChild(el);
+    });
+  } catch (_) { box.innerHTML = ''; }
+}
+
+async function adminAddMusicTrack(reqId, fandomArg, urlArg, titleArg) {
+  const fandom = fandomArg || document.getElementById('music-adm-fandom').value;
+  const title = titleArg || document.getElementById('music-adm-title').value.trim();
+  const artist = reqId ? '' : document.getElementById('music-adm-artist').value.trim();
+  const url = urlArg || document.getElementById('music-adm-url').value.trim();
+  if (!title || !url) return showToast('Укажите название и ссылку', 'warning');
+  try {
+    const r = await fetch(`${BACKEND_URL}/music/admin/add`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin: currentUser, fandom, title, artist, url, request_id: reqId || null })
+    });
+    const d = await r.json();
+    if (d && d.status === 'ok') {
+      if (!reqId) {
+        document.getElementById('music-adm-title').value = '';
+        document.getElementById('music-adm-artist').value = '';
+        document.getElementById('music-adm-url').value = '';
+      }
+      await loadMusicTracks();
+      loadMusicAdminRequests();
+      showToast('✅ Трек добавлен в плейлист!', 'success');
+    }
+  } catch (_) {}
+}
+
+async function adminApproveReq(id, fandom, url) {
+  const title = await promptAction('Добавить трек', 'Введите название трека для плейлиста:', '', 'Название трека');
+  if (!title) return;
+  await adminAddMusicTrack(id, fandom, url, title);
+}
+
+async function adminRejectReq(id) {
+  await fetch(`${BACKEND_URL}/music/admin/reject`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admin: currentUser, request_id: id })
+  });
+  loadMusicAdminRequests();
+}
+
+async function adminDeleteMusicTrack(id) {
+  await fetch(`${BACKEND_URL}/music/admin/delete`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admin: currentUser, track_id: id })
+  });
+  await loadMusicTracks();
+  renderMusicList(musicCurrentTab);
+}
 </script>
 </body>
 </html>

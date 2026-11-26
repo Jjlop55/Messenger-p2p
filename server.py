@@ -597,12 +597,36 @@ _safe_alters = [
     # Серверная экономика (валюты и купленное оружие Green Valley по аккаунту)
     ("profile_game_stats", "weapons_json", "TEXT DEFAULT '[0, 7]'"),
     ("profile_game_stats", "currencies_json", "TEXT DEFAULT '{}'"),
+    ("users", "fav_track", "TEXT DEFAULT ''"),
 ]
 for tbl, col, ctype in _safe_alters:
     try:
         cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype}")
     except sqlite3.OperationalError:
         pass
+
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS music_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fandom TEXT NOT NULL DEFAULT 'gamer',
+        title TEXT NOT NULL,
+        artist TEXT DEFAULT '',
+        url TEXT NOT NULL,
+        added_by TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS music_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nickname TEXT NOT NULL,
+        fandom TEXT NOT NULL DEFAULT 'gamer',
+        url TEXT NOT NULL,
+        note TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+""")
 conn.commit()
 
 # ── Бэкфилл: династия в существующих чатах ──
@@ -2790,7 +2814,7 @@ async def terminate_all_sessions(data: TerminateAllSessionsData):
 
 @app.get("/user/info/{nickname}")
 def get_user_info(nickname: str, by: str = ""):
-    cursor.execute("""SELECT nickname, avatar_url, bio, last_login, is_owner, is_admin, is_superadmin
+    cursor.execute("""SELECT nickname, avatar_url, bio, last_login, is_owner, is_admin, is_superadmin, COALESCE(fav_track, '')
                       FROM users WHERE LOWER(nickname)=LOWER(?)""", (nickname,))
     u = cursor.fetchone()
     if not u: return {"status": "error"}
@@ -2852,6 +2876,7 @@ def get_user_info(nickname: str, by: str = ""):
         "dm_chat_id": dm_id,
         "common_chats": common,
         "coins": coins,
+        "fav_track": u[7] or "",
     }
 
 # ── НАСТРОЙКИ ПОЛЬЗОВАТЕЛЯ (синхронизация между устройствами) ──
@@ -5387,6 +5412,134 @@ async def admin_db_restore(admin: str, file: UploadFile = File(...)):
     os.replace(tmp, _DB_PATH)
     _backup_db_to_gist(force=True)
     return {"status": "ok", "size": len(raw), "msg": "База восстановлена"}
+
+
+# ── Музыкальные плейлисты (для геймеров / для фембоев), предложка 1 раз в неделю, любимый трек профиля ──
+@app.get("/music/tracks")
+def get_music_tracks():
+    cursor.execute("SELECT id, fandom, title, artist, url, added_by, created_at FROM music_tracks ORDER BY id DESC")
+    rows = cursor.fetchall()
+    tracks = [
+        {"id": r[0], "fandom": r[1], "title": r[2], "artist": r[3] or "", "url": r[4], "added_by": r[5] or "", "created_at": r[6]}
+        for r in rows
+    ]
+    return {"status": "ok", "tracks": tracks}
+
+
+@app.post("/music/request")
+async def submit_music_request(data: dict):
+    nick = (data.get("nickname") or "").strip()
+    fandom = (data.get("fandom") or "gamer").strip().lower()
+    if fandom not in ("gamer", "femboy"):
+        fandom = "gamer"
+    url = (data.get("url") or "").strip()
+    note = (data.get("note") or "").strip()
+    if not nick:
+        raise HTTPException(status_code=400, detail="Не указан никнейм")
+    if not url or not (url.startswith("http://") or url.startswith("https://") or url.startswith("/")):
+        raise HTTPException(status_code=400, detail="Нужна корректная ссылка на трек (http:// или https://)")
+    if len(note) > 300:
+        raise HTTPException(status_code=400, detail="Сообщение не должно превышать 300 символов")
+    if not note:
+        raise HTTPException(status_code=400, detail="Напишите короткое сообщение (до 300 символов)")
+
+    # Лимит: 1 заявка в 7 дней на аккаунт
+    cursor.execute(
+        "SELECT created_at FROM music_requests WHERE LOWER(nickname)=LOWER(?) ORDER BY id DESC LIMIT 1",
+        (nick,),
+    )
+    last_row = cursor.fetchone()
+    if last_row and last_row[0] and not is_super(nick):
+        try:
+            last_dt = datetime.strptime(str(last_row[0])[:19], "%Y-%m-%d %H:%M:%S")
+            diff = datetime.utcnow() - last_dt
+            if diff.total_seconds() < 7 * 86400:
+                days_left = max(1, int((7 * 86400 - diff.total_seconds()) // 86400) + 1)
+                return {"status": "error", "msg": f"Предлагать трек можно раз в неделю! Подождите ещё ~{days_left} дн."}
+        except Exception:
+            pass
+
+    cursor.execute(
+        "INSERT INTO music_requests (nickname, fandom, url, note, status) VALUES (?, ?, ?, ?, 'pending')",
+        (nick, fandom, url, note),
+    )
+    conn.commit()
+    return {"status": "ok", "msg": "Заявка отправлена админу!"}
+
+
+def _check_music_admin(admin: str):
+    cursor.execute("SELECT is_superadmin, is_admin, is_owner FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not row[2] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ только для админа")
+
+
+@app.get("/music/requests")
+def list_music_requests(admin: str):
+    _check_music_admin(admin)
+    cursor.execute("SELECT id, nickname, fandom, url, note, status, created_at FROM music_requests ORDER BY id DESC LIMIT 60")
+    rows = cursor.fetchall()
+    return {
+        "status": "ok",
+        "requests": [
+            {"id": r[0], "nickname": r[1], "fandom": r[2], "url": r[3], "note": r[4], "status": r[5], "created_at": r[6]}
+            for r in rows
+        ],
+    }
+
+
+@app.post("/music/admin/add")
+async def admin_add_music_track(data: dict):
+    admin = (data.get("admin") or "").strip()
+    _check_music_admin(admin)
+    fandom = (data.get("fandom") or "gamer").strip().lower()
+    if fandom not in ("gamer", "femboy"):
+        fandom = "gamer"
+    title = (data.get("title") or "").strip()[:120]
+    artist = (data.get("artist") or "").strip()[:80]
+    url = (data.get("url") or "").strip()
+    req_id = data.get("request_id")
+    if not title or not url:
+        raise HTTPException(status_code=400, detail="Укажите название трека и ссылку")
+    cursor.execute(
+        "INSERT INTO music_tracks (fandom, title, artist, url, added_by) VALUES (?, ?, ?, ?, ?)",
+        (fandom, title, artist, url, admin),
+    )
+    if req_id:
+        cursor.execute("UPDATE music_requests SET status='approved' WHERE id=?", (int(req_id),))
+    conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/music/admin/delete")
+async def admin_delete_music_track(data: dict):
+    admin = (data.get("admin") or "").strip()
+    _check_music_admin(admin)
+    tid = int(data.get("track_id") or 0)
+    cursor.execute("DELETE FROM music_tracks WHERE id=?", (tid,))
+    conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/music/admin/reject")
+async def admin_reject_music_request(data: dict):
+    admin = (data.get("admin") or "").strip()
+    _check_music_admin(admin)
+    rid = int(data.get("request_id") or 0)
+    cursor.execute("UPDATE music_requests SET status='rejected' WHERE id=?", (rid,))
+    conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/user/fav-track")
+async def set_user_fav_track(data: dict):
+    nick = (data.get("nickname") or "").strip()
+    fav = (data.get("fav_track") or "").strip()[:140]
+    if not nick:
+        raise HTTPException(status_code=400, detail="Не указан никнейм")
+    cursor.execute("UPDATE users SET fav_track=? WHERE LOWER(nickname)=LOWER(?)", (fav, nick))
+    conn.commit()
+    return {"status": "ok", "fav_track": fav}
 
 
 # ── Статические маршруты страниц (мессенджер, игры) ──
