@@ -87,8 +87,59 @@ def _gist_backup_cfg():
     return gid, tok
 
 
+def _pack_uploads_b64(max_total_bytes: int = 18 * 1024 * 1024) -> str:
+    """Упаковывает активные (не удалённые) файлы из UPLOAD_DIR в gzip+base64 JSON."""
+    bundle = {}
+    total = 0
+    if not os.path.isdir(UPLOAD_DIR):
+        return ""
+    for fname in sorted(os.listdir(UPLOAD_DIR)):
+        if fname.startswith("."):
+            continue
+        fp = os.path.join(UPLOAD_DIR, fname)
+        if not os.path.isfile(fp):
+            continue
+        sz = os.path.getsize(fp)
+        if sz <= 0 or total + sz > max_total_bytes:
+            continue
+        try:
+            with open(fp, "rb") as f:
+                bundle[fname] = base64.b64encode(f.read()).decode("ascii")
+            total += sz
+        except Exception:
+            pass
+    if not bundle:
+        return ""
+    raw_json = json.dumps(bundle, ensure_ascii=True).encode("utf-8")
+    return base64.b64encode(gzip.compress(raw_json, compresslevel=6)).decode("ascii")
+
+
+def _restore_uploads_from_b64(b64_str: str) -> int:
+    """Восстанавливает файлы и фотки в UPLOAD_DIR из снапшота."""
+    if not b64_str:
+        return 0
+    try:
+        raw_json = gzip.decompress(base64.b64decode(b64_str))
+        bundle = json.loads(raw_json.decode("utf-8"))
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        restored = 0
+        for fname, fb64 in bundle.items():
+            safe_name = os.path.basename(str(fname))
+            if not safe_name or safe_name.startswith("."):
+                continue
+            dst = os.path.join(UPLOAD_DIR, safe_name)
+            if not os.path.exists(dst):
+                with open(dst, "wb") as f:
+                    f.write(base64.b64decode(fb64))
+                restored += 1
+        return restored
+    except Exception as e:
+        print("[DB] Ошибка восстановления uploads:", e)
+        return 0
+
+
 def _restore_db_from_gist_if_needed():
-    """Если БД ещё не существует (свежий деплой), восстанавливаем её из приватного GitHub Gist."""
+    """Если БД ещё не существует (свежий деплой), восстанавливаем её и uploads из приватного GitHub Gist."""
     gid, tok = _gist_backup_cfg()
     if not gid or not tok:
         return
@@ -99,19 +150,22 @@ def _restore_db_from_gist_if_needed():
             f"https://api.github.com/gists/{gid}",
             headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json", "User-Agent": "UtopiaServer"},
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=25) as resp:
             gist = json.loads(resp.read().decode("utf-8"))
-        fobj = (gist.get("files") or {}).get("messenger_db.gz.b64")
-        if not fobj or not fobj.get("content"):
-            return
-        raw = gzip.decompress(base64.b64decode(fobj["content"]))
-        if not raw.startswith(b"SQLite format 3\x00"):
-            return
-        tmp = _DB_PATH + ".restore"
-        with open(tmp, "wb") as f:
-            f.write(raw)
-        os.replace(tmp, _DB_PATH)
-        print("[DB] Восстановлено из GitHub Gist:", len(raw), "байт")
+        files = gist.get("files") or {}
+        fobj = files.get("messenger_db.gz.b64")
+        if fobj and fobj.get("content"):
+            raw = gzip.decompress(base64.b64decode(fobj["content"]))
+            if raw.startswith(b"SQLite format 3\x00"):
+                tmp = _DB_PATH + ".restore"
+                with open(tmp, "wb") as f:
+                    f.write(raw)
+                os.replace(tmp, _DB_PATH)
+                print("[DB] Восстановлено из GitHub Gist:", len(raw), "байт")
+        uobj = files.get("uploads_bundle.json.gz.b64")
+        if uobj and uobj.get("content"):
+            cnt = _restore_uploads_from_b64(uobj["content"])
+            print("[DB] Восстановлено файлов uploads:", cnt)
     except Exception as e:
         print("[DB] Не удалось восстановить из Gist:", e)
 
@@ -136,18 +190,22 @@ def _export_consistent_db_bytes() -> bytes:
 
 
 def _backup_db_to_gist(force: bool = False):
-    """Сохраняет снимок БД в приватный GitHub Gist, если данные изменились."""
+    """Сохраняет снимок БД и активных фоток/файлов в приватный GitHub Gist."""
     global _last_gist_hash
     gid, tok = _gist_backup_cfg()
     if not gid or not tok or not os.path.exists(_DB_PATH):
         return
     try:
         raw = _export_consistent_db_bytes()
-        h = hashlib.sha256(raw).hexdigest()
+        uploads_b64 = _pack_uploads_b64()
+        h = hashlib.sha256(raw + uploads_b64.encode("ascii")).hexdigest()
         if not force and h == _last_gist_hash:
             return
         b64 = base64.b64encode(gzip.compress(raw, compresslevel=6)).decode("ascii")
-        payload = json.dumps({"files": {"messenger_db.gz.b64": {"content": b64}}}).encode("utf-8")
+        gist_files = {"messenger_db.gz.b64": {"content": b64}}
+        if uploads_b64:
+            gist_files["uploads_bundle.json.gz.b64"] = {"content": uploads_b64}
+        payload = json.dumps({"files": gist_files}).encode("utf-8")
         req = urllib.request.Request(
             f"https://api.github.com/gists/{gid}",
             data=payload,
@@ -159,7 +217,7 @@ def _backup_db_to_gist(force: bool = False):
                 "User-Agent": "UtopiaServer",
             },
         )
-        with urllib.request.urlopen(req, timeout=25) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             if resp.status < 300:
                 _last_gist_hash = h
     except Exception as e:
@@ -173,7 +231,7 @@ def _start_gist_backup_loop():
     atexit.register(lambda: _backup_db_to_gist(force=False))
     def _loop():
         while True:
-            time.sleep(120)
+            time.sleep(60)
             _backup_db_to_gist(force=False)
     threading.Thread(target=_loop, daemon=True).start()
 
