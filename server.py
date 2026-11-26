@@ -2,6 +2,11 @@ import os
 import time
 import uuid
 import json
+import gzip
+import base64
+import atexit
+import shutil
+import tempfile
 import random
 import asyncio
 import sqlite3
@@ -11,7 +16,7 @@ import urllib.error
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,7 +32,9 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+DATA_DIR = os.environ.get("DATA_DIR") or ("/data" if os.path.isdir("/data") and os.access("/data", os.W_OK) else BASE_DIR)
+os.makedirs(DATA_DIR, exist_ok=True)
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 BOYKISSER_DIR = os.path.join(BASE_DIR, "boykisser")
@@ -67,8 +74,111 @@ SERVER_START_TIME = time.time()
 # Имена `conn` и `cursor` сохранены — ни один из 198 вызовов не менялся.
 import threading
 
-_DB_PATH = os.path.join(BASE_DIR, "messenger.db")
+_DB_PATH = os.path.join(DATA_DIR, "messenger.db")
 _thread_local = threading.local()
+_all_thread_conns: List[sqlite3.Connection] = []
+_all_conns_lock = threading.Lock()
+_last_gist_hash = ""
+
+
+def _gist_backup_cfg():
+    gid = os.environ.get("BACKUP_GIST_ID", "").strip()
+    tok = os.environ.get("BACKUP_GITHUB_TOKEN", "").strip()
+    return gid, tok
+
+
+def _restore_db_from_gist_if_needed():
+    """Если БД ещё не существует (свежий деплой), восстанавливаем её из приватного GitHub Gist."""
+    gid, tok = _gist_backup_cfg()
+    if not gid or not tok:
+        return
+    if os.path.exists(_DB_PATH) and os.path.getsize(_DB_PATH) > 4096:
+        return
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{gid}",
+            headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json", "User-Agent": "UtopiaServer"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            gist = json.loads(resp.read().decode("utf-8"))
+        fobj = (gist.get("files") or {}).get("messenger_db.gz.b64")
+        if not fobj or not fobj.get("content"):
+            return
+        raw = gzip.decompress(base64.b64decode(fobj["content"]))
+        if not raw.startswith(b"SQLite format 3\x00"):
+            return
+        tmp = _DB_PATH + ".restore"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, _DB_PATH)
+        print("[DB] Восстановлено из GitHub Gist:", len(raw), "байт")
+    except Exception as e:
+        print("[DB] Не удалось восстановить из Gist:", e)
+
+
+def _export_consistent_db_bytes() -> bytes:
+    """Создаёт консистентный снимок SQLite WAL-базы через sqlite3.backup()."""
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        src = sqlite3.connect(_DB_PATH, timeout=25.0)
+        dst = sqlite3.connect(tmp_path)
+        src.backup(dst)
+        dst.close()
+        src.close()
+        with open(tmp_path, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def _backup_db_to_gist(force: bool = False):
+    """Сохраняет снимок БД в приватный GitHub Gist, если данные изменились."""
+    global _last_gist_hash
+    gid, tok = _gist_backup_cfg()
+    if not gid or not tok or not os.path.exists(_DB_PATH):
+        return
+    try:
+        raw = _export_consistent_db_bytes()
+        h = hashlib.sha256(raw).hexdigest()
+        if not force and h == _last_gist_hash:
+            return
+        b64 = base64.b64encode(gzip.compress(raw, compresslevel=6)).decode("ascii")
+        payload = json.dumps({"files": {"messenger_db.gz.b64": {"content": b64}}}).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{gid}",
+            data=payload,
+            method="PATCH",
+            headers={
+                "Authorization": f"Bearer {tok}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "User-Agent": "UtopiaServer",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            if resp.status < 300:
+                _last_gist_hash = h
+    except Exception as e:
+        print("[DB] Ошибка автобэкапа в Gist:", e)
+
+
+def _start_gist_backup_loop():
+    gid, tok = _gist_backup_cfg()
+    if not gid or not tok:
+        return
+    atexit.register(lambda: _backup_db_to_gist(force=False))
+    def _loop():
+        while True:
+            time.sleep(120)
+            _backup_db_to_gist(force=False)
+    threading.Thread(target=_loop, daemon=True).start()
+
+
+_restore_db_from_gist_if_needed()
 
 
 def _new_connection():
@@ -76,6 +186,8 @@ def _new_connection():
     c.execute("PRAGMA journal_mode=WAL;")
     c.execute("PRAGMA busy_timeout=25000;")
     c.execute("PRAGMA synchronous=NORMAL;")
+    with _all_conns_lock:
+        _all_thread_conns.append(c)
     return c
 
 
@@ -5166,6 +5278,57 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
         manager.disconnect(chat_id, websocket, nickname)
         if not manager.is_online(nickname):
             await _leave_all_voice_rooms_for(nickname)
+
+
+# ── Ручной и авто-бэкап БД (защита чатов и переписок при редеплое) ──
+_start_gist_backup_loop()
+
+
+@app.get("/admin/db/backup")
+def admin_db_backup(admin: str):
+    cursor.execute("SELECT is_superadmin, is_owner FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    raw = _export_consistent_db_bytes()
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    with open(tmp_path, "wb") as f:
+        f.write(raw)
+    return FileResponse(tmp_path, filename="messenger_backup.db", media_type="application/octet-stream")
+
+
+@app.post("/admin/db/restore")
+async def admin_db_restore(admin: str, file: UploadFile = File(...)):
+    cursor.execute("SELECT is_superadmin, is_owner FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
+    row = cursor.fetchone()
+    if not row or (not row[0] and not row[1] and not is_super(admin)):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    raw = await file.read()
+    if not raw.startswith(b"SQLite format 3\x00"):
+        raise HTTPException(status_code=400, detail="Файл не является базой SQLite")
+    with _all_conns_lock:
+        for c_item in _all_thread_conns:
+            try:
+                c_item.close()
+            except Exception:
+                pass
+        _all_thread_conns.clear()
+    _thread_local.conn = None
+    _thread_local.cursor = None
+    for ext in ("-wal", "-shm"):
+        p_ext = _DB_PATH + ext
+        if os.path.exists(p_ext):
+            try:
+                os.remove(p_ext)
+            except Exception:
+                pass
+    tmp = _DB_PATH + ".upload"
+    with open(tmp, "wb") as f:
+        f.write(raw)
+    os.replace(tmp, _DB_PATH)
+    _backup_db_to_gist(force=True)
+    return {"status": "ok", "size": len(raw), "msg": "База восстановлена"}
 
 
 # ── Статические маршруты страниц (мессенджер, игры) ──
