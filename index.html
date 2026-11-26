@@ -63,6 +63,36 @@
     #my-nick { display: block; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .profile-badge:hover { background: rgba(0, 240, 255, 0.08); box-shadow: var(--neon-glow); }
 
+    /* Режимы расположения профиля и кнопок (переключатель в Настройках) */
+    body.ui-bar-top #discord-rail .rail-action-btn,
+    body.ui-bar-top #discord-rail .rail-profile-wrap,
+    body.ui-bar-top #discord-rail .rail-sep-actions { display: none !important; }
+    body.ui-bar-side .sidebar-header { display: none !important; }
+    body.rail-side-right #discord-rail { order: 30; border-right: none; border-left: var(--glass-border); }
+    body.rail-side-right #chat-aside { order: 1; }
+    body.rail-side-right #chat-main { order: 2; }
+    body.rail-side-right #discord-members-panel { order: 3; }
+    .rail-profile-wrap {
+      width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--neon-cyan);
+      background: #0f172a; box-shadow: 0 0 12px var(--neon-cyan-glow);
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      position: relative; flex: none; padding: 0; transition: transform .18s, box-shadow .18s;
+    }
+    .rail-profile-wrap:hover { transform: scale(1.06); box-shadow: 0 0 16px var(--neon-cyan); }
+    .rail-profile-wrap .avatar-box { width: 100%; height: 100%; border: none; box-shadow: none; }
+    .rail-online-dot {
+      position: absolute; bottom: -1px; right: -1px; width: 11px; height: 11px; border-radius: 50%;
+      background: var(--success); border: 2px solid #050810; pointer-events: none;
+    }
+    .layout-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .layout-seg-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .layout-seg-btn {
+      padding: 8px 6px; border-radius: 10px; border: var(--glass-border); background: rgba(255,255,255,0.03);
+      color: var(--text-dim); font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: center; transition: all .18s;
+    }
+    .layout-seg-btn:hover { background: rgba(0,240,255,0.1); color: #fff; }
+    .layout-seg-btn.active { background: rgba(0,240,255,0.2); border-color: var(--neon-cyan); color: var(--neon-cyan); box-shadow: var(--neon-glow); }
+
     .avatar-box {
       width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--neon-cyan);
       box-shadow: 0 0 10px var(--neon-cyan-glow); background: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden;
@@ -89,7 +119,7 @@
     }
 
     main { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); height: 100%; min-width: 0; position: relative; }
-    .chat-header { height: 64px; padding: 0 18px; background: var(--bg-panel); backdrop-filter: blur(18px); display: flex; justify-content: space-between; align-items: center; border-bottom: var(--glass-border); }
+    .chat-header { min-height: 64px; height: auto; padding: 8px 18px; background: var(--bg-panel); backdrop-filter: blur(18px); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-bottom: var(--glass-border); }
 
     /* Таймеры очистки сообщений в шапке */
     #cleanup-timer-badge {
@@ -476,9 +506,40 @@
     .folder-pill.active { background: rgba(0, 240, 255, 0.18); color: var(--neon-cyan); border-color: rgba(0, 240, 255, 0.45); }
 
     #voice-connected-bar {
-      display: none; padding: 8px 12px; background: rgba(0, 255, 136, 0.1); border-top: 1px solid rgba(0, 255, 136, 0.35);
-      align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--success);
+      display: none; padding: 8px 10px; background: linear-gradient(90deg, rgba(0, 255, 136, 0.12), rgba(0, 240, 255, 0.08));
+      border-top: 1px solid rgba(0, 255, 136, 0.38); flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--success);
     }
+    .voice-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
+    .voice-ctrl-mini {
+      padding: 4px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06); color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s;
+    }
+    .voice-ctrl-mini:hover { background: rgba(0,240,255,0.18); border-color: var(--neon-cyan); }
+    .voice-ctrl-mini.off { background: rgba(255,51,102,0.22); border-color: var(--danger); color: #ff8aa8; }
+    .voice-ctrl-mini.on { background: rgba(0,255,136,0.18); border-color: var(--success); color: var(--success); }
+
+    /* Панель активного голосового канала Discord внутри <main> */
+    #voice-room-stage {
+      display: none; flex-direction: column; gap: 10px; padding: 12px 16px;
+      background: linear-gradient(180deg, rgba(10, 22, 38, 0.96), rgba(8, 14, 28, 0.92));
+      border-bottom: 1px solid rgba(0, 255, 136, 0.28);
+    }
+    .voice-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .voice-stage-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--success); }
+    .voice-stage-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .voice-stage-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .voice-peer-card {
+      display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px;
+      background: rgba(255,255,255,0.04); border: 1.5px solid rgba(255,255,255,0.1);
+      font-size: 12px; transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    .voice-peer-card.speaking {
+      border-color: var(--success); background: rgba(0,255,136,0.14);
+      box-shadow: 0 0 14px rgba(0,255,136,0.38);
+    }
+    .voice-peer-card.muted { border-color: rgba(255, 85, 102, 0.35); }
+    .voice-peer-av { width: 26px; height: 26px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; flex: none; }
+    .voice-peer-badges { font-size: 11px; opacity: 0.9; display: inline-flex; gap: 4px; align-items: center; }
 
     #pinned-bar {
       display: none; align-items: center; justify-content: space-between; gap: 10px;
@@ -542,6 +603,8 @@
       main { display: none; position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 20; }
       body.mobile-chat-open #discord-rail, body.mobile-chat-open aside { display: none; }
       body.mobile-chat-open main { display: flex; }
+      body.mobile-chat-open #discord-members-panel { display: none; }
+      body.mobile-chat-open #discord-members-panel.open { display: flex; }
       #back-btn { display: inline-flex !important; }
       #discord-members-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 50; width: min(270px, 85vw); box-shadow: -8px 0 30px rgba(0,0,0,0.75); }
       .call-video-grid { flex-direction: column; }
@@ -567,6 +630,8 @@
 
 <div id="top-toast"></div>
 <audio id="peer-audio" autoplay playsinline style="display:none;"></audio>
+<div id="remote-audio-pool" style="display:none;"></div>
+<div id="voice-audio-pool" style="display:none;"></div>
 
 <!-- Экран звонка: двойная сетка видео/экрана 50/50 -->
 <div id="call-overlay">
@@ -628,7 +693,8 @@
       </div>
 
       <div class="call-controls-bar" id="call-active-bar" style="display:flex;">
-        <button class="call-ctrl-btn active" id="btn-toggle-mic">🎙️ Микрофон</button>
+        <button class="call-ctrl-btn active" id="btn-toggle-mic" title="Включить или выключить свой микрофон (собеседников всё равно слышно)">🎙️ Микрофон</button>
+        <button class="call-ctrl-btn active" id="btn-toggle-deafen" title="Выключить или включить звук собеседников (режим тишины)">🎧 Звук</button>
         <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
         <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
         <button class="call-ctrl-btn" id="btn-add-participant" style="display:none;" title="Добавить друга в звонок — будет групповой звонок">➕ Добавить</button>
@@ -727,17 +793,27 @@
 </div>
 
 <div id="app">
-  <!-- Левая Discord-рейка навигации -->
+  <!-- Боковая Discord-рейка навигации -->
   <nav id="discord-rail" aria-label="Навигация">
-    <button class="rail-btn active" data-folder="all" title="Все чаты и серверы" onclick="setChatFolder('all')">💠</button>
-    <button class="rail-btn" data-folder="dm" title="Личные сообщения (Telegram ЛС)" onclick="setChatFolder('dm')">💬<span class="rail-dot" id="rail-dm-dot">0</span></button>
-    <button class="rail-btn" data-folder="group" title="Группы и каналы" onclick="setChatFolder('group')">👥<span class="rail-dot" id="rail-grp-dot">0</span></button>
-    <button class="rail-btn" data-folder="voice" title="Голосовые комнаты Discord" onclick="setChatFolder('voice')">🔊</button>
-    <div class="rail-sep"></div>
-    <button class="rail-btn" title="Игровой зал" style="color:#b392f0;" onclick="document.getElementById('open-games-btn').click()">🎮</button>
-    <button class="rail-btn" title="Кликер" style="color:#ffd166;" onclick="document.getElementById('open-clicker-btn').click()">👆</button>
-    <button class="rail-btn" title="Друзья" onclick="document.getElementById('open-friends-btn').click()">🤝</button>
-    <button class="rail-btn" id="rail-admin-btn" title="Админ-панель" style="display:none; color:#ffd700; border-color:rgba(255,215,0,0.4);" onclick="document.getElementById('admin-panel-btn').click()">⚡</button>
+    <button class="rail-profile-wrap" id="rail-my-profile-btn" title="Ваш профиль" onclick="document.getElementById('open-my-profile-btn').click()">
+      <div class="avatar-box" id="rail-my-avatar-box">👤</div>
+      <span class="rail-online-dot"></span>
+    </button>
+    <div class="rail-sep rail-sep-actions"></div>
+    <button class="rail-btn active" data-folder="all" title="Все чаты и каналы" onclick="setChatFolder('all')">💠</button>
+    <button class="rail-btn" data-folder="dm" title="Личные сообщения (ЛС)" onclick="setChatFolder('dm')">💬<span class="rail-dot" id="rail-dm-dot">0</span></button>
+    <button class="rail-btn" data-folder="group" title="Группы и #каналы" onclick="setChatFolder('group')">👥<span class="rail-dot" id="rail-grp-dot">0</span></button>
+    <button class="rail-btn" data-folder="voice" title="Голосовые каналы Discord" onclick="setChatFolder('voice')">🔊</button>
+    <div class="rail-sep rail-sep-actions"></div>
+    <button class="rail-btn rail-action-btn" id="rail-friends-btn" title="Друзья" onclick="document.getElementById('open-friends-btn').click()">🤝<span class="rail-dot" id="rail-friends-badge">0</span></button>
+    <button class="rail-btn rail-action-btn" id="rail-invites-btn" title="Приглашения в чаты и каналы" onclick="document.getElementById('open-invites-btn').click()">📩<span class="rail-dot" id="rail-invites-badge">0</span></button>
+    <button class="rail-btn rail-action-btn" title="Игровой зал" style="color:#b392f0;" onclick="document.getElementById('open-games-btn').click()">🎮</button>
+    <button class="rail-btn rail-action-btn" title="Кликер" style="color:#ffd166;" onclick="document.getElementById('open-clicker-btn').click()">👆</button>
+    <button class="rail-btn rail-action-btn" title="Мониторинг сервера" onclick="document.getElementById('open-monitoring-btn').click()">📊</button>
+    <button class="rail-btn rail-action-btn" title="Поддержка" onclick="document.getElementById('open-support-btn').click()">🎧</button>
+    <button class="rail-btn rail-action-btn" title="Устройства и сессии" onclick="document.getElementById('open-sessions-btn').click()">📱</button>
+    <button class="rail-btn rail-action-btn" title="Настройки" onclick="document.getElementById('open-settings-btn').click()">⚙</button>
+    <button class="rail-btn rail-action-btn" id="rail-admin-btn" title="Админ-панель" style="display:none; color:#ffd700; border-color:rgba(255,215,0,0.4);" onclick="document.getElementById('admin-panel-btn').click()">⚡</button>
   </nav>
 
   <aside id="chat-aside">
@@ -772,10 +848,15 @@
     </div>
     <div class="chat-list" id="chat-list"></div>
     <div id="voice-connected-bar">
-      <span id="voice-connected-label" style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🔊 Голос</span>
-      <div style="display:flex; gap:4px; flex:none;">
-        <button class="pill-btn" id="voice-call-peers-btn" style="padding:3px 8px; font-size:10px; border-color:var(--success); color:var(--success);">📞 Связь</button>
-        <button class="pill-btn" id="voice-leave-room-btn" style="padding:3px 8px; font-size:10px; border-color:var(--danger); color:var(--danger);">Выйти</button>
+      <div class="voice-bar-row">
+        <span id="voice-connected-label" style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; flex:1;" title="Открыть голосовой канал">🔊 Голос подключён</span>
+        <span id="voice-connected-net" style="font-size:10px; color:var(--text-dim); flex:none;">●</span>
+      </div>
+      <div class="voice-bar-row" style="justify-content:flex-end;">
+        <button class="voice-ctrl-mini on" id="voice-bar-mic-btn" title="Микрофон">🎙️ Микр</button>
+        <button class="voice-ctrl-mini on" id="voice-bar-deafen-btn" title="Звук комнаты">🎧 Звук</button>
+        <button class="voice-ctrl-mini" id="voice-call-peers-btn" title="Перейти в видеозвонок с участниками">📹 Видео</button>
+        <button class="voice-ctrl-mini off" id="voice-leave-room-btn" title="Выйти из голосового канала">🚪 Выйти</button>
       </div>
     </div>
   </aside>
@@ -794,7 +875,7 @@
       </div>
       <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
         <button class="icon-btn" id="chat-search-btn" title="Поиск сообщений в чате">🔍</button>
-        <button class="icon-btn" id="members-drawer-toggle" title="Панель участников Discord" style="font-size:16px;">🪪</button>
+        <button class="icon-btn" id="members-drawer-toggle" title="Панель участников Discord" style="font-size:16px;">👤</button>
         <button class="icon-btn" id="members-btn" title="Участники и роли группы" style="display:none;">👥</button>
         <button class="pill-btn" id="voice-room-join-btn" style="padding: 5px 10px; font-size: 11px; display:none; border-color:var(--success); color:var(--success);">🔊 Войти в голос</button>
         <button class="pill-btn" id="chat-rename-btn" style="padding: 5px 10px; font-size: 11px;">✏️ Название</button>
@@ -829,6 +910,9 @@
 
     <!-- Лимит ЛС: пока вы не друзья, можно отправить ровно одно сообщение -->
     <div id="dm-limit-banner" style="display:none; align-items:center; justify-content:center; gap:6px; text-align:center; font-size:12px; padding:7px 12px; background:rgba(224,169,74,.14); color:var(--warning,#e0a94a); border-bottom:1px solid rgba(224,169,74,.25);">📩 Вы не в друзьях — собеседнику можно отправить <b>одно</b> сообщение, пока он не примет заявку.</div>
+
+    <!-- Панель участников и голосовой связи Discord (видна при открытии голосового канала) -->
+    <div id="voice-room-stage"></div>
 
     <div class="messages-box" id="messages-box"></div>
 
@@ -916,17 +1000,20 @@
   </aside>
 </div>
 
-<!-- Модалка создания нового чата (Внутри приложения) -->
+<!-- Модалка создания нового чата / канала -->
 <div class="modal-overlay" id="new-chat-modal">
-  <div class="modal-card" style="max-width: 400px;">
-    <h3 class="modal-title">💬 Создать комнату / канал</h3>
-    <input type="text" id="new-chat-name-input" placeholder="Название комнаты или канала..." class="modal-input">
+  <div class="modal-card" style="max-width: 420px;">
+    <h3 class="modal-title">✨ Создать группу или канал</h3>
+    <input type="text" id="new-chat-name-input" placeholder="Название (например: Основной голос или Болталка)..." class="modal-input">
     <select id="new-chat-type-select" class="modal-input" style="font-size:13px;">
-      <option value="group">💬 Группа (Telegram-чат)</option>
-      <option value="channel"># Текстовый канал (Discord #)</option>
-      <option value="voice">🔊 Голосовой канал (Discord 🔊)</option>
+      <option value="group">👥 Группа (общий чат с ролями)</option>
+      <option value="channel"># Текстовый канал (тематический чат)</option>
+      <option value="voice">🔊 Голосовой канал (живой голос Discord + чат)</option>
     </select>
-    <input type="text" id="new-chat-topic-input" placeholder="Тема / описание канала (необязательно)" class="modal-input" maxlength="140">
+    <div id="new-chat-type-hint" style="font-size:11.5px; color:var(--text-dim); background:rgba(255,255,255,0.03); border:var(--glass-border); border-radius:10px; padding:8px 10px;">
+      👥 Классическая группа с участниками, ролями и правами.
+    </div>
+    <input type="text" id="new-chat-topic-input" placeholder="Описание / тема (необязательно)" class="modal-input" maxlength="140">
     <div style="display:flex; gap:8px; margin-top:4px;">
       <button class="pill-btn" id="create-chat-submit-btn" style="background:var(--neon-cyan); color:#000; font-weight:700;">Создать</button>
       <button class="pill-btn" onclick="closeModal('new-chat-modal')">Отмена</button>
@@ -995,11 +1082,13 @@
     </div>
 
     <div class="modal-overlay" id="invite-member-modal">
-  <div class="modal-card" style="max-width: 380px;">
-    <h3 class="modal-title">📩 Пригласить в чат</h3>
-    <input type="text" id="invite-username-input" placeholder="Точный никнейм друга..." class="modal-input">
+  <div class="modal-card" style="max-width: 400px;">
+    <h3 class="modal-title" id="invite-modal-title">📩 Пригласить участника</h3>
+    <div id="invite-modal-hint" style="font-size:12px; color:var(--text-dim);">Укажите точный никнейм или выберите друга ниже:</div>
+    <input type="text" id="invite-username-input" placeholder="Точный никнейм пользователя..." class="modal-input">
+    <div id="invite-friends-quick" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto;"></div>
     <div style="display:flex; gap:8px; margin-top:4px;">
-      <button class="pill-btn" id="submit-invite-btn" style="background:var(--neon-cyan); color:#000;">Отправить</button>
+      <button class="pill-btn" id="submit-invite-btn" style="background:var(--neon-cyan); color:#000;">Отправить приглашение</button>
       <button class="pill-btn" onclick="closeModal('invite-member-modal')">Отмена</button>
     </div>
   </div>
@@ -1304,6 +1393,20 @@
   <div class="modal-card">
     <h3 class="modal-title">⚙ Настройки</h3>
     <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
+      <span style="font-size:13px; font-weight:600;">🎨 Расположение аватарки и кнопок меню:</span>
+      <div style="font-size:11px; color:var(--text-dim);">Выберите, где показывать ваш профиль и кнопки (друзья, инвайты, игры, настройки и т.д.):</div>
+      <div class="layout-seg" id="ui-bar-mode-group">
+        <button type="button" class="layout-seg-btn" id="ui-bar-top-btn" onclick="applyUiLayout('top', null, true)">⬆️ Сверху</button>
+        <button type="button" class="layout-seg-btn" id="ui-bar-side-btn" onclick="applyUiLayout('side', null, true)">➡️ Сбоку</button>
+        <button type="button" class="layout-seg-btn" id="ui-bar-both-btn" onclick="applyUiLayout('both', null, true)">✨ Везде</button>
+      </div>
+      <div style="font-size:11px; color:var(--text-dim); margin-top:2px;">Сторона боковой панели:</div>
+      <div class="layout-seg-2" id="ui-rail-side-group">
+        <button type="button" class="layout-seg-btn" id="ui-rail-left-btn" onclick="applyUiLayout(null, 'left', true)">⬅️ Слева</button>
+        <button type="button" class="layout-seg-btn" id="ui-rail-right-btn" onclick="applyUiLayout(null, 'right', true)">➡️ Справа</button>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
       <span style="font-size:13px; font-weight:600;">🔔 Уведомления:</span>
       <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
         <input type="checkbox" id="notif-messages-toggle" checked> Уведомлять о новых сообщениях
@@ -1313,6 +1416,11 @@
       </label>
       <div id="notif-permission-hint" style="font-size:11px; color:var(--text-dim);"></div>
       <button class="pill-btn" id="notif-enable-btn" style="font-size:12px; display:none;">Разрешить системные уведомления</button>
+    </div>
+    <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
+      <span style="font-size:13px; font-weight:600;">🎙️ Микрофон и звонки:</span>
+      <div id="test-mic-status" style="font-size:11px; color:var(--text-dim);">Проверьте доступ к микрофону и воспроизведение звука перед созвоном.</div>
+      <button type="button" class="pill-btn" id="test-mic-btn" style="font-size:12px;">🎙️ Проверить микрофон и звук</button>
     </div>
     <div style="background:rgba(255,255,255,0.03); border:var(--glass-border); padding:12px; border-radius:var(--radius-md); display:flex; flex-direction:column; gap:8px;">
       <span style="font-size:13px; font-weight:600;">Смена пароля (раз в 3 часа):</span>
@@ -1474,19 +1582,38 @@ let voiceTimerInt = null;
 let voiceSec = 0;
 const MAX_REC_SECONDS = 300;      // лимит записи 5 минут
 
-// WebRTC Звонки: только живые STUN (мёртвый openrelay вешал сбор кандидатов,
-// из-за чего звонок не мог установиться, особенно на мобильном интернете)
-const rtcConfig = {
+// WebRTC Звонки: живые STUN (+ опциональный TURN с бэкенда)
+let rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' }
   ],
   iceCandidatePoolSize: 10
 };
+async function refreshRtcIceConfig() {
+  try {
+    const r = await fetch(`${BACKEND_URL}/webrtc/ice`, { cache: 'no-store' });
+    const d = await r.json();
+    if (d && d.status === 'ok' && Array.isArray(d.iceServers) && d.iceServers.length) {
+      rtcConfig = { iceServers: d.iceServers, iceCandidatePoolSize: 10 };
+    }
+  } catch (_) {}
+}
+function sameNick(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase() && !!String(a || '').trim();
+}
+function peerKey(n) {
+  return String(n || '').trim().toLowerCase();
+}
+function escapeAttrNick(n) {
+  return peerKey(n).replace(/[^a-z0-9_\-]/g, c => '_' + c.charCodeAt(0).toString(16));
+}
+
 let peerConnection = null, localStream = null, screenStream = null, currentCallPartner = null;
-let isCamOn = false, isScreenOn = false, isMicOn = true;
+let isCamOn = false, isScreenOn = false, isMicOn = true, isCallDeafened = false;
 let callTimeoutTimer = null;
 let callConnectTimer = null;   // таймаут установки ICE-соединения
 // Если за 25 секунд после ответа нет соединения — говорим прямо, а не вечно «Соединение...»
@@ -1494,7 +1621,7 @@ function armCallConnectTimeout() {
   clearTimeout(callConnectTimer);
   callConnectTimer = setTimeout(() => {
     if (callState === 'active' && !callConnectedAt && currentCallPartner) {
-      showToast('Соединение не установилось за 25 сек — проверьте интернет у вас и собеседника, затем перезвоните', 'warning');
+      showToast('Соединение не установилось за 25 сек — проверьте сеть или разрешения микрофона', 'warning');
       endCall();
     }
   }, 25000);
@@ -1507,12 +1634,14 @@ let callConnectedAt = null;      // когда собеседник ответи
 let callTimerInterval = null;
 let callStartMsgEl = null;       // системное сообщение о звонке в чате
 
-// ── Звук звонка, оповещения и надёжная сигнализация ──
+// ── Звук звонка, оповещения и постоянный сигнальный WebSocket ──
 let callAudioCtx = null;         // WebAudio контекст (гул/мелодия звонка)
 let ringTimer = null;            // таймер повтора мелодии
 let ringMode = null;             // 'ringback' (ждём ответа) | 'ringtone' (нам звонят)
 let remoteAudioStream = null;    // стрим собеседника (на случай повторного play)
 let callSignalWs = null;         // сокет, через который идёт сигнализация звонка
+let signalWs = null;             // постоянный фоновый /ws/signal/{nick}
+let signalReconnectTimer = null;
 let signalQueue = [];            // сообщения, накопленные при обрыве сокета
 let originalDocTitle = document.title;
 let titleBlinkTimer = null;
@@ -1520,14 +1649,31 @@ let incomingNotify = null;       // объект Notification о входяще�
 let callState = null;            // 'outgoing' | 'incoming' | 'active'
 
 // ── Групповой звонок (full-mesh WebRTC) ──
-let peers = {};                  // { nick: RTCPeerConnection } — mesh-пиры (кроме основного peerConnection)
+let peers = {};                  // { low_nick: RTCPeerConnection } — mesh-пиры
+let peerDisplayNames = {};       // { low_nick: 'Nick' }
+let callAudioEls = {};           // { low_nick: HTMLAudioElement }
 let groupCallActive = false;     // true, когда участников 3+
 let groupCallMembers = [];       // все участники (включая меня)
 let groupCallId = null;          // id серверной группы-обёртки (call_xxx)
 let groupCallName = '';          // имя этой группы для инвайтов
 let groupPrimaryPartner = null;  // первый собеседник — его видео идёт в tile-remote
-let groupPeerIce = {};           // { nick: [candidates] } — очередь ICE до setRemote
-let groupAudioStream = null;     // общий MediaStream со всеми remote-аудио
+let groupPeerIce = {};           // { low_nick: [candidates] } — очередь ICE до setRemote
+let groupAudioStream = null;
+
+// ── Голосовые каналы Discord (полноценный аудио-mesh в фоне) ──
+let voiceLocalStream = null;
+let voicePeers = {};             // { low_nick: { nick, pc, audioEl, iceQueue, makingOffer, ignoreOffer, analyser, connected } }
+let voiceMicMuted = false;
+let voiceDeafened = false;
+let voiceRoomStates = {};        // { chat_id: { low_nick: { nickname, muted, deafened } } }
+let voiceSpeakingMap = {};       // { low_nick: boolean }
+let voiceLocalAnalyser = null;
+let voiceSpeakRaf = null;
+let voiceLocalCtx = null;
+
+// ── Настройки расположения профиля и кнопок меню ──
+let uiBarMode = localStorage.getItem('utopia_ui_bar_mode') || 'both';   // 'top' | 'side' | 'both'
+let uiRailSide = localStorage.getItem('utopia_ui_rail_side') || 'left'; // 'left' | 'right'
 
 const EMOJI_AVATARS = ["🐱","🦊","🐺","🦁","🤖","👑","💀","👾","🐉","⚡","🔥","💎","🚀","🎭","🎮","🦄","🛸","🐧","🐼","🧙","🎃","🥋","🎯","🛰️"];
 
@@ -1548,6 +1694,7 @@ function initEmojiPicker() {
 }
 
 function renderAvatar(avatarStr, container) {
+  if (!container) return;
   container.innerHTML = '';
   if (!avatarStr) {
     container.innerText = "👤";
@@ -1560,6 +1707,53 @@ function renderAvatar(avatarStr, container) {
   } else {
     container.innerText = avatarStr;
   }
+}
+
+function paintMyAvatar(avatarStr) {
+  renderAvatar(avatarStr, document.getElementById('my-avatar-box'));
+  renderAvatar(avatarStr, document.getElementById('rail-my-avatar-box'));
+  renderAvatar(avatarStr, document.getElementById('local-remote-avatar'));
+  const rProf = document.getElementById('rail-my-profile-btn');
+  if (rProf && currentUser) rProf.title = `@${currentUser} — открыть профиль`;
+}
+
+function applyUiLayout(mode, railSide, shouldSync = false) {
+  if (mode === 'top' || mode === 'side' || mode === 'both') {
+    uiBarMode = mode;
+    localStorage.setItem('utopia_ui_bar_mode', mode);
+  }
+  if (railSide === 'left' || railSide === 'right') {
+    uiRailSide = railSide;
+    localStorage.setItem('utopia_ui_rail_side', railSide);
+  }
+  document.body.classList.remove('ui-bar-top', 'ui-bar-side', 'ui-bar-both', 'rail-side-left', 'rail-side-right');
+  document.body.classList.add('ui-bar-' + uiBarMode, 'rail-side-' + uiRailSide);
+  const topB = document.getElementById('ui-bar-top-btn');
+  const sideB = document.getElementById('ui-bar-side-btn');
+  const bothB = document.getElementById('ui-bar-both-btn');
+  const leftB = document.getElementById('ui-rail-left-btn');
+  const rightB = document.getElementById('ui-rail-right-btn');
+  if (topB) topB.classList.toggle('active', uiBarMode === 'top');
+  if (sideB) sideB.classList.toggle('active', uiBarMode === 'side');
+  if (bothB) bothB.classList.toggle('active', uiBarMode === 'both');
+  if (leftB) leftB.classList.toggle('active', uiRailSide === 'left');
+  if (rightB) rightB.classList.toggle('active', uiRailSide === 'right');
+  if (shouldSync && typeof syncSettingsToServer === 'function') syncSettingsToServer();
+}
+
+function chatKindMeta(info) {
+  const ctype = (info && (info.chat_type || info.type)) || '';
+  const ckind = (info && info.channel_kind) || '';
+  if (ckind === 'voice' || ctype === 'voice') {
+    return { kind: 'voice', icon: '🔊', nom: 'голосовой канал', acc: 'голосовой канал', tag: '🔊 ГОЛОСОВОЙ КАНАЛ' };
+  }
+  if (ctype === 'channel') {
+    return { kind: 'channel', icon: '#', nom: 'текстовый канал', acc: 'текстовый канал', tag: '# КАНАЛ' };
+  }
+  if (ctype === 'dm' || (info && info.is_direct)) {
+    return { kind: 'dm', icon: '💬', nom: 'личный чат', acc: 'личный чат', tag: '💬 ЛС' };
+  }
+  return { kind: 'group', icon: '👥', nom: 'группа', acc: 'группу', tag: '👥 ГРУППА' };
 }
 
 function showToast(text, type) {
@@ -1736,6 +1930,42 @@ window.addEventListener('DOMContentLoaded', () => {
   if (vLeaveBtn) vLeaveBtn.onclick = () => { if (typeof leaveVoiceRoom === 'function') leaveVoiceRoom(); };
   const vCallBtn = document.getElementById('voice-call-peers-btn');
   if (vCallBtn) vCallBtn.onclick = () => { if (typeof callVoiceRoomPeers === 'function') callVoiceRoomPeers(); };
+  const vBarMic = document.getElementById('voice-bar-mic-btn');
+  if (vBarMic) vBarMic.onclick = () => { if (typeof toggleVoiceMic === 'function') toggleVoiceMic(); };
+  const vBarDeaf = document.getElementById('voice-bar-deafen-btn');
+  if (vBarDeaf) vBarDeaf.onclick = () => { if (typeof toggleVoiceDeafen === 'function') toggleVoiceDeafen(); };
+  const vBarLbl = document.getElementById('voice-connected-label');
+  if (vBarLbl) vBarLbl.onclick = () => {
+    if (voiceRoomActiveChatId) {
+      const m = (window.chatsMeta || {})[voiceRoomActiveChatId];
+      switchChat(voiceRoomActiveChatId, (m && m.name) || voiceRoomActiveChatId);
+      setMobileChatOpen(true);
+    }
+  };
+  const newChatSel = document.getElementById('new-chat-type-select');
+  if (newChatSel) newChatSel.onchange = () => {
+    const hint = document.getElementById('new-chat-type-hint');
+    if (!hint) return;
+    if (newChatSel.value === 'voice') hint.textContent = '🔊 Голосовой канал Discord: живой голос со всеми участниками в комнате + встроенный текстовый чат. Звук не рвётся при переключении в другие чаты!';
+    else if (newChatSel.value === 'channel') hint.textContent = '# Текстовый канал: тематическая лента с закрепами, ответами и поиском по истории.';
+    else hint.textContent = '👥 Группа: классический групповой чат с участниками, ролями, правами админов и титулами.';
+  };
+  const testMicBtn = document.getElementById('test-mic-btn');
+  if (testMicBtn) testMicBtn.onclick = () => { if (typeof testMicrophoneAndAudio === 'function') testMicrophoneAndAudio(); };
+  applyUiLayout(uiBarMode, uiRailSide, false);
+  window.addEventListener('pagehide', () => {
+    if (voiceRoomActiveChatId && currentUser && navigator.sendBeacon) {
+      try {
+        navigator.sendBeacon(
+          `${BACKEND_URL}/voice/${encodeURIComponent(voiceRoomActiveChatId)}/leave`,
+          new Blob([JSON.stringify({ nickname: currentUser, session_token: currentSessionToken || '' })], { type: 'application/json' })
+        );
+      } catch (_) {}
+    }
+    if (callState && currentCallPartner) {
+      try { sendSignal({ action: 'call_end', target: currentCallPartner }); } catch (_) {}
+    }
+  });
   const bSend = document.getElementById('admin-broadcast-send-btn');
   if (bSend) bSend.onclick = () => { if (typeof sendAdminBroadcast === 'function') sendAdminBroadcast(); };
 
@@ -1783,12 +2013,14 @@ async function login(nickname, password) {
       document.getElementById('app').style.display = 'flex';
       document.getElementById('my-nick').innerText = `@${currentUser}${isSuperAdmin ? ' 👑' : (isAdmin ? ' ⚡' : '')}`;
 
-      renderAvatar(d.avatar_url, document.getElementById('my-avatar-box'));
+      paintMyAvatar(d.avatar_url || '');
       myAvatarUrl = d.avatar_url || '';
       cacheAvatar(currentUser, myAvatarUrl);
       updateAdminPanelVisibility();
       requestCallNotifications();
       if (typeof loadClickerForUser === 'function') loadClickerForUser(currentUser);
+      if (typeof connectSignalWs === 'function') connectSignalWs();
+      refreshRtcIceConfig();
 
       await loadChats();
       switchChat('general', '🌐 Общий чат');
@@ -1806,6 +2038,9 @@ async function login(nickname, password) {
           if (activeWs && activeWs.readyState === WebSocket.OPEN) {
             activeWs.send(JSON.stringify({ action: 'ping', session_token: currentSessionToken }));
           }
+          if (signalWs && signalWs.readyState === WebSocket.OPEN) {
+            signalWs.send(JSON.stringify({ action: 'ping', session_token: currentSessionToken }));
+          }
         }, 12000);
         setInterval(() => { if (currentUser && !wasKicked) checkInvites(); }, 12000);
       }
@@ -1820,7 +2055,8 @@ document.getElementById('auth-btn').onclick = () => {
 };
 
 async function logout() {
-  try { if (voiceRoomActiveChatId && typeof leaveVoiceRoom === 'function') await leaveVoiceRoom(); } catch (_) {}
+  try { if (voiceRoomActiveChatId && typeof leaveVoiceRoom === 'function') await leaveVoiceRoom(true); } catch (_) {}
+  try { if (signalWs) { signalWs._manual = true; signalWs.close(); signalWs = null; } } catch (_) {}
   localStorage.removeItem('utopia_saved_user');
   location.reload();
 }
@@ -1828,8 +2064,11 @@ async function logout() {
   // Выкинули из аккаунта — уводим на экран входа сразу, без обновления страницы
   function showKickedScreen(msg) {
     wasKicked = true;
+    try { if (voiceRoomActiveChatId && typeof leaveVoiceRoom === 'function') leaveVoiceRoom(true); } catch (_) {}
+    try { if (callState && typeof endCall === 'function') endCall(); } catch (_) {}
     try {
       if (activeWs) { activeWs._manual = true; activeWs.close(); }
+      if (signalWs) { signalWs._manual = true; signalWs.close(); signalWs = null; }
     } catch (_) {}
     localStorage.removeItem('utopia_saved_user');
     currentUser = null;
@@ -2112,7 +2351,7 @@ document.getElementById('save-profile-btn').onclick = async () => {
     cacheAvatar(currentUser, avatarVal);
     paintAvatars(currentUser);
     updateAdminPanelVisibility();
-    renderAvatar(avatarVal, document.getElementById('my-avatar-box'));
+    paintMyAvatar(avatarVal);
     closeModal('profile-modal');
     if (renamed) {
       await loadChats();
@@ -2155,16 +2394,19 @@ function showFriendsTab(tab) {
           return;
         }
         data.incoming.forEach(inc => {
+          const safeNick = escapeHtml(inc.nickname);
           const row = document.createElement('div');
           row.className = 'user-row';
           row.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <b>@${inc.nickname}</b>
+              <b>@${safeNick}</b>
               <div style="display:flex; gap:6px;">
-                <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}','accept')">Принять</button>
-                <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 10px;" onclick="friendAction('${inc.nickname}','decline')">Отклонить</button>
+                <button class="pill-btn f-accept-btn" style="background:var(--success); color:#fff; padding:4px 10px;">Принять</button>
+                <button class="pill-btn f-decline-btn" style="background:var(--danger); color:#fff; padding:4px 10px;">Отклонить</button>
               </div>
             </div>`;
+          row.querySelector('.f-accept-btn').onclick = () => friendAction(inc.nickname, 'accept');
+          row.querySelector('.f-decline-btn').onclick = () => friendAction(inc.nickname, 'decline');
           c.appendChild(row);
         });
         return;
@@ -2181,20 +2423,22 @@ function showFriendsTab(tab) {
         row.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:8px;">
-              <div class="avatar-box" id="fav-${f.nickname}"></div>
+              <div class="avatar-box" id="fav-${escapeAttrNick(f.nickname)}"></div>
               <div>
-                <b>@${f.nickname}</b>
-                <div style="font-size:11px; color:var(--text-dim);">${f.bio || 'Нет описания'}</div>
+                <b>@${escapeHtml(f.nickname)}</b>
+                <div style="font-size:11px; color:var(--text-dim);">${escapeHtml(f.bio || 'Нет описания')}</div>
               </div>
             </div>
             <span class="user-status ${f.is_online ? 'online' : 'offline'}">${f.is_online ? 'В сети' : 'Офлайн'}</span>
           </div>
           <div style="display:flex; gap:6px; margin-top:4px;">
-            <button class="pill-btn" style="background:var(--neon-cyan); color:#000;" onclick="openDirectChat('${f.nickname}')">💬 Написать</button>
-            <button class="pill-btn" style="background:rgba(0,255,136,0.15); color:var(--success);" onclick="closeModal('friends-modal'); startCall('${f.nickname}')">📞 Позвонить</button>
+            <button class="pill-btn f-chat-btn" style="background:var(--neon-cyan); color:#000;">💬 Написать</button>
+            <button class="pill-btn f-call-btn" style="background:rgba(0,255,136,0.15); color:var(--success);">📞 Позвонить</button>
           </div>`;
+        row.querySelector('.f-chat-btn').onclick = () => openDirectChat(f.nickname);
+        row.querySelector('.f-call-btn').onclick = () => { closeModal('friends-modal'); startCall(f.nickname); };
         c.appendChild(row);
-        renderAvatar(f.avatar_url, row.querySelector(`#fav-${f.nickname}`));
+        renderAvatar(f.avatar_url, row.querySelector(`#fav-${escapeAttrNick(f.nickname)}`));
       });
     })
     .catch(() => {
@@ -2230,9 +2474,11 @@ document.getElementById('send-friend-req-btn').onclick = () => {
 
 function checkFriendRequests() {
   fetch(`${BACKEND_URL}/friends/${currentUser}`).then(r=>r.json()).then(d => {
+    const cnt = (d && Array.isArray(d.incoming)) ? d.incoming.length : 0;
     const b = document.getElementById('friends-badge');
-    if (d.incoming && d.incoming.length) { b.innerText = d.incoming.length; b.style.display = 'block'; }
-    else b.style.display = 'none';
+    if (b) { b.innerText = cnt; b.style.display = cnt ? 'block' : 'none'; }
+    const rb = document.getElementById('rail-friends-badge');
+    if (rb) { rb.textContent = cnt > 99 ? '99+' : String(cnt); rb.style.display = cnt ? 'flex' : 'none'; }
   }).catch(()=>{});
 }
 
@@ -2320,31 +2566,41 @@ document.getElementById('open-invites-btn').onclick = () => {
 
 async function checkInvites() {
   try {
-    const res = await fetch(`${BACKEND_URL}/invites/${currentUser}`);
+    const res = await fetch(`${BACKEND_URL}/invites/${encodeURIComponent(currentUser)}`);
     const list = await res.json();
+    const cnt = Array.isArray(list) ? list.length : 0;
     const b = document.getElementById('invites-badge');
-    if (list.length) { b.innerText = list.length; b.style.display = 'block'; }
-    else b.style.display = 'none';
+    if (b) { b.innerText = cnt; b.style.display = cnt ? 'block' : 'none'; }
+    const rb = document.getElementById('rail-invites-badge');
+    if (rb) { rb.textContent = cnt > 99 ? '99+' : String(cnt); rb.style.display = cnt ? 'flex' : 'none'; }
   } catch (e) {}
 }
 
 async function loadInvites() {
   const c = document.getElementById('invites-list-container');
   c.innerHTML = 'Загрузка...';
-  const res = await fetch(`${BACKEND_URL}/invites/${currentUser}`);
+  const res = await fetch(`${BACKEND_URL}/invites/${encodeURIComponent(currentUser)}`);
   const list = await res.json();
   c.innerHTML = '';
-  if (!list.length) { c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">Нет приглашений</div>'; return; }
+  if (!Array.isArray(list) || !list.length) { c.innerHTML = '<div style="color:var(--text-dim); text-align:center;">Нет приглашений</div>'; return; }
 
   list.forEach(inv => {
+    const km = chatKindMeta(inv);
+    const badgeColor = km.kind === 'voice' ? 'var(--success)' : (km.kind === 'channel' ? 'var(--neon-cyan)' : '#58a6ff');
     const row = document.createElement('div');
     row.className = 'user-row';
     row.innerHTML = `
-      <div>@${inv.from_user} приглашает в чат <b>«${inv.chat_name}»</b></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
+        <span style="font-size:10px; font-weight:800; padding:2px 7px; border-radius:7px; background:rgba(255,255,255,.07); color:${badgeColor};">${km.tag}</span>
+      </div>
+      <div><b>@${escapeHtml(inv.from_user)}</b> приглашает в ${km.acc} <b>«${escapeHtml(inv.chat_name)}»</b></div>
+      ${inv.topic ? `<div style="font-size:11px; color:var(--text-dim);">Тема: ${escapeHtml(inv.topic)}</div>` : ''}
       <div style="display:flex; gap:6px; margin-top:4px;">
-        <button class="pill-btn" style="background:var(--success); color:#fff; padding:4px 10px;" onclick="respondInvite(${inv.id}, 'accept')">Принять</button>
-        <button class="pill-btn" style="background:var(--danger); color:#fff; padding:4px 10px;" onclick="respondInvite(${inv.id}, 'decline')">Отклонить</button>
+        <button class="pill-btn inv-acc-btn" style="background:var(--success); color:#fff; padding:4px 10px;">Принять</button>
+        <button class="pill-btn inv-dec-btn" style="background:var(--danger); color:#fff; padding:4px 10px;">Отклонить</button>
       </div>`;
+    row.querySelector('.inv-acc-btn').onclick = () => respondInvite(inv.id, 'accept');
+    row.querySelector('.inv-dec-btn').onclick = () => respondInvite(inv.id, 'decline');
     c.appendChild(row);
   });
 }
@@ -2395,11 +2651,22 @@ async function loadChats() {
     return;
   }
   window.chatsMeta = window.chatsMeta || {};
-  chats.forEach(c => { window.chatsMeta[c.id] = c; });
+  chats.forEach(c => {
+    window.chatsMeta[c.id] = c;
+    if (Array.isArray(c.voice_states)) {
+      const m = {};
+      c.voice_states.forEach(st => { if (st && st.nickname) m[peerKey(st.nickname)] = st; });
+      voiceRoomStates[c.id] = m;
+    }
+  });
   latestChatsCache = chats;
   renderFilteredChatList();
   updateRailDots();
   if (typeof updateVoiceRoomUi === 'function') updateVoiceRoomUi();
+  if (typeof renderVoiceRoomStage === 'function') renderVoiceRoomStage();
+  if (voiceRoomActiveChatId && window.chatsMeta[voiceRoomActiveChatId] && typeof syncVoiceMeshPeers === 'function') {
+    syncVoiceMeshPeers(window.chatsMeta[voiceRoomActiveChatId].voice_users || []);
+  }
 }
 
 function renderFilteredChatList() {
@@ -2508,12 +2775,225 @@ function scheduleWsReconnect() {
 }
 // Вернулись на вкладку — если сокет мёртв, переподключаемся сразу
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && currentUser && !wasKicked
-      && (!activeWs || activeWs.readyState !== WebSocket.OPEN)) {
-    wsReconnectDelay = 1000;
-    scheduleWsReconnect();
+  if (!document.hidden && currentUser && !wasKicked) {
+    if (!signalWs || (signalWs.readyState !== WebSocket.OPEN && signalWs.readyState !== WebSocket.CONNECTING)) {
+      connectSignalWs();
+    }
+    if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
+      wsReconnectDelay = 1000;
+      scheduleWsReconnect();
+    }
   }
 });
+
+function connectSignalWs() {
+  if (!currentUser || wasKicked) return;
+  if (signalWs && (signalWs.readyState === WebSocket.OPEN || signalWs.readyState === WebSocket.CONNECTING)) return;
+  if (signalReconnectTimer) { clearTimeout(signalReconnectTimer); signalReconnectTimer = null; }
+  const url = BACKEND_URL.replace('https', 'wss').replace('http', 'ws') +
+    `/ws/signal/${encodeURIComponent(currentUser)}?token=${encodeURIComponent(currentSessionToken || '')}`;
+  const sw = new WebSocket(url);
+  signalWs = sw;
+  sw.onopen = () => {
+    flushSignalQueue();
+    if (voiceRoomActiveChatId) {
+      try {
+        sw.send(JSON.stringify({
+          action: 'voice_join',
+          chat_id: voiceRoomActiveChatId,
+          muted: !!voiceMicMuted,
+          deafened: !!voiceDeafened
+        }));
+      } catch (_) {}
+    }
+  };
+  sw.onmessage = (e) => {
+    let data; try { data = JSON.parse(e.data); } catch (_) { return; }
+    handleSignalEvent(data);
+  };
+  sw.onclose = () => {
+    if (signalWs === sw) signalWs = null;
+    if (sw._manual || wasKicked || !currentUser) return;
+    signalReconnectTimer = setTimeout(() => {
+      signalReconnectTimer = null;
+      connectSignalWs();
+    }, 1500);
+  };
+}
+
+function waitForSignalOpen(maxMs = 3000) {
+  return new Promise(resolve => {
+    const isReady = () =>
+      (signalWs && signalWs.readyState === WebSocket.OPEN) ||
+      (activeWs && activeWs.readyState === WebSocket.OPEN);
+    if (isReady()) return resolve(true);
+    connectSignalWs();
+    const deadline = Date.now() + maxMs;
+    const t = setInterval(() => {
+      if (isReady()) { clearInterval(t); resolve(true); }
+      else if (Date.now() >= deadline) { clearInterval(t); resolve(false); }
+    }, 80);
+  });
+}
+
+function handleSignalEvent(data) {
+  if (!data || !data.action) return false;
+  switch (data.action) {
+    case 'pong':
+      return true;
+    case 'kicked':
+      wasKicked = true;
+      showKickedScreen(data.msg || 'Вы были отключены от аккаунта');
+      return true;
+    case 'call_sync_stop':
+      // На другом устройстве уже ответили или сбросили — тихо закрываем наш входящий звонок без call_reject
+      if (callState === 'incoming' || (callState && data.by_action === 'call_end')) {
+        stopRing();
+        stopIncomingNotification();
+        stopTitleBlink();
+        clearTimeout(callTimeoutTimer);
+        if (callState === 'incoming') endCall(true);
+      }
+      return true;
+    case 'call_offer':
+      // mesh / ренегоциация от уже активного партнёра — не кидаем call_busy!
+      if (data.renegotiate && (sameNick(data.caller, currentCallPartner) || sameNick(data.caller, groupPrimaryPartner) || (peers && peers[peerKey(data.caller)]))) {
+        handleCallRenegotiateOffer(data);
+      } else if (data.group && (groupCallActive || currentCallPartner || callState)) {
+        handleGroupOffer(data);
+      } else {
+        handleIncomingCall(data);
+      }
+      return true;
+    case 'call_answer':
+      handleCallAnswer(data);
+      return true;
+    case 'call_ice': {
+      const cLow = peerKey(data.caller);
+      if (data.group && cLow && groupCallActive && !sameNick(data.caller, groupPrimaryPartner)) {
+        const mpc = peers[cLow];
+        if (mpc && mpc.remoteDescription) {
+          try { mpc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {}); } catch (e) {}
+        } else {
+          (groupPeerIce[cLow] = groupPeerIce[cLow] || []).push(data.candidate);
+        }
+      } else if (peerConnection && peerConnection.remoteDescription) {
+        try {
+          peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+        } catch (e) {}
+      } else {
+        iceCandidatesQueue.push(data.candidate);
+      }
+      return true;
+    }
+    case 'call_end':
+    case 'call_reject':
+    case 'call_timeout':
+      if (groupCallActive && data.caller && !sameNick(data.caller, groupPrimaryPartner) && (data.action === 'call_end' || data.action === 'call_reject')) {
+        closeGroupPeer(data.caller, data.action === 'call_reject' ? 'Участник отклонил приглашение' : 'Участник вышел из звонка');
+      } else if (callState && (!data.caller || sameNick(data.caller, currentCallPartner) || sameNick(data.caller, groupPrimaryPartner))) {
+        stopRing();
+        stopIncomingNotification();
+        stopTitleBlink();
+        showToast(data.action === 'call_timeout' ? 'Абонент не ответил на звонок'
+          : (data.action === 'call_reject' ? 'Звонок отклонён' : 'Звонок завершён'),
+          data.action === 'call_end' ? undefined : 'warning');
+        endCall();
+      }
+      return true;
+    case 'call_offline':
+      if (groupCallActive && data.target && !sameNick(data.target, groupPrimaryPartner)) {
+        closeGroupPeer(data.target, 'не в сети');
+      } else if (callState) {
+        showToast('Абонент не в сети — звонок невозможен', 'warning');
+        endCall();
+      }
+      return true;
+    case 'call_busy':
+      if (groupCallActive && data.caller && !sameNick(data.caller, groupPrimaryPartner)) {
+        closeGroupPeer(data.caller, 'занят — не смог присоединиться');
+      } else if (callState) {
+        showToast('Абонент уже разговаривает — звонок занят', 'warning');
+        endCall();
+      }
+      return true;
+    case 'call_video_state': {
+      const on = data.on !== false;
+      const isPrimary = !groupCallActive || !data.caller || sameNick(data.caller, groupPrimaryPartner);
+      if (isPrimary) {
+        const rv = document.getElementById('remote-video');
+        const aw = document.getElementById('call-avatar-wrap');
+        if (rv && !isCallDeafened) rv.style.display = on ? 'block' : 'none';
+        if (aw && !isCallDeafened) aw.style.display = on ? 'none' : 'flex';
+      } else if (groupCallActive && data.caller) {
+        const tile = document.getElementById('gtile-' + escapeAttrNick(data.caller));
+        if (tile) {
+          const vid = tile.querySelector('video');
+          const ph = tile.querySelector('.call-avatar-placeholder');
+          if (vid && !isCallDeafened) vid.style.display = on ? 'block' : 'none';
+          if (ph && !isCallDeafened) ph.style.display = on ? 'none' : 'flex';
+        }
+      }
+      return true;
+    }
+    case 'call_mute_state': {
+      if (data.caller) {
+        const isPrimary = !groupCallActive || sameNick(data.caller, groupPrimaryPartner);
+        if (isPrimary) {
+          const hint = document.getElementById('call-avatar-hint');
+          if (hint && callConnectedAt) {
+            hint.textContent = data.muted ? `🔇 @${data.caller} выключил(а) микрофон` : 'Камера собеседника выключена';
+          }
+        }
+      }
+      return true;
+    }
+    case 'voice_offer':
+      if (typeof handleVoiceOffer === 'function') handleVoiceOffer(data);
+      return true;
+    case 'voice_answer':
+      if (typeof handleVoiceAnswer === 'function') handleVoiceAnswer(data);
+      return true;
+    case 'voice_ice':
+      if (typeof handleVoiceIce === 'function') handleVoiceIce(data);
+      return true;
+    case 'voice_room_updated': {
+      const users = Array.isArray(data.users) ? data.users : [];
+      if (window.chatsMeta && window.chatsMeta[data.chat_id]) {
+        window.chatsMeta[data.chat_id].voice_users = users;
+        if (Array.isArray(data.states)) window.chatsMeta[data.chat_id].voice_states = data.states;
+      }
+      const cached = (latestChatsCache || []).find(c => c.id === data.chat_id);
+      if (cached) {
+        cached.voice_users = users;
+        if (Array.isArray(data.states)) cached.voice_states = data.states;
+      }
+      if (Array.isArray(data.states)) {
+        const sm = {};
+        data.states.forEach(s => { if (s && s.nickname) sm[peerKey(s.nickname)] = s; });
+        voiceRoomStates[data.chat_id] = sm;
+      }
+      if (voiceRoomActiveChatId === data.chat_id && !users.some(u => sameNick(u, currentUser))) {
+        // Сервер подтвердил наш выход
+        if (typeof cleanupVoiceMesh === 'function') cleanupVoiceMesh();
+        voiceRoomActiveChatId = null;
+      }
+      if (voiceRoomActiveChatId === data.chat_id && typeof syncVoiceMeshPeers === 'function') {
+        syncVoiceMeshPeers(users);
+      }
+      if (typeof renderFilteredChatList === 'function') renderFilteredChatList();
+      if (typeof updateVoiceRoomUi === 'function') updateVoiceRoomUi();
+      if (typeof renderVoiceRoomStage === 'function') renderVoiceRoomStage();
+      if (data.chat_id === activeChatId) updateChatHeader(activeChatId);
+      const dmp = document.getElementById('discord-members-panel');
+      if (dmp && dmp.classList.contains('open') && data.chat_id === activeChatId && typeof renderDiscordMembers === 'function') {
+        renderDiscordMembers(activeChatId);
+      }
+      return true;
+    }
+  }
+  return false;
+}
 
 let _switchChatSeq = 0;
 async function switchChat(chatId, chatName, isDirect = null) {
@@ -2625,87 +3105,8 @@ async function switchChat(chatId, chatName, isDirect = null) {
 
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data);
-    if (data.action === 'kicked') {
-      // Выкинули из аккаунта — уходим сразу, не дожидаясь обновления страницы
-      wasKicked = true;
-      try { ws.close(); } catch (_) {}
-      showKickedScreen(data.msg || 'Вы были отключены от аккаунта');
-      return;
-    }
-    if (data.action === 'call_offer') {
-      // mesh: оффер от участника, к которому мы уже подключены или который добирается в группу
-      if (data.group && (groupCallActive || currentCallPartner || callState)) {
-        handleGroupOffer(data);
-      } else {
-        handleIncomingCall(data);
-      }
-    } else if (data.action === 'call_answer') {
-      handleCallAnswer(data);
-    } else if (data.action === 'call_ice') {
-      if (data.group && data.caller && groupCallActive && data.caller !== groupPrimaryPartner) {
-        const mpc = peers[data.caller];
-        if (mpc && mpc.remoteDescription) {
-          try { mpc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {}); } catch (e) {}
-        } else {
-          (groupPeerIce[data.caller] = groupPeerIce[data.caller] || []).push(data.candidate);
-        }
-      } else if (peerConnection && peerConnection.remoteDescription) {
-        try {
-          peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
-        } catch (e) { /* битый кандидат — игнорируем */ }
-      } else {
-        iceCandidatesQueue.push(data.candidate);
-      }
-    } else if (data.action === 'call_end' || data.action === 'call_reject' || data.action === 'call_timeout') {
-      if (groupCallActive && data.caller && data.caller !== groupPrimaryPartner && (data.action === 'call_end' || data.action === 'call_reject')) {
-        // mesh: один участник вышел — остальные продолжают
-        closeGroupPeer(data.caller, data.action === 'call_reject' ? 'Участник отклонил приглашение' : 'Участник вышел из звонка');
-      } else {
-        stopRing();
-        stopIncomingNotification();
-        stopTitleBlink();
-        showToast(data.action === 'call_timeout' ? 'Абонент не ответил на звонок'
-          : (data.action === 'call_reject' ? 'Звонок отклонён' : 'Звонок завершён'),
-          data.action === 'call_end' ? undefined : 'warning');
-        endCall();
-      }
-    } else if (data.action === 'call_offline') {
-      if (groupCallActive && data.target && data.target !== groupPrimaryPartner) {
-        // mesh: этот участник не в сети — убираем его из звонка, остальные продолжают
-        closeGroupPeer(data.target, 'не в сети');
-      } else {
-        showToast('Абонент не в сети — звонок невозможен', 'warning');
-        endCall();
-      }
-    } else if (data.action === 'call_busy') {
-      if (groupCallActive && data.caller && data.caller !== groupPrimaryPartner) {
-        closeGroupPeer(data.caller, 'занят — не смог присоединиться');
-      } else {
-        showToast('Абонент уже разговаривает — звонок занят', 'warning');
-        endCall();
-      }
-    } else if (data.action === 'call_video_state') {
-      // Собеседник включил/выключил камеру/демонстрацию
-      const on = data.on !== false;
-      const rv = document.getElementById('remote-video');
-      if (on) {
-        rv.style.display = 'block';
-        document.getElementById('call-avatar-wrap').style.display = 'none';
-      } else {
-        rv.style.display = 'none';
-        document.getElementById('call-avatar-wrap').style.display = 'flex';
-      }
-      // mesh: состояние видео конкретного участника в его плитке
-      if (groupCallActive && data.caller) {
-        const tile = document.getElementById('gtile-' + data.caller);
-        if (tile) {
-          const vid = tile.querySelector('video');
-          const ph = tile.querySelector('.call-avatar-placeholder');
-          if (vid) vid.style.display = on ? 'block' : 'none';
-          if (ph) ph.style.display = on ? 'none' : 'flex';
-        }
-      }
-    } else if (data.action === 'new_message') {
+    if (handleSignalEvent(data)) return;
+    if (data.action === 'new_message') {
       const msgChat = data.chat_id || activeChatId;
       const fromMe = String(data.sender || '').toLowerCase() === String(currentUser || '').toLowerCase();
       if (msgChat && (!window.chatsMeta || !window.chatsMeta[msgChat])) {
@@ -2770,13 +3171,23 @@ async function switchChat(chatId, chatName, isDirect = null) {
         })();
       } else {
         checkInvites();
-        showToast(`Новое приглашение в чат от @${data.from}!`);
+        const kmInv = chatKindMeta(data);
+        showToast(`📩 Приглашение в ${kmInv.acc} «${data.chat || ''}» от @${data.from}!`);
+        browserNotify(`Приглашение в ${kmInv.acc}`, `@${data.from} приглашает вас в «${data.chat || ''}»`, true);
       }
     } else if (data.action === 'chat_created') {
       // Информация о новом чате приходит всем пользователям на сайте
-      if (data.created_by !== currentUser) showToast(`@${data.created_by} создал(а) чат «${data.name}»`);
+      if (!sameNick(data.created_by, currentUser)) {
+        const kmCr = chatKindMeta(data);
+        showToast(`@${data.created_by} создал(а) ${kmCr.acc} «${data.name}»`);
+      }
       loadChats();
     } else if (data.action === 'chat_deleted') {
+      if (voiceRoomActiveChatId && voiceRoomActiveChatId === data.id) {
+        if (typeof cleanupVoiceMesh === 'function') cleanupVoiceMesh();
+        voiceRoomActiveChatId = null;
+        if (typeof updateVoiceRoomUi === 'function') updateVoiceRoomUi();
+      }
       if (data.id === activeChatId) switchChat('general', '🌐 Общий чат');
       loadChats();
     } else if (data.action === 'chat_cleared') {
@@ -2831,7 +3242,7 @@ async function switchChat(chatId, chatName, isDirect = null) {
             const sv = JSON.parse(localStorage.getItem('utopia_saved_user') || 'null');
             if (sv && sv.nickname) { sv.nickname = currentUser; localStorage.setItem('utopia_saved_user', JSON.stringify(sv)); }
           } catch (_) {}
-          renderAvatar(myAvatarUrl, document.getElementById('my-avatar-box'));
+          paintMyAvatar(myAvatarUrl);
           updateAdminPanelVisibility();
         }
         loadChats();
@@ -2940,17 +3351,6 @@ async function switchChat(chatId, chatName, isDirect = null) {
           }
         }
       }
-    } else if (data.action === 'voice_room_updated') {
-      if (window.chatsMeta && window.chatsMeta[data.chat_id]) {
-        window.chatsMeta[data.chat_id].voice_users = Array.isArray(data.users) ? data.users : [];
-      }
-      const cached = (latestChatsCache || []).find(c => c.id === data.chat_id);
-      if (cached) cached.voice_users = Array.isArray(data.users) ? data.users : [];
-      if (voiceRoomActiveChatId === data.chat_id && (!data.users || !data.users.some(u => String(u).toLowerCase() === String(currentUser || '').toLowerCase()))) {
-        voiceRoomActiveChatId = null;
-      }
-      if (typeof renderFilteredChatList === 'function') renderFilteredChatList();
-      if (typeof updateVoiceRoomUi === 'function') updateVoiceRoomUi();
     } else if (data.action === 'admin_broadcast') {
       showToast(data.msg || '📢 Объявление от администрации', 'warning');
       if (typeof browserNotify === 'function') browserNotify('Объявление Utopia', data.msg || '', true);
@@ -3035,10 +3435,60 @@ document.getElementById('submit-rename-btn').onclick = async () => {
   }
 };
 
-// Приглашение в чат
-document.getElementById('chat-invite-btn').onclick = () => {
+// Приглашение в чат / канал
+document.getElementById('chat-invite-btn').onclick = async () => {
+  const meta = chatMeta(activeChatId) || {};
+  const km = chatKindMeta(meta);
+  const titleEl = document.getElementById('invite-modal-title');
+  const hintEl = document.getElementById('invite-modal-hint');
+  const cName = meta.name || document.getElementById('chat-title').innerText;
+  if (titleEl) titleEl.textContent = `📩 Пригласить в ${km.acc}`;
+  if (hintEl) hintEl.textContent = `${km.icon} «${cName}» — введите точный ник или выберите друга:`;
   document.getElementById('invite-username-input').value = '';
   openModal('invite-member-modal');
+
+  const qWrap = document.getElementById('invite-friends-quick');
+  if (qWrap && currentUser) {
+    qWrap.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Загрузка друзей...</div>';
+    try {
+      const [frRes, memRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/friends/${encodeURIComponent(currentUser)}`).then(r => r.json()).catch(() => ({})),
+        fetch(`${BACKEND_URL}/members/${encodeURIComponent(activeChatId)}?nickname=${encodeURIComponent(currentUser)}`).then(r => r.json()).catch(() => ({})),
+      ]);
+      const memSet = new Set((memRes.members || []).map(m => peerKey(m.nickname)));
+      const avail = (frRes.friends || []).filter(f => !memSet.has(peerKey(f.nickname)));
+      qWrap.innerHTML = '';
+      if (!avail.length) {
+        qWrap.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Все друзья уже здесь или список друзей пуст — введите ник вручную.</div>';
+      } else {
+        avail.sort((a, b) => (b.is_online ? 1 : 0) - (a.is_online ? 1 : 0));
+        avail.forEach(f => {
+          const row = document.createElement('div');
+          row.className = 'user-row';
+          row.style.cssText = 'padding:7px 10px; flex-direction:row; justify-content:space-between; align-items:center;';
+          row.innerHTML = `<span style="font-size:12.5px;">${f.is_online ? '🟢' : '⚫'} <b>@${escapeHtml(f.nickname)}</b></span>`;
+          const b = document.createElement('button');
+          b.className = 'pill-btn';
+          b.style.cssText = 'padding:4px 10px; font-size:11px; background:rgba(0,240,255,0.16); color:var(--neon-cyan);';
+          b.textContent = '➕ Позвать';
+          b.onclick = async () => {
+            b.disabled = true;
+            const r = await fetch(`${BACKEND_URL}/invite`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ chat_id: activeChatId, chat_name: document.getElementById('chat-title').innerText, from_user: currentUser, to_user: f.nickname })
+            });
+            const d = await r.json().catch(() => ({}));
+            showToast(d.msg || 'Отправлено');
+            if (d.status === 'ok') { b.textContent = '✓ Отправлено'; b.style.opacity = '.6'; }
+            else b.disabled = false;
+          };
+          row.appendChild(b);
+          qWrap.appendChild(row);
+        });
+      }
+    } catch (_) { qWrap.innerHTML = ''; }
+  }
 };
 
 document.getElementById('submit-invite-btn').onclick = async () => {
@@ -3385,9 +3835,38 @@ function clearEditMsg() {
   if (bar) bar.style.display = 'none';
 }
 
-function updateVoiceRoomUi() {
+function syncVoiceBarControls() {
   const bar = document.getElementById('voice-connected-bar');
   const lbl = document.getElementById('voice-connected-label');
+  const net = document.getElementById('voice-connected-net');
+  const micB = document.getElementById('voice-bar-mic-btn');
+  const deafB = document.getElementById('voice-bar-deafen-btn');
+  if (micB) {
+    micB.classList.toggle('off', !!voiceMicMuted);
+    micB.classList.toggle('on', !voiceMicMuted);
+    micB.textContent = voiceMicMuted ? '🔇 Микр' : '🎙️ Микр';
+  }
+  if (deafB) {
+    deafB.classList.toggle('off', !!voiceDeafened);
+    deafB.classList.toggle('on', !voiceDeafened);
+    deafB.textContent = voiceDeafened ? '🎧🔇 Выкл' : '🎧 Звук';
+  }
+  if (!bar) return;
+  if (!voiceRoomActiveChatId) { bar.style.display = 'none'; return; }
+  const rMeta = (window.chatsMeta || {})[voiceRoomActiveChatId];
+  const vUsers = (rMeta && Array.isArray(rMeta.voice_users)) ? rMeta.voice_users : [];
+  bar.style.display = 'flex';
+  const nameStr = (rMeta && rMeta.name) ? rMeta.name : voiceRoomActiveChatId;
+  if (lbl) lbl.textContent = `🔊 ${nameStr} (${vUsers.length})`;
+  if (net) {
+    const others = Object.values(voicePeers);
+    const connected = others.filter(p => p.connected).length;
+    net.textContent = !others.length ? 'Ожидание' : `${connected}/${others.length} P2P`;
+    net.style.color = (others.length && connected === others.length) ? 'var(--success)' : 'var(--neon-cyan)';
+  }
+}
+
+function updateVoiceRoomUi() {
   const metaCur = (window.chatsMeta || {})[activeChatId];
   const isVoiceCur = !!(metaCur && (metaCur.channel_kind === 'voice' || metaCur.chat_type === 'voice'));
   const jBtn = document.getElementById('voice-room-join-btn');
@@ -3395,19 +3874,415 @@ function updateVoiceRoomUi() {
     if (isVoiceCur) {
       jBtn.style.display = 'inline-flex';
       const inCur = voiceRoomActiveChatId === activeChatId;
-      jBtn.textContent = inCur ? '🔇 Выйти из голоса' : '🔊 Войти в голос';
+      jBtn.textContent = inCur ? '🚪 Выйти из голоса' : '🔊 Войти в голос';
       jBtn.style.borderColor = inCur ? 'var(--danger)' : 'var(--success)';
       jBtn.style.color = inCur ? 'var(--danger)' : 'var(--success)';
     } else {
       jBtn.style.display = 'none';
     }
   }
-  if (!bar) return;
-  if (!voiceRoomActiveChatId) { bar.style.display = 'none'; return; }
-  const rMeta = (window.chatsMeta || {})[voiceRoomActiveChatId];
-  const peers = (rMeta && Array.isArray(rMeta.voice_users)) ? rMeta.voice_users : [];
-  bar.style.display = 'flex';
-  if (lbl) lbl.textContent = `🔊 ${rMeta ? rMeta.name : voiceRoomActiveChatId} (${peers.length})`;
+  syncVoiceBarControls();
+  renderVoiceRoomStage();
+}
+
+function renderVoiceRoomStage() {
+  const stage = document.getElementById('voice-room-stage');
+  if (!stage) return;
+  const metaCur = (window.chatsMeta || {})[activeChatId];
+  const isVoiceCur = !!(metaCur && (metaCur.channel_kind === 'voice' || metaCur.chat_type === 'voice'));
+  if (!isVoiceCur) {
+    stage.style.display = 'none';
+    stage.innerHTML = '';
+    return;
+  }
+  const users = Array.isArray(metaCur.voice_users) ? metaCur.voice_users : [];
+  const inThisRoom = voiceRoomActiveChatId === activeChatId;
+  const stMap = voiceRoomStates[activeChatId] || {};
+  stage.style.display = 'flex';
+
+  const othersText = inThisRoom
+    ? `🟢 Вы в голосовом канале (${users.length} в комнате)`
+    : (users.length ? `⚪ Сейчас в комнате: ${users.length} чел. — нажмите «Войти в голос»` : '⚪ Пока никого нет — заходите первым и зовите друзей');
+
+  stage.innerHTML = `
+    <div class="voice-stage-head">
+      <div class="voice-stage-title">
+        <span>🔊 ${escapeHtml(metaCur.name || 'Голосовой канал')}</span>
+        <span style="font-size:11px; font-weight:500; color:var(--text-dim);">${othersText}</span>
+      </div>
+      <div class="voice-stage-actions">
+        ${inThisRoom
+          ? `<button class="voice-ctrl-mini ${voiceMicMuted ? 'off' : 'on'}" id="vstage-mic-btn">${voiceMicMuted ? '🔇 Микр выкл' : '🎙️ Микрофон'}</button>
+             <button class="voice-ctrl-mini ${voiceDeafened ? 'off' : 'on'}" id="vstage-deaf-btn">${voiceDeafened ? '🎧🔇 Звук выкл' : '🎧 Звук'}</button>
+             <button class="voice-ctrl-mini" id="vstage-video-btn" title="Перейти в видеозвонок с камерой и экраном">📹 Видеозвонок</button>
+             <button class="voice-ctrl-mini off" id="vstage-leave-btn">🚪 Выйти</button>`
+          : `<button class="voice-ctrl-mini on" id="vstage-join-btn">🔊 Войти в голос</button>`}
+      </div>
+    </div>
+    <div class="voice-stage-chips" id="voice-stage-chips"></div>
+  `;
+
+  const j = stage.querySelector('#vstage-join-btn');
+  if (j) j.onclick = () => joinOrLeaveVoiceRoom(activeChatId);
+  const l = stage.querySelector('#vstage-leave-btn');
+  if (l) l.onclick = () => leaveVoiceRoom();
+  const m = stage.querySelector('#vstage-mic-btn');
+  if (m) m.onclick = () => toggleVoiceMic();
+  const d = stage.querySelector('#vstage-deaf-btn');
+  if (d) d.onclick = () => toggleVoiceDeafen();
+  const v = stage.querySelector('#vstage-video-btn');
+  if (v) v.onclick = () => callVoiceRoomPeers();
+
+  const chips = stage.querySelector('#voice-stage-chips');
+  if (!users.length) {
+    chips.innerHTML = '<div style="font-size:11.5px; color:var(--text-dim);">Здесь появятся участники голосовой комнаты с индикатором речи.</div>';
+    return;
+  }
+  users.forEach(u => {
+    const low = peerKey(u);
+    const isMe = sameNick(u, currentUser);
+    const st = stMap[low] || {};
+    const muted = isMe ? voiceMicMuted : !!st.muted;
+    const deaf = isMe ? voiceDeafened : !!st.deafened;
+    const speaking = !!voiceSpeakingMap[low] && !muted;
+    const vp = voicePeers[low];
+    const connBadge = isMe ? 'вы' : (inThisRoom ? (vp && vp.connected ? '🟢' : '⏳') : '');
+    const card = document.createElement('div');
+    card.className = 'voice-peer-card' + (speaking ? ' speaking' : '') + (muted ? ' muted' : '');
+    card.dataset.voicePeer = low;
+    card.innerHTML = `
+      <div class="voice-peer-av">${renderAvatarHtml(getCachedAvatar(u), 24)}</div>
+      <span style="font-weight:600; color:${isMe ? 'var(--neon-cyan)' : '#fff'};">@${escapeHtml(u)}</span>
+      <span class="voice-peer-badges">${muted ? '🔇' : '🎙️'}${deaf ? ' 🎧✕' : ''}${connBadge ? ' ' + connBadge : ''}</span>
+    `;
+    card.onclick = () => { if (!isMe) openUserProfile(u); };
+    ensureAvatarLoaded(u);
+    chips.appendChild(card);
+  });
+}
+
+function updateVoiceStageSpeakingClasses() {
+  document.querySelectorAll('#voice-stage-chips .voice-peer-card[data-voice-peer]').forEach(el => {
+    const low = el.dataset.voicePeer;
+    const isMe = sameNick(low, currentUser);
+    const st = (voiceRoomStates[voiceRoomActiveChatId || activeChatId] || {})[low] || {};
+    const muted = isMe ? voiceMicMuted : !!st.muted;
+    el.classList.toggle('speaking', !!voiceSpeakingMap[low] && !muted);
+  });
+}
+
+function _startVoiceSpeakingMonitor() {
+  if (voiceSpeakRaf) return;
+  const tick = () => {
+    if (!voiceRoomActiveChatId) { voiceSpeakRaf = null; return; }
+    let changed = false;
+    const checkAn = (low, an, mutedFlag) => {
+      const active = !mutedFlag && !!an && _readLevel(an) > 0.025;
+      if (!!voiceSpeakingMap[low] !== active) {
+        voiceSpeakingMap[low] = active;
+        changed = true;
+      }
+    };
+    if (currentUser) checkAn(peerKey(currentUser), voiceLocalAnalyser, voiceMicMuted);
+    for (const [low, vp] of Object.entries(voicePeers)) {
+      const st = (voiceRoomStates[voiceRoomActiveChatId] || {})[low] || {};
+      checkAn(low, vp.analyser, !!st.muted || voiceDeafened);
+    }
+    if (changed) updateVoiceStageSpeakingClasses();
+    voiceSpeakRaf = setTimeout(() => requestAnimationFrame(tick), 90);
+  };
+  tick();
+}
+
+function _stopVoiceSpeakingMonitor() {
+  if (voiceSpeakRaf) { clearTimeout(voiceSpeakRaf); voiceSpeakRaf = null; }
+  voiceSpeakingMap = {};
+  voiceLocalAnalyser = null;
+}
+
+async function acquireVoiceMic() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return { stream: null, reason: 'insecure' };
+  }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false
+    });
+    return { stream: s, reason: null };
+  } catch (e1) {
+    try {
+      const s2 = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      return { stream: s2, reason: null };
+    } catch (e2) {
+      return { stream: null, reason: (e2 && e2.name) || 'error' };
+    }
+  }
+}
+
+function createVoicePeerEntry(chatId, nick) {
+  const low = peerKey(nick);
+  if (voicePeers[low]) return voicePeers[low];
+  const pc = new RTCPeerConnection(rtcConfig);
+  const entry = {
+    nick, low, chatId, pc,
+    audioEl: null, analyser: null,
+    iceQueue: [], makingOffer: false, ignoreOffer: false, hasNegotiatedOnce: false,
+    polite: peerKey(currentUser) < low,
+    connected: false,
+    restartTimer: null,
+  };
+  voicePeers[low] = entry;
+
+  if (voiceLocalStream && voiceLocalStream.getAudioTracks().length) {
+    const track = voiceLocalStream.getAudioTracks()[0];
+    pc.addTrack(track, voiceLocalStream);
+  } else {
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+  }
+
+  pc.ontrack = (ev) => {
+    if (ev.track.kind !== 'audio') return;
+    const pool = document.getElementById('voice-audio-pool') || document.body;
+    let audioEl = entry.audioEl;
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.id = 'voice-audio-' + escapeAttrNick(nick);
+      audioEl.autoplay = true;
+      audioEl.playsInline = true;
+      audioEl.style.display = 'none';
+      pool.appendChild(audioEl);
+      entry.audioEl = audioEl;
+    }
+    const stream = ev.streams[0] || new MediaStream([ev.track]);
+    audioEl.srcObject = stream;
+    audioEl.volume = 1.0;
+    audioEl.muted = !!voiceDeafened;
+    const selectedOut = audioOutputs[audioRouteIndex];
+    if (selectedOut && typeof audioEl.setSinkId === 'function') {
+      audioEl.setSinkId(selectedOut.deviceId).catch(() => {});
+    }
+    audioEl.play().then(() => hideSoundUnlock()).catch(() => showSoundUnlock());
+    try {
+      const ctx = ensureVoiceCtx();
+      if (ctx) {
+        const src = ctx.createMediaStreamSource(stream);
+        const an = ctx.createAnalyser();
+        an.fftSize = 256;
+        src.connect(an);
+        entry.analyser = an;
+      }
+    } catch (_) {}
+  };
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate && voiceRoomActiveChatId === chatId) {
+      sendSignal({
+        action: 'voice_ice',
+        chat_id: chatId,
+        target: entry.nick,
+        candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate
+      });
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    const st = pc.connectionState;
+    entry.connected = (st === 'connected');
+    if (st === 'failed' && voiceRoomActiveChatId === chatId) {
+      try { if (typeof pc.restartIce === 'function') pc.restartIce(); } catch (_) {}
+    }
+    syncVoiceBarControls();
+    if (activeChatId === chatId) renderVoiceRoomStage();
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    const st = pc.iceConnectionState;
+    if (st === 'connected' || st === 'completed') {
+      entry.connected = true;
+      if (entry.restartTimer) { clearTimeout(entry.restartTimer); entry.restartTimer = null; }
+      syncVoiceBarControls();
+      if (activeChatId === chatId) renderVoiceRoomStage();
+    } else if (st === 'disconnected') {
+      entry.connected = false;
+      clearTimeout(entry.restartTimer);
+      entry.restartTimer = setTimeout(() => {
+        if (voiceRoomActiveChatId === chatId && voicePeers[low] === entry && pc.iceConnectionState === 'disconnected') {
+          try { if (typeof pc.restartIce === 'function') pc.restartIce(); } catch (_) {}
+        }
+      }, 3000);
+      syncVoiceBarControls();
+    } else if (st === 'failed') {
+      entry.connected = false;
+      if (voiceRoomActiveChatId === chatId && peerKey(currentUser) > low) {
+        try { if (typeof pc.restartIce === 'function') pc.restartIce(); } catch (_) {}
+      }
+    }
+  };
+
+  pc.onnegotiationneeded = async () => {
+    // Детерминированное правило инициатора (только если мой ник > ника пира, либо после iceRestart)
+    if (voiceRoomActiveChatId !== chatId) return;
+    if (peerKey(currentUser) < low && pc.iceConnectionState !== 'failed') return;
+    if (entry.pc.signalingState !== 'stable' || entry.makingOffer) return;
+    try {
+      entry.makingOffer = true;
+      entry.hasNegotiatedOnce = true;
+      await pc.setLocalDescription(tuneOpusSdp(await pc.createOffer()));
+      sendSignal({
+        action: 'voice_offer',
+        chat_id: chatId,
+        target: entry.nick,
+        sdp: pc.localDescription
+      });
+    } catch (err) {
+      console.log('voice negotiation failed:', err);
+    } finally {
+      entry.makingOffer = false;
+    }
+  };
+
+  return entry;
+}
+
+function closeVoicePeer(low) {
+  const entry = voicePeers[low];
+  if (!entry) return;
+  clearTimeout(entry.restartTimer);
+  try { entry.pc.close(); } catch (_) {}
+  if (entry.audioEl) {
+    try { entry.audioEl.pause(); entry.audioEl.srcObject = null; entry.audioEl.remove(); } catch (_) {}
+  }
+  delete voicePeers[low];
+  delete voiceSpeakingMap[low];
+}
+
+function cleanupVoiceMesh() {
+  for (const low of Object.keys(voicePeers)) closeVoicePeer(low);
+  voicePeers = {};
+  if (voiceLocalStream) {
+    try { voiceLocalStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+    voiceLocalStream = null;
+  }
+  voiceMicMuted = false;
+  voiceDeafened = false;
+  _stopVoiceSpeakingMonitor();
+  const pool = document.getElementById('voice-audio-pool');
+  if (pool) pool.innerHTML = '';
+}
+
+function syncVoiceMeshPeers(users) {
+  if (!voiceRoomActiveChatId || !Array.isArray(users)) return;
+  const activeLows = new Set(users.map(u => peerKey(u)).filter(Boolean));
+  for (const low of Object.keys(voicePeers)) {
+    if (!activeLows.has(low)) closeVoicePeer(low);
+  }
+  users.forEach(u => {
+    const low = peerKey(u);
+    if (!low || sameNick(u, currentUser)) return;
+    if (!voicePeers[low]) {
+      const entry = createVoicePeerEntry(voiceRoomActiveChatId, u);
+      if (peerKey(currentUser) > low) {
+        // Fallback-инициатор, если браузер не вызвал negotiationneeded автоматически
+        setTimeout(async () => {
+          if (voiceRoomActiveChatId !== entry.chatId || voicePeers[low] !== entry) return;
+          if (entry.hasNegotiatedOnce || entry.pc.signalingState !== 'stable' || entry.makingOffer) return;
+          try {
+            entry.makingOffer = true;
+            entry.hasNegotiatedOnce = true;
+            await entry.pc.setLocalDescription(tuneOpusSdp(await entry.pc.createOffer()));
+            sendSignal({ action: 'voice_offer', chat_id: entry.chatId, target: entry.nick, sdp: entry.pc.localDescription });
+          } catch (_) {}
+          finally { entry.makingOffer = false; }
+        }, 120);
+      }
+    }
+  });
+}
+
+async function handleVoiceOffer(data) {
+  const cid = data.chat_id;
+  if (!cid || cid !== voiceRoomActiveChatId || !data.caller || !data.sdp) return;
+  const low = peerKey(data.caller);
+  const entry = createVoicePeerEntry(cid, data.caller);
+  const pc = entry.pc;
+  try {
+    const offerCollision = (data.sdp.type === 'offer') && (entry.makingOffer || pc.signalingState !== 'stable');
+    entry.ignoreOffer = !entry.polite && offerCollision;
+    if (entry.ignoreOffer) return;
+
+    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    while (entry.iceQueue.length) {
+      const c = entry.iceQueue.shift();
+      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+    }
+    if (data.sdp.type === 'offer') {
+      const tr = pc.getTransceivers().find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio');
+      if (voiceLocalStream && voiceLocalStream.getAudioTracks().length && tr) {
+        try { await tr.sender.replaceTrack(voiceLocalStream.getAudioTracks()[0]); } catch (_) {}
+        if (tr.direction === 'recvonly' || tr.direction === 'inactive') tr.direction = 'sendrecv';
+      }
+      await pc.setLocalDescription(tuneOpusSdp(await pc.createAnswer()));
+      sendSignal({ action: 'voice_answer', chat_id: cid, target: entry.nick, sdp: pc.localDescription });
+    }
+  } catch (e) { console.log('handleVoiceOffer failed:', e); }
+}
+
+async function handleVoiceAnswer(data) {
+  const cid = data.chat_id;
+  if (!cid || cid !== voiceRoomActiveChatId || !data.caller || !data.sdp) return;
+  const entry = voicePeers[peerKey(data.caller)];
+  if (!entry || entry.ignoreOffer) return;
+  try {
+    await entry.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    while (entry.iceQueue.length) {
+      const c = entry.iceQueue.shift();
+      try { await entry.pc.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+    }
+  } catch (e) { console.log('handleVoiceAnswer failed:', e); }
+}
+
+async function handleVoiceIce(data) {
+  const cid = data.chat_id;
+  if (!cid || cid !== voiceRoomActiveChatId || !data.caller || !data.candidate) return;
+  const entry = voicePeers[peerKey(data.caller)];
+  if (!entry) return;
+  try {
+    if (entry.pc.remoteDescription) {
+      await entry.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } else {
+      entry.iceQueue.push(data.candidate);
+    }
+  } catch (_) {}
+}
+
+function toggleVoiceMic() {
+  if (!voiceRoomActiveChatId) return;
+  if (!voiceLocalStream || !voiceLocalStream.getAudioTracks().length) {
+    showToast('На этом устройстве не найден микрофон — только режим прослушивания', 'warning');
+    return;
+  }
+  voiceMicMuted = !voiceMicMuted;
+  voiceLocalStream.getAudioTracks().forEach(t => { t.enabled = !voiceMicMuted; });
+  sendSignal({ action: 'voice_state', chat_id: voiceRoomActiveChatId, muted: voiceMicMuted, deafened: voiceDeafened });
+  if (voiceRoomStates[voiceRoomActiveChatId] && currentUser) {
+    voiceRoomStates[voiceRoomActiveChatId][peerKey(currentUser)] = { nickname: currentUser, muted: voiceMicMuted, deafened: voiceDeafened };
+  }
+  syncVoiceBarControls();
+  renderVoiceRoomStage();
+}
+
+function toggleVoiceDeafen() {
+  if (!voiceRoomActiveChatId) return;
+  voiceDeafened = !voiceDeafened;
+  document.querySelectorAll('#voice-audio-pool audio').forEach(el => { el.muted = voiceDeafened; });
+  sendSignal({ action: 'voice_state', chat_id: voiceRoomActiveChatId, muted: voiceMicMuted, deafened: voiceDeafened });
+  if (voiceRoomStates[voiceRoomActiveChatId] && currentUser) {
+    voiceRoomStates[voiceRoomActiveChatId][peerKey(currentUser)] = { nickname: currentUser, muted: voiceMicMuted, deafened: voiceDeafened };
+  }
+  syncVoiceBarControls();
+  renderVoiceRoomStage();
+  showToast(voiceDeafened ? '🎧🔇 Звук голосовой комнаты выключен' : '🎧 Звук голосовой комнаты включён');
 }
 
 async function joinOrLeaveVoiceRoom(chatId) {
@@ -3416,7 +4291,39 @@ async function joinOrLeaveVoiceRoom(chatId) {
     await leaveVoiceRoom();
     return;
   }
-  if (voiceRoomActiveChatId && voiceRoomActiveChatId !== chatId) await leaveVoiceRoom();
+  if (callState && currentCallPartner) {
+    showToast('Сначала завершите текущий звонок перед входом в голосовой канал', 'warning');
+    return;
+  }
+  if (voiceRoomActiveChatId && voiceRoomActiveChatId !== chatId) await leaveVoiceRoom(true);
+
+  ensureAudioContext();
+  await waitForSignalOpen(2500);
+
+  const micRes = await acquireVoiceMic();
+  voiceLocalStream = micRes.stream;
+  voiceMicMuted = !(voiceLocalStream && voiceLocalStream.getAudioTracks().length);
+  voiceDeafened = false;
+
+  if (micRes.reason === 'insecure') {
+    showToast('⚠️ Микрофон доступен только по HTTPS — заходите в режиме прослушивания', 'warning');
+  } else if (micRes.reason) {
+    showToast('🎙️ Микрофон недоступен — подключились в режиме прослушивания', 'warning');
+  }
+
+  if (voiceLocalStream && voiceLocalStream.getAudioTracks().length) {
+    try {
+      const ctx = ensureVoiceCtx();
+      if (ctx) {
+        const src = ctx.createMediaStreamSource(voiceLocalStream);
+        const an = ctx.createAnalyser();
+        an.fftSize = 256;
+        src.connect(an);
+        voiceLocalAnalyser = an;
+      }
+    } catch (_) {}
+  }
+
   try {
     const r = await fetch(`${BACKEND_URL}/voice/${encodeURIComponent(chatId)}/join`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3425,18 +4332,37 @@ async function joinOrLeaveVoiceRoom(chatId) {
     const d = await r.json();
     if (d.status === 'ok') {
       voiceRoomActiveChatId = chatId;
-      if (window.chatsMeta && window.chatsMeta[chatId]) window.chatsMeta[chatId].voice_users = d.users || [];
+      if (window.chatsMeta && window.chatsMeta[chatId]) {
+        window.chatsMeta[chatId].voice_users = d.users || [];
+        if (d.states) window.chatsMeta[chatId].voice_states = d.states;
+      }
+      if (Array.isArray(d.states)) {
+        const sm = {};
+        d.states.forEach(s => { if (s && s.nickname) sm[peerKey(s.nickname)] = s; });
+        voiceRoomStates[chatId] = sm;
+      }
+      sendSignal({ action: 'voice_join', chat_id: chatId, muted: voiceMicMuted, deafened: voiceDeafened });
+      syncVoiceMeshPeers(d.users || []);
+      _startVoiceSpeakingMonitor();
       updateVoiceRoomUi();
       renderFilteredChatList();
-      showToast('🔊 Вы подключились к голосовой комнате', 'success');
+      showToast(voiceMicMuted ? '🔊 Подключено к голосовому каналу (без микрофона)' : '🔊 Голос подключён — можно говорить!', 'success');
+    } else {
+      cleanupVoiceMesh();
+      showToast(d.msg || 'Не удалось войти в голосовой канал', 'error');
     }
-  } catch (_) { showToast('Не удалось войти в голосовой канал', 'error'); }
+  } catch (_) {
+    cleanupVoiceMesh();
+    showToast('Не удалось войти в голосовой канал', 'error');
+  }
 }
 
-async function leaveVoiceRoom() {
+async function leaveVoiceRoom(silent = false) {
   const cid = voiceRoomActiveChatId;
-  if (!cid || !currentUser) { voiceRoomActiveChatId = null; updateVoiceRoomUi(); return; }
   voiceRoomActiveChatId = null;
+  cleanupVoiceMesh();
+  if (!cid || !currentUser) { updateVoiceRoomUi(); return; }
+  sendSignal({ action: 'voice_leave', chat_id: cid });
   try {
     await fetch(`${BACKEND_URL}/voice/${encodeURIComponent(cid)}/leave`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3445,18 +4371,21 @@ async function leaveVoiceRoom() {
   } catch (_) {}
   updateVoiceRoomUi();
   renderFilteredChatList();
+  if (!silent) showToast('Вы вышли из голосового канала');
 }
 
-function callVoiceRoomPeers() {
+async function callVoiceRoomPeers() {
   const rMeta = (window.chatsMeta || {})[voiceRoomActiveChatId || activeChatId];
-  const others = ((rMeta && rMeta.voice_users) || []).filter(u => String(u).toLowerCase() !== String(currentUser || '').toLowerCase());
+  const others = ((rMeta && rMeta.voice_users) || []).filter(u => !sameNick(u, currentUser));
   if (!others.length) {
     if (typeof openCallPicker === 'function') openCallPicker();
-    else showToast('В голосовой комнате пока только вы');
+    else showToast('В голосовом канале пока никого больше нет — пригласите друзей кнопкой «+ Пригласить»');
     return;
   }
+  // Выходим из аудио-комнаты и переводим участников в полноценный групповой видеозвонок (с камерой/экраном)
+  if (voiceRoomActiveChatId) await leaveVoiceRoom(true);
   closeModal('call-picker-modal');
-  startCall(others[0]);
+  await startCall(others[0]);
   if (others.length > 1) {
     setTimeout(() => { others.slice(1).forEach(u => addToCall(u)); }, 1200);
   }
@@ -3478,6 +4407,9 @@ async function renderDiscordMembers(chatId) {
     window.membersState = d;
     d.chatId = chatId;
     const members = d.members || [];
+    const meta = (window.chatsMeta || {})[chatId];
+    const vSet = new Set(((meta && meta.voice_users) || []).map(u => peerKey(u)));
+    const stMap = voiceRoomStates[chatId] || {};
     if (cntEl) cntEl.textContent = String(members.length);
     list.innerHTML = '';
     const online = members.filter(m => m.is_online);
@@ -3492,9 +4424,13 @@ async function renderDiscordMembers(chatId) {
         const item = document.createElement('div');
         item.className = 'dmp-item';
         const badge = m.is_chat_owner ? '👑' : (m.role === 'admin' ? '🛡️' : '');
+        const inVoice = vSet.has(peerKey(m.nickname));
+        const vst = stMap[peerKey(m.nickname)] || {};
+        const voiceIcon = inVoice ? (vst.muted ? '<span title="В голосе (микрофон выкл)">🔇</span>' : '<span title="В голосовом канале" style="color:var(--success);">🔊</span>') : '';
         item.innerHTML = `
           <span>${m.is_online ? '🟢' : '⚫'}</span>
           <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:${m.is_online ? '#fff' : 'var(--text-dim)'}; font-weight:${m.is_online ? '600' : '400'};">${badge ? badge + ' ' : ''}@${escapeHtml(m.nickname)}</span>
+          ${voiceIcon}
         `;
         item.onclick = (ev) => { ev.stopPropagation(); openMemberMenu(ev, m); };
         list.appendChild(item);
@@ -4151,32 +5087,37 @@ function hideSoundUnlock() {
 }
 
 function playRemoteAudio(force) {
-  const audioEl = document.getElementById('peer-audio');
-  if (!audioEl || !audioEl.srcObject) return;
-  const p = audioEl.play();
-  if (p && p.catch) {
-    p.catch(() => { if (force !== false) showSoundUnlock(); });
-  }
+  let failed = false;
+  const tryPlay = (el) => {
+    if (!el || !el.srcObject) return;
+    const p = el.play();
+    if (p && p.catch) p.catch(() => { failed = true; if (force !== false) showSoundUnlock(); });
+  };
+  tryPlay(document.getElementById('peer-audio'));
+  document.querySelectorAll('#remote-audio-pool audio, #voice-audio-pool audio').forEach(tryPlay);
+  if (!failed) hideSoundUnlock();
 }
 
-// ── Сигнализация звонка: не теряем ICE/ответ при переключении чата ──
+// ── Сигнализация звонка и голоса: фоновый signalWs + fallback на activeWs ──
 function sendSignal(payload) {
-  const candidates = [];
-  if (callSignalWs && callSignalWs.readyState === WebSocket.OPEN) candidates.push(callSignalWs);
-  if (activeWs && activeWs.readyState === WebSocket.OPEN && candidates[0] !== activeWs) candidates.push(activeWs);
-  if (!candidates.length) {
+  const sock = (signalWs && signalWs.readyState === WebSocket.OPEN)
+    ? signalWs
+    : ((activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null);
+  if (!sock) {
     signalQueue.push(payload);
+    if (currentUser && !wasKicked) connectSignalWs();
     return false;
   }
-  const sock = candidates[0];
-  if (!callSignalWs || callSignalWs.readyState !== WebSocket.OPEN) callSignalWs = sock;
+  if (payload && String(payload.action || '').startsWith('call_')) callSignalWs = sock;
   try { sock.send(JSON.stringify(payload)); return true; }
   catch (e) { signalQueue.push(payload); return false; }
 }
 
 function flushSignalQueue() {
   if (!signalQueue.length) return;
-  const sock = (activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null;
+  const sock = (signalWs && signalWs.readyState === WebSocket.OPEN)
+    ? signalWs
+    : ((activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null);
   if (!sock) return;
   const pending = signalQueue.slice();
   signalQueue = [];
@@ -4268,7 +5209,7 @@ document.addEventListener('click', function notifFirstClick() {
 function msgNotifEnabled() { return localStorage.getItem('utopia_notif_msgs') !== '0'; }
 function msgSoundEnabled() { return localStorage.getItem('utopia_notif_sound') !== '0'; }
 
-// Синхронизация настроек с сервером (уведомления, архив ЛС, личные имена ЛС)
+// Синхронизация настроек с сервером (уведомления, интерфейс, архив ЛС, личные имена ЛС)
 function applyServerSettings(s) {
   if (!s || typeof s !== 'object') return;
   if (typeof s.notif_msgs === 'boolean') {
@@ -4276,6 +5217,9 @@ function applyServerSettings(s) {
   }
   if (typeof s.notif_sound === 'boolean') {
     localStorage.setItem('utopia_notif_sound', s.notif_sound ? '1' : '0');
+  }
+  if (s.ui_bar_mode || s.ui_rail_side) {
+    applyUiLayout(s.ui_bar_mode || null, s.ui_rail_side || null, false);
   }
   let chatUiChanged = false;
   if (Array.isArray(s.archived_chats) && typeof setArchivedChats === 'function') {
@@ -4311,6 +5255,8 @@ async function syncSettingsToServer() {
   const settings = {
     notif_msgs: msgNotifEnabled(),
     notif_sound: msgSoundEnabled(),
+    ui_bar_mode: uiBarMode,
+    ui_rail_side: uiRailSide,
     archived_chats: (typeof getArchivedChats === 'function') ? getArchivedChats() : [],
     dm_renames: (typeof getDmRenamesMap === 'function') ? getDmRenamesMap() : {},
   };
@@ -4320,6 +5266,36 @@ async function syncSettingsToServer() {
       body: JSON.stringify({ settings })
     });
   } catch (e) {}
+}
+
+async function testMicrophoneAndAudio() {
+  const stEl = document.getElementById('test-mic-status');
+  ensureAudioContext();
+  playMessageTone();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (stEl) {
+      stEl.style.color = 'var(--danger)';
+      stEl.textContent = '❌ Микрофон недоступен без HTTPS (или не поддерживается этим браузером).';
+    }
+    return;
+  }
+  if (stEl) { stEl.style.color = 'var(--text-dim)'; stEl.textContent = 'Запрашиваем доступ к микрофону…'; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const track = stream.getAudioTracks()[0];
+    const label = (track && track.label) ? track.label : 'Стандартный микрофон';
+    setTimeout(() => { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} }, 500);
+    if (stEl) {
+      stEl.style.color = 'var(--success)';
+      stEl.textContent = `✅ Звук воспроизведён! Микрофон работает: ${label}`;
+    }
+    showToast('✅ Микрофон и звук работают!', 'success');
+  } catch (e) {
+    const msg = (e && (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError'))
+      ? '❌ Доступ к микрофону запрещён — разрешите его в настройках сайта (значок слева от адреса).'
+      : '⚠️ Микрофон не найден, но вы всё равно сможете слышать собеседников в режиме прослушивания.';
+    if (stEl) { stEl.style.color = 'var(--warn)'; stEl.textContent = msg; }
+  }
 }
 
 async function loadSettingsFromServer() {
@@ -4433,12 +5409,66 @@ function findSender(kind, pcOverride) {
 }
 
 
+function tuneOpusSdp(desc) {
+  if (!desc || !desc.sdp) return desc;
+  let sdp = desc.sdp;
+  if (sdp.includes('useinbandfec=1') && !sdp.includes('minptime=10')) {
+    sdp = sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+  }
+  return { type: desc.type, sdp };
+}
+
+async function acquireCallMic() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return { stream: null, reason: 'insecure' };
+  }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false
+    });
+    return { stream: s, reason: null };
+  } catch (e1) {
+    try {
+      const s2 = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      return { stream: s2, reason: null };
+    } catch (e2) {
+      return { stream: null, reason: (e2 && e2.name) || 'error' };
+    }
+  }
+}
+
+function getCallAudioEl(nick) {
+  const low = peerKey(nick || currentCallPartner || 'peer');
+  if (callAudioEls[low]) return callAudioEls[low];
+  const pool = document.getElementById('remote-audio-pool') || document.body;
+  const el = document.createElement('audio');
+  el.id = 'call-audio-' + escapeAttrNick(low);
+  el.autoplay = true;
+  el.playsInline = true;
+  el.style.display = 'none';
+  pool.appendChild(el);
+  callAudioEls[low] = el;
+  return el;
+}
+
+function removeCallPeerAudio(nick) {
+  const low = peerKey(nick);
+  const el = callAudioEls[low];
+  if (el) {
+    try { el.pause(); el.srcObject = null; el.remove(); } catch (_) {}
+    delete callAudioEls[low];
+  }
+}
+
 // Подключает трек к нужному m-line. Для принимающего браузер по умолчанию
-// помечает его как recvonly — без явного sendrecv наш микрофон не уйдёт собеседнику.
+// помечает его как recvonly — без явного sendrecv наш трек не уйдёт собеседнику.
 async function attachTrack(kind, track, pcOverride) {
   const pc = pcOverride || peerConnection;
-  const tr = pc && pc.getTransceivers().find(t =>
-    t.receiver && t.receiver.track && t.receiver.track.kind === kind);
+  if (!pc) return false;
+  const tr = pc.getTransceivers().find(t =>
+    (t.receiver && t.receiver.track && t.receiver.track.kind === kind) ||
+    (t.sender && t.sender.track && t.sender.track.kind === kind));
   if (!tr) return false;
   try {
     await tr.sender.replaceTrack(track);
@@ -4447,79 +5477,114 @@ async function attachTrack(kind, track, pcOverride) {
   }
   if (track && (tr.direction === 'recvonly' || tr.direction === 'inactive')) {
     tr.direction = 'sendrecv';
+    return 'needs_renegotiate';
   }
   return true;
 }
 
 // mesh: отправить трек всем участникам (replaceTrack на каждом пире)
 async function broadcastTrack(kind, track) {
-  if (!groupCallActive) {
-    await attachTrack(kind, track);
-    return;
+  const peersToReneg = [];
+  if (peerConnection) {
+    const r = await attachTrack(kind, track, peerConnection);
+    if (r === 'needs_renegotiate' && (groupPrimaryPartner || currentCallPartner)) {
+      peersToReneg.push({ pc: peerConnection, nick: groupPrimaryPartner || currentCallPartner });
+    }
   }
-  // основной пир (groupPrimaryPartner) — в peerConnection
-  await attachTrack(kind, track, peerConnection);
-  // остальные — в peers
-  for (const nick of Object.keys(peers)) {
-    await attachTrack(kind, track, peers[nick]);
+  if (groupCallActive) {
+    for (const low of Object.keys(peers)) {
+      const r = await attachTrack(kind, track, peers[low]);
+      if (r === 'needs_renegotiate') {
+        peersToReneg.push({ pc: peers[low], nick: peerDisplayNames[low] || low });
+      }
+    }
+  }
+  for (const item of peersToReneg) {
+    await renegotiateCallPeer(item.pc, item.nick, false);
   }
 }
 
+async function renegotiateCallPeer(pc, nick, isIceRestart = false) {
+  if (!pc || !nick || !callState) return;
+  if (pc.signalingState !== 'stable') return;
+  try {
+    const offer = await pc.createOffer(isIceRestart ? { iceRestart: true } : undefined);
+    const tuned = tuneOpusSdp(offer);
+    await pc.setLocalDescription(tuned);
+    sendSignal({
+      action: 'call_offer',
+      target: nick,
+      sdp: pc.localDescription || tuned,
+      renegotiate: true,
+      group: groupCallActive,
+      groupId: groupCallId,
+      groupName: groupCallName,
+      members: groupCallMembers
+    });
+  } catch (e) {
+    console.log('renegotiateCallPeer failed:', e);
+  }
+}
+
+function getActiveCallVideoTrack() {
+  if (isScreenOn && screenStream && screenStream.getVideoTracks().length) return screenStream.getVideoTracks()[0];
+  if (isCamOn && localCamStream && localCamStream.getVideoTracks().length) return localCamStream.getVideoTracks()[0];
+  return null;
+}
 
 function createPeerConnectionInstance(precreate, peerNick) {
   const pn = peerNick || currentCallPartner;
+  const pnLow = peerKey(pn);
   const pc = new RTCPeerConnection(rtcConfig);
-  // Для mesh-звонка каждый пир живёт в peers[pn]; для 1:1 — в глобальном peerConnection
-  if (groupCallActive && pn && pn !== groupPrimaryPartner) peers[pn] = pc;
-  else peerConnection = pc;
+  // Для mesh-звонка каждый неосновной пир живёт в peers[pnLow]; для 1:1/primary — в глобальном peerConnection
+  if (groupCallActive && pnLow && !sameNick(pn, groupPrimaryPartner)) {
+    peers[pnLow] = pc;
+    peerDisplayNames[pnLow] = pn;
+  } else {
+    peerConnection = pc;
+  }
 
   // Звонящий (offerer) обязан заранее объявить аудио/видео в своем предложении.
-  // Принимающий НЕ создаёт трансиверы заранее: они создаются из SDP звонящего,
-  // иначе браузер добавит второй комплект и разговор пойдёт «вхолостую» (без звука).
+  // Принимающий НЕ создаёт трансиверы заранее: они создаются из SDP звонящего.
   if (precreate) {
     pc.addTransceiver('audio', { direction: 'sendrecv' });
     pc.addTransceiver('video', { direction: 'sendrecv' });
   }
 
   pc.ontrack = (event) => {
-    // Воспроизведение звука с гарантированным снятием блокировки Autoplay
+    // Воспроизведение звука через индивидуальный <audio> элемент для каждого пира
     if (event.track.kind === 'audio') {
-      if (groupCallActive) {
-        // mesh: собираем все remote-аудио в один поток для #peer-audio
-        if (!groupAudioStream) groupAudioStream = new MediaStream();
-        groupAudioStream.addTrack(event.track);
-        const audioEl = document.getElementById('peer-audio');
-        if (audioEl.srcObject !== groupAudioStream) {
-          audioEl.srcObject = groupAudioStream;
-          audioEl.volume = 1.0;
-        }
-        audioEl.play().then(() => hideSoundUnlock()).catch(e => {
-          console.log('Audio autoplay prevented:', e);
-          showSoundUnlock();
-        });
-        updateVoiceIndicators();
-      } else {
-        const audioEl = document.getElementById('peer-audio');
-        remoteAudioStream = event.streams[0] || new MediaStream([event.track]);
-        audioEl.srcObject = remoteAudioStream;
-        audioEl.volume = 1.0;
-        audioEl.play().then(() => hideSoundUnlock()).catch(e => {
-          console.log('Audio autoplay prevented:', e);
-          showSoundUnlock();
-        });
-        updateVoiceIndicators();
+      const stream = event.streams[0] || new MediaStream([event.track]);
+      const audioEl = getCallAudioEl(pn);
+      audioEl.srcObject = stream;
+      audioEl.volume = 1.0;
+      audioEl.muted = !!isCallDeafened;
+      const selectedOut = audioOutputs[audioRouteIndex];
+      if (selectedOut && typeof audioEl.setSinkId === 'function') {
+        audioEl.setSinkId(selectedOut.deviceId).catch(() => {});
       }
+      if (!groupCallActive || sameNick(pn, groupPrimaryPartner)) {
+        remoteAudioStream = stream;
+        const legacyPa = document.getElementById('peer-audio');
+        if (legacyPa) { legacyPa.srcObject = stream; legacyPa.muted = true; } // играем через audioEl, а peer-audio для анализатора/совместимости
+      }
+      audioEl.play().then(() => hideSoundUnlock()).catch(e => {
+        console.log('Audio autoplay prevented:', e);
+        showSoundUnlock();
+      });
+      updateVoiceIndicators();
     } else if (event.track.kind === 'video') {
-      if (groupCallActive && pn && pn !== groupPrimaryPartner) {
-        // mesh: видео остальных участников — в отдельные плитки
+      if (groupCallActive && pn && !sameNick(pn, groupPrimaryPartner)) {
         const tile = ensureGroupTile(pn);
         const vid = tile.querySelector('video');
         vid.srcObject = event.streams[0] || new MediaStream([event.track]);
-        vid.style.display = 'block';
-        const ph = tile.querySelector('.call-avatar-placeholder');
-        if (ph) ph.style.display = 'none';
-        const hideTileVid = () => { vid.style.display = 'none'; if (ph) ph.style.display = 'flex'; };
-        const showTileVid = () => { vid.style.display = 'block'; if (ph) ph.style.display = 'none'; };
+        if (!isCallDeafened) {
+          vid.style.display = 'block';
+          const ph = tile.querySelector('.call-avatar-placeholder');
+          if (ph) ph.style.display = 'none';
+        }
+        const hideTileVid = () => { vid.style.display = 'none'; const ph = tile.querySelector('.call-avatar-placeholder'); if (ph) ph.style.display = 'flex'; };
+        const showTileVid = () => { if (!isCallDeafened) { vid.style.display = 'block'; const ph = tile.querySelector('.call-avatar-placeholder'); if (ph) ph.style.display = 'none'; } };
         event.track.onmute = hideTileVid;
         event.track.onunmute = showTileVid;
         event.track.onended = () => { vid.srcObject = null; hideTileVid(); };
@@ -4527,11 +5592,12 @@ function createPeerConnectionInstance(precreate, peerNick) {
       }
       const remoteVid = document.getElementById('remote-video');
       remoteVid.srcObject = event.streams[0] || new MediaStream([event.track]);
-      remoteVid.style.display = 'block';
-      document.getElementById('call-avatar-wrap').style.display = 'none';
-
+      if (!isCallDeafened) {
+        remoteVid.style.display = 'block';
+        document.getElementById('call-avatar-wrap').style.display = 'none';
+      }
       const hideRemoteVid = () => { remoteVid.style.display = 'none'; document.getElementById('call-avatar-wrap').style.display = 'flex'; };
-      const showRemoteVid = () => { remoteVid.style.display = 'block'; document.getElementById('call-avatar-wrap').style.display = 'none'; };
+      const showRemoteVid = () => { if (!isCallDeafened) { remoteVid.style.display = 'block'; document.getElementById('call-avatar-wrap').style.display = 'none'; } };
       event.track.onmute = hideRemoteVid;
       event.track.onunmute = showRemoteVid;
       event.track.onended = () => { remoteVid.srcObject = null; hideRemoteVid(); };
@@ -4545,19 +5611,24 @@ function createPeerConnectionInstance(precreate, peerNick) {
     }
   };
 
-  // Подключение ловим и по connectionState, и по iceConnectionState:
-  // на смартфонах общий статус часто висит в connecting, пока ICE уже готова
+  let iceRestartTried = false;
+  let disconnectTimer = null;
+
+  // Подключение ловим и по connectionState, и по iceConnectionState
   const handleConnected = () => {
-    if (callConnectedAt) return;
+    clearTimeout(disconnectTimer);
+    iceRestartTried = false;
+    if (callConnectedAt) {
+      playRemoteAudio(false);
+      return;
+    }
     clearTimeout(callConnectTimer);
     clearTimeout(callTimeoutTimer);
     callConnectedAt = Date.now();
     callState = 'active';
     stopRing();
     setCallRinging(null);
-    markCallConnected('🔊 Разговор идёт');
-    const b = document.getElementById('call-status-badge');
-    if (b) b.innerText = '🔊 Разговор идёт';
+    markCallConnected(groupCallActive ? `🔊 Разговор идёт · ${groupCallMembers.length} участников` : '🔊 Разговор идёт');
     document.getElementById('call-mini-toast').style.display = 'none';
     playRemoteAudio();
   };
@@ -4567,7 +5638,12 @@ function createPeerConnectionInstance(precreate, peerNick) {
     if (st === 'connected') {
       handleConnected();
     } else if (st === 'failed') {
-      if (groupCallActive && pn && pn !== groupPrimaryPartner) {
+      if (!iceRestartTried && callState === 'active') {
+        iceRestartTried = true;
+        if (peerKey(currentUser) > pnLow) renegotiateCallPeer(pc, pn, true);
+        return;
+      }
+      if (groupCallActive && pn && !sameNick(pn, groupPrimaryPartner)) {
         closeGroupPeer(pn, 'Собеседник отключился');
         return;
       }
@@ -4575,7 +5651,14 @@ function createPeerConnectionInstance(precreate, peerNick) {
       endCall();
     } else if (st === 'disconnected') {
       const b = document.getElementById('call-status-badge');
-      if (b && (!groupCallActive || pn === groupPrimaryPartner)) b.innerText = 'Связь прервалась…';
+      if (b && (!groupCallActive || sameNick(pn, groupPrimaryPartner))) b.innerText = 'Связь восстанавливается…';
+      clearTimeout(disconnectTimer);
+      disconnectTimer = setTimeout(() => {
+        if (callState === 'active' && pc.connectionState === 'disconnected' && !iceRestartTried) {
+          iceRestartTried = true;
+          if (peerKey(currentUser) > pnLow) renegotiateCallPeer(pc, pn, true);
+        }
+      }, 3000);
     }
   };
 
@@ -4584,7 +5667,12 @@ function createPeerConnectionInstance(precreate, peerNick) {
     if (st === 'connected' || st === 'completed') {
       handleConnected();
     } else if (st === 'failed' && pc.connectionState !== 'connected') {
-      if (groupCallActive && pn && pn !== groupPrimaryPartner) {
+      if (!iceRestartTried && callState === 'active') {
+        iceRestartTried = true;
+        if (peerKey(currentUser) > pnLow) renegotiateCallPeer(pc, pn, true);
+        return;
+      }
+      if (groupCallActive && pn && !sameNick(pn, groupPrimaryPartner)) {
         closeGroupPeer(pn, 'Нет соединения с участником');
         return;
       }
@@ -4595,17 +5683,58 @@ function createPeerConnectionInstance(precreate, peerNick) {
   return pc;
 }
 
+async function handleCallRenegotiateOffer(data) {
+  const caller = data.caller;
+  if (!caller || !data.sdp) return;
+  const low = peerKey(caller);
+  const pc = (groupCallActive && !sameNick(caller, groupPrimaryPartner)) ? peers[low] : peerConnection;
+  if (!pc) return;
+  try {
+    const polite = peerKey(currentUser) < low;
+    if (data.sdp.type === 'offer' && pc.signalingState !== 'stable') {
+      if (!polite) return;
+    }
+    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    if (data.sdp.type === 'offer') {
+      const aTrack = localStream && localStream.getAudioTracks()[0];
+      if (aTrack) await attachTrack('audio', aTrack, pc);
+      const vTrack = getActiveCallVideoTrack();
+      if (vTrack) await attachTrack('video', vTrack, pc);
+      const vTr = pc.getTransceivers().find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
+      if (vTr && (vTr.direction === 'recvonly' || vTr.direction === 'inactive')) vTr.direction = 'sendrecv';
+      const ans = tuneOpusSdp(await pc.createAnswer());
+      await pc.setLocalDescription(ans);
+      sendSignal({ action: 'call_answer', target: caller, sdp: pc.localDescription || ans, renegotiate: true, group: !!data.group });
+    }
+  } catch (e) { console.log('handleCallRenegotiateOffer failed:', e); }
+}
+
 async function startCall(target) {
-  if (target === currentUser) return showToast('Нельзя звонить самому себе!');
+  if (sameNick(target, currentUser)) return showToast('Нельзя звонить самому себе!');
   if (!target) return showToast('Не удалось определить собеседника', 'warning');
   if (currentCallPartner) return showToast('У вас уже идёт звонок', 'warning');
+  if (voiceRoomActiveChatId) {
+    showToast('Выходим из голосового канала для звонка…');
+    await leaveVoiceRoom(true);
+  }
+
   ensureAudioContext();
   initAudioRoute();
+  paintMyAvatar(myAvatarUrl);
+
+  try {
+    const uInfo = await (await fetch(`${BACKEND_URL}/user/info/${encodeURIComponent(target)}`)).json();
+    if (uInfo && uInfo.status === 'ok' && uInfo.nickname) {
+      target = uInfo.nickname;
+      if (uInfo.avatar_url) renderAvatar(uInfo.avatar_url, document.getElementById('call-remote-avatar'));
+    }
+  } catch (_) {}
+
   currentCallPartner = target;
   callState = 'outgoing';
   callStartedAt = Date.now();
   callConnectedAt = null;
-  callSignalWs = (activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null;
+  callSignalWs = (signalWs && signalWs.readyState === WebSocket.OPEN) ? signalWs : ((activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null);
   startCallTimer();
 
   document.getElementById('call-partner-header').innerText = `@${target}`;
@@ -4621,81 +5750,86 @@ async function startCall(target) {
   restoreCallPanel();
   document.getElementById('call-overlay').style.display = 'flex';
   document.getElementById('call-timer').style.display = 'inline-block';
-  showCallMiniToast(`📞 Вызов <b>@${target}</b> — ждём ответа…`, () => {
+  showCallMiniToast(`📞 Вызов <b>@${escapeHtml(target)}</b> — ждём ответа…`, () => {
     restoreCallPanel();
     document.getElementById('call-overlay').style.display = 'flex';
   });
 
   callStartMsgEl = callSystemMessage(
-    `📞 <b>Звонок @${target}</b> начат в ${fmtClock(new Date())}. Ожидание ответа…`,
+    `📞 <b>Звонок @${escapeHtml(target)}</b> начат в ${fmtClock(new Date())}. Ожидание ответа…`,
     [
       { label: '🗕 Свернуть', onClick: minimizeCall },
       { label: '🔴 Завершить', onClick: () => document.getElementById('btn-end-call').click() },
     ]
   );
 
-  fetch(`${BACKEND_URL}/user/info/${target}`).then(r=>r.json()).then(d => {
-    if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
-  });
-
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('insecure');
-    }
-    if (!activeWs || activeWs.readyState !== WebSocket.OPEN) {
-      throw new Error('nows');
-    }
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const sigOk = await waitForSignalOpen(3500);
+    if (!sigOk) throw new Error('nows');
+    if (callState !== 'outgoing') return; // пользователь уже отменил звонок
+
+    const micRes = await acquireCallMic();
+    if (micRes.reason === 'insecure') throw new Error('insecure');
+    localStream = micRes.stream;
+
     createPeerConnectionInstance(true);
+    if (localStream && localStream.getAudioTracks().length) {
+      await attachTrack('audio', localStream.getAudioTracks()[0]);
+      isMicOn = true;
+    } else {
+      isMicOn = false;
+      const micBtn = document.getElementById('btn-toggle-mic');
+      if (micBtn) { micBtn.classList.remove('active'); micBtn.innerText = '🔇 Без микр.'; }
+      showToast(micRes.reason === 'NotAllowedError' || micRes.reason === 'PermissionDeniedError'
+        ? 'Доступ к микрофону запрещён — собеседника всё равно слышно'
+        : '🎙️ Микрофон не найден — звонок в режиме прослушивания', 'warning');
+    }
 
-    await attachTrack('audio', localStream.getAudioTracks()[0]);
-
-    const offer = await peerConnection.createOffer();
-    offer.sdp = offer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    const offer = tuneOpusSdp(await peerConnection.createOffer());
     await peerConnection.setLocalDescription(offer);
 
-    sendSignal({ action: 'call_offer', caller: currentUser, target: target, sdp: offer });
+    sendSignal({ action: 'call_offer', caller: currentUser, target: target, sdp: peerConnection.localDescription || offer });
 
     clearTimeout(callTimeoutTimer);
     callTimeoutTimer = setTimeout(() => {
-    if (currentCallPartner && callState === 'outgoing') {
-      sendSignal({ action: 'call_timeout', target: currentCallPartner });
-      showToast('Абонент не отвечает', 'warning');
-      endCall();
-    }
+      if (currentCallPartner && callState === 'outgoing') {
+        sendSignal({ action: 'call_timeout', target: currentCallPartner });
+        showToast('Абонент не отвечает', 'warning');
+        endCall();
+      }
     }, 30000);
 
   } catch(e) {
     endCall();
     const reason = (e && e.message) || '';
     if (reason === 'insecure') {
-      showToast('Микрофон доступен только по HTTPS — откройте сайт по https://', 'warning');
+      showToast('Микрофон и звонки доступны только по HTTPS — откройте сайт по https://', 'warning');
     } else if (reason === 'nows') {
-      showToast('Нет соединения с сервером, обновите страницу', 'warning');
-    } else if (e && (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError')) {
-      showToast('Доступ к микрофону запрещён в браузере', 'warning');
+      showToast('Нет соединения с сервером — проверьте интернет и обновите страницу', 'warning');
     } else {
-      showToast('Ошибка микрофона!');
+      showToast('Ошибка при запуске звонка!');
     }
   }
 }
 
 function handleIncomingCall(data) {
-  // Уже разговариваем — отвечаем «занято», второй звонок не дёргаем
+  // Уже разговариваем — отвечаем «занято», но игнорим повтор от того же
   if (currentCallPartner || callState) {
-    sendSignal({ action: 'call_busy', target: data.caller });
+    if (!sameNick(data.caller, currentCallPartner)) {
+      sendSignal({ action: 'call_busy', target: data.caller });
+    }
     return;
   }
-  // Дубли (сокет может прийти повторно) — игнорируем
   if (document.getElementById('call-overlay').style.display === 'flex') return;
 
   ensureAudioContext();
+  paintMyAvatar(myAvatarUrl);
   currentCallPartner = data.caller;
   callState = 'incoming';
   pendingIncomingOffer = data.sdp;
   pendingGroupOffer = data.group ? { groupId: data.groupId, members: data.members || [], name: data.groupName || '' } : null;
   iceCandidatesQueue = [];
-  callSignalWs = (activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null;
+  callSignalWs = (signalWs && signalWs.readyState === WebSocket.OPEN) ? signalWs : ((activeWs && activeWs.readyState === WebSocket.OPEN) ? activeWs : null);
   callStartedAt = Date.now();
   callConnectedAt = null;
   startCallTimer();
@@ -4716,22 +5850,22 @@ function handleIncomingCall(data) {
   document.getElementById('call-overlay').style.display = 'flex';
   document.getElementById('call-timer').style.display = 'inline-block';
   if (!document.hasFocus()) {
-    showCallMiniToast(`📞 <b>@${data.caller}</b> звонит вам — нажмите, чтобы ответить`, () => {
+    showCallMiniToast(`📞 <b>@${escapeHtml(data.caller)}</b> звонит вам — нажмите, чтобы ответить`, () => {
       document.getElementById('btn-accept-call').click();
     });
   }
 
   callStartMsgEl = callSystemMessage(
-    `📞 <b>Входящий звонок от @${data.caller}</b> в ${fmtClock(new Date())}`,
+    `📞 <b>Входящий звонок от @${escapeHtml(data.caller)}</b> в ${fmtClock(new Date())}`,
     [
       { label: '📞 Принять', onClick: () => document.getElementById('btn-accept-call').click() },
       { label: '🔴 Отклонить', onClick: () => document.getElementById('btn-decline-call').click() },
     ]
   );
 
-  fetch(`${BACKEND_URL}/user/info/${data.caller}`).then(r=>r.json()).then(d => {
-    if (d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
-  });
+  fetch(`${BACKEND_URL}/user/info/${encodeURIComponent(data.caller)}`).then(r=>r.json()).then(d => {
+    if (d && d.avatar_url) renderAvatar(d.avatar_url, document.getElementById('call-remote-avatar'));
+  }).catch(() => {});
 
   clearTimeout(callTimeoutTimer);
   callTimeoutTimer = setTimeout(() => {
@@ -4751,6 +5885,7 @@ document.getElementById('btn-accept-call').onclick = async () => {
   hideSoundUnlock();
   ensureAudioContext();
   initAudioRoute();
+  if (voiceRoomActiveChatId) await leaveVoiceRoom(true);
   callState = 'active';
   document.getElementById('call-mini-toast').style.display = 'none';
   document.getElementById('call-incoming-bar').style.display = 'none';
@@ -4759,8 +5894,6 @@ document.getElementById('btn-accept-call').onclick = async () => {
   document.getElementById('call-status-badge').innerText = 'Соединение...';
   setCallRinging(null);
 
-  // Групповой входящий: переключаемся в mesh-режим ДО создания основного пира,
-  // чтобы он ушёл в peerConnection (pn === groupPrimaryPartner)
   if (pendingGroupOffer) {
     groupCallActive = true;
     groupCallId = pendingGroupOffer.groupId;
@@ -4771,34 +5904,42 @@ document.getElementById('btn-accept-call').onclick = async () => {
   }
 
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('insecure');
-    if (!activeWs || activeWs.readyState !== WebSocket.OPEN) throw new Error('nows');
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const sigOk = await waitForSignalOpen(3500);
+    if (!sigOk) throw new Error('nows');
+    if (!pendingIncomingOffer) throw new Error('nooffer');
+
+    const micRes = await acquireCallMic();
+    if (micRes.reason === 'insecure') throw new Error('insecure');
+    localStream = micRes.stream;
+
     createPeerConnectionInstance(false);
 
     await peerConnection.setRemoteDescription(new RTCSessionDescription(pendingIncomingOffer));
 
     // Держим видео m-line живым: без этого Chrome отключит его в ответе (port 9)
-    // и камера/демонстрация принявшего собеседника не уйдут никогда
     const vTr = peerConnection.getTransceivers().find(t =>
       t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
-    if (vTr && vTr.direction === 'recvonly') vTr.direction = 'sendrecv';
+    if (vTr && (vTr.direction === 'recvonly' || vTr.direction === 'inactive')) vTr.direction = 'sendrecv';
 
-    // Трек подключаем ПОСЛЕ разбора SDP — только тогда браузер знает наш m-line
-    await attachTrack('audio', localStream.getAudioTracks()[0]);
+    if (localStream && localStream.getAudioTracks().length) {
+      await attachTrack('audio', localStream.getAudioTracks()[0]);
+      isMicOn = true;
+    } else {
+      isMicOn = false;
+      const micBtn = document.getElementById('btn-toggle-mic');
+      if (micBtn) { micBtn.classList.remove('active'); micBtn.innerText = '🔇 Без микр.'; }
+      showToast('🎙️ Микрофон недоступен — принят звонок в режиме прослушивания', 'warning');
+    }
 
     while (iceCandidatesQueue.length > 0) {
       const cand = iceCandidatesQueue.shift();
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-      } catch (e) { /* битый кандидат — не мешаем отправке SDP-ответа */ }
+      try { await peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
     }
 
-    const answer = await peerConnection.createAnswer();
-    answer.sdp = answer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    const answer = tuneOpusSdp(await peerConnection.createAnswer());
     await peerConnection.setLocalDescription(answer);
 
-    sendSignal({ action: 'call_answer', target: currentCallPartner, sdp: answer });
+    sendSignal({ action: 'call_answer', target: currentCallPartner, sdp: peerConnection.localDescription || answer });
     if (!callConnectedAt) document.getElementById('call-status-badge').innerText = 'Соединение...';
     armCallConnectTimeout();
     markCallAccepted();
@@ -4807,8 +5948,8 @@ document.getElementById('btn-accept-call').onclick = async () => {
     if (groupCallActive) {
       updateGroupTilesVisibility();
       for (const m of groupCallMembers) {
-        if (m === currentUser || m === currentCallPartner) continue;
-        if (!peers[m]) await sendGroupOfferTo(m);
+        if (sameNick(m, currentUser) || sameNick(m, currentCallPartner)) continue;
+        if (!peers[peerKey(m)]) await sendGroupOfferTo(m);
       }
     }
 
@@ -4818,9 +5959,9 @@ document.getElementById('btn-accept-call').onclick = async () => {
     if (reason === 'insecure') {
       showToast('Микрофон доступен только по HTTPS', 'warning');
     } else if (reason === 'nows') {
-      showToast('Нет соединения с сервером, обновите страницу', 'warning');
+      showToast('Нет соединения с сервером — обновите страницу', 'warning');
     } else {
-      showToast('Ошибка микрофона!');
+      showToast('Не удалось принять звонок');
     }
   }
 };
@@ -4843,12 +5984,13 @@ function handleCallAnswer(data) {
   ensureAudioContext();
   callState = 'active';
 
+  const cLow = peerKey(data.caller);
   // mesh: ответ от не-основного участника — применяем к его пиру
-  if (groupCallActive && data.caller && data.caller !== groupPrimaryPartner) {
-    const mpc = peers[data.caller];
+  if (groupCallActive && cLow && !sameNick(data.caller, groupPrimaryPartner)) {
+    const mpc = peers[cLow];
     if (!mpc) return;
     mpc.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
-      const q = groupPeerIce[data.caller] || [];
+      const q = groupPeerIce[cLow] || [];
       while (q.length > 0) {
         const cand = q.shift();
         try { mpc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {}); } catch (e) {}
@@ -4864,9 +6006,7 @@ function handleCallAnswer(data) {
     markCallAccepted();
     while (iceCandidatesQueue.length > 0) {
       const cand = iceCandidatesQueue.shift();
-      try {
-        peerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-      } catch (e) { /* битый кандидат — игнорируем */ }
+      try { peerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {}); } catch (e) {}
     }
     playRemoteAudio();
   }).catch(e => {
@@ -4874,6 +6014,17 @@ function handleCallAnswer(data) {
     showToast('Собеседник ответил, но соединение не установилось', 'error');
     endCall();
   });
+}
+
+function notifyVideoState(on) {
+  if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: !!on });
+  if (groupCallActive && groupCallMembers) {
+    groupCallMembers.forEach(m => {
+      if (!sameNick(m, currentUser) && !sameNick(m, currentCallPartner)) {
+        sendSignal({ action: 'call_video_state', target: m, group: true, on: !!on });
+      }
+    });
+  }
 }
 
 document.getElementById('btn-toggle-cam').onclick = async () => {
@@ -4884,19 +6035,23 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
   if (isCamOn) {
     try {
       const vStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (isScreenOn) {
+        isScreenOn = false;
+        document.getElementById('btn-toggle-screen').classList.remove('active');
+        if (screenStream) { try { screenStream.getTracks().forEach(t => t.stop()); } catch (_) {} screenStream = null; }
+      }
       localCamStream = vStream;
       const vTrack = vStream.getVideoTracks()[0];
       document.getElementById('local-video').srcObject = vStream;
       document.getElementById('local-video').style.display = 'block';
       document.getElementById('local-avatar-wrap').style.display = 'none';
       await broadcastTrack('video', vTrack);
-      if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: true });
-      if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: true }); });
+      notifyVideoState(true);
       btn.classList.add('active');
     } catch(e) {
       isCamOn = false;
       btn.classList.remove('active');
-      showToast('Камера не обнаружена на этом устройстве', 'warning');
+      showToast('Камера не обнаружена или доступ запрещён', 'warning');
     }
   } else {
     if (localCamStream) {
@@ -4907,8 +6062,7 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
     if (lv) { lv.srcObject = null; lv.style.display = 'none'; }
     document.getElementById('local-avatar-wrap').style.display = 'flex';
     await broadcastTrack('video', null);
-    if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: false });
-    if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: false }); });
+    notifyVideoState(false);
     btn.classList.remove('active');
   }
 };
@@ -4920,79 +6074,102 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
 
   if (isScreenOn) {
     try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      } catch (_) {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      }
+      if (isCamOn) {
+        isCamOn = false;
+        document.getElementById('btn-toggle-cam').classList.remove('active');
+        if (localCamStream) { try { localCamStream.getTracks().forEach(t => t.stop()); } catch (_) {} localCamStream = null; }
+      }
       const sTrack = screenStream.getVideoTracks()[0];
-      
       document.getElementById('local-video').srcObject = screenStream;
       document.getElementById('local-video').style.display = 'block';
       document.getElementById('local-avatar-wrap').style.display = 'none';
 
       await broadcastTrack('video', sTrack);
-      if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: true });
-      if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: true }); });
+      notifyVideoState(true);
       btn.classList.add('active');
 
       sTrack.onended = async () => {
+        if (!isScreenOn) return;
         isScreenOn = false;
         btn.classList.remove('active');
-        document.getElementById('local-video').style.display = 'none';
+        const lv = document.getElementById('local-video');
+        if (lv) { lv.srcObject = null; lv.style.display = 'none'; }
         document.getElementById('local-avatar-wrap').style.display = 'flex';
         await broadcastTrack('video', null);
-        if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: false });
-        if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: false }); });
+        notifyVideoState(false);
       };
     } catch(e) {
       isScreenOn = false;
       btn.classList.remove('active');
     }
   } else {
-    if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-    document.getElementById('local-video').style.display = 'none';
+    if (screenStream) { try { screenStream.getTracks().forEach(t => t.stop()); } catch (_) {} screenStream = null; }
+    const lv = document.getElementById('local-video');
+    if (lv) { lv.srcObject = null; lv.style.display = 'none'; }
     document.getElementById('local-avatar-wrap').style.display = 'flex';
     await broadcastTrack('video', null);
-    if (currentCallPartner) sendSignal({ action: 'call_video_state', target: currentCallPartner, group: groupCallActive, on: false });
-    if (groupCallActive && groupCallMembers) groupCallMembers.forEach(m => { if (m !== currentUser) sendSignal({ action: 'call_video_state', target: m, on: false }); });
+    notifyVideoState(false);
     btn.classList.remove('active');
   }
 };
 
 document.getElementById('btn-toggle-mic').onclick = () => {
-  if (!localStream) return;
+  if (!localStream || !localStream.getAudioTracks().length) {
+    showToast('На этом устройстве нет активного микрофона', 'warning');
+    return;
+  }
   isMicOn = !isMicOn;
-  const aTrack = localStream.getAudioTracks()[0];
-  if (aTrack) aTrack.enabled = isMicOn;
+  localStream.getAudioTracks().forEach(t => { t.enabled = isMicOn; });
   document.getElementById('btn-toggle-mic').classList.toggle('active', isMicOn);
-  document.getElementById('btn-toggle-mic').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выключен';
-  // Режим тишины: выключил микрофон → не слышу и не вижу видео собеседника
-  applySilentMode(!isMicOn);
+  document.getElementById('btn-toggle-mic').innerText = isMicOn ? '🎙️ Микрофон' : '🔇 Выкл микр';
+  if (currentCallPartner) sendSignal({ action: 'call_mute_state', target: currentCallPartner, muted: !isMicOn });
+  if (groupCallActive && groupCallMembers) {
+    groupCallMembers.forEach(m => {
+      if (!sameNick(m, currentUser) && !sameNick(m, currentCallPartner)) {
+        sendSignal({ action: 'call_mute_state', target: m, muted: !isMicOn });
+      }
+    });
+  }
   updateVoiceIndicators();
 };
 
-// ── Режим тишины: mute выключает всё входящее для себя ──
-// При включении микрофона всё возвращается в прежнее состояние.
+const deafenBtnEl = document.getElementById('btn-toggle-deafen');
+if (deafenBtnEl) {
+  deafenBtnEl.onclick = () => {
+    isCallDeafened = !isCallDeafened;
+    deafenBtnEl.classList.toggle('active', !isCallDeafened);
+    deafenBtnEl.classList.toggle('danger', isCallDeafened);
+    deafenBtnEl.innerText = isCallDeafened ? '🎧🔇 Без звука' : '🎧 Звук';
+    applySilentMode(isCallDeafened);
+  };
+}
+
+// ── Режим тишины (кнопка 🎧 Звук): выключает входящий звук и видео для себя ──
 let _prevRemoteVidDisplay = null;
 function applySilentMode(silent) {
   const pa = document.getElementById('peer-audio');
   const rv = document.getElementById('remote-video');
   const aw = document.getElementById('call-avatar-wrap');
+  document.querySelectorAll('#remote-audio-pool audio').forEach(a => { a.muted = !!silent; });
   if (silent) {
-    // Запоминаем текущее состояние видео собеседника
-    _prevRemoteVidDisplay = rv.style.display;
+    _prevRemoteVidDisplay = rv ? rv.style.display : 'none';
     if (pa) pa.muted = true;
-    rv.style.display = 'none';
-    aw.style.display = 'flex';
-    // mesh: скрыть видео всех участников
+    if (rv) rv.style.display = 'none';
+    if (aw) aw.style.display = 'flex';
     document.querySelectorAll('#group-tiles video').forEach(v => { v.style.display = 'none'; });
     document.querySelectorAll('#group-tiles .call-avatar-placeholder').forEach(p => { p.style.display = 'flex'; });
-    showToast('🔇 Тихий режим: звук и видео выключены', 'warning');
+    showToast('🎧🔇 Режим тишины: звук собеседников выключен', 'warning');
   } else {
-    if (pa) pa.muted = false;
-    // Восстанавливаем видео собеседника, если оно было включено
-    if (_prevRemoteVidDisplay === 'block') {
+    if (pa && !Object.keys(callAudioEls).length) pa.muted = false;
+    if (_prevRemoteVidDisplay === 'block' && rv && aw) {
       rv.style.display = 'block';
       aw.style.display = 'none';
     }
-    // mesh: восстановить видео участников (показываем те, у которых srcObject есть)
     document.querySelectorAll('#group-tiles video').forEach(v => {
       if (v.srcObject) { v.style.display = 'block'; const p = v.closest('.call-tile')?.querySelector('.call-avatar-placeholder'); if (p) p.style.display = 'none'; }
     });
@@ -5111,8 +6288,11 @@ async function initAudioRoute() {
   if (b) b.innerText = audioRouteLabel();
 }
 document.getElementById('btn-audio-route').onclick = async () => {
-  const el = document.getElementById('peer-audio');
-  if (typeof el.setSinkId !== 'function') {
+  const targets = [document.getElementById('peer-audio')]
+    .concat(Array.from(document.querySelectorAll('#remote-audio-pool audio, #voice-audio-pool audio')))
+    .filter(Boolean);
+  const sample = targets[0];
+  if (!sample || typeof sample.setSinkId !== 'function') {
     showToast('Этот браузер не умеет переключать устройства вывода (нужен Chrome/Edge)');
     return;
   }
@@ -5120,7 +6300,8 @@ document.getElementById('btn-audio-route').onclick = async () => {
   if (!audioOutputs.length) { showToast('Нет доступных устройств вывода'); return; }
   audioRouteIndex = (audioRouteIndex + 1) % audioOutputs.length;
   try {
-    await el.setSinkId(audioOutputs[audioRouteIndex].deviceId);
+    const devId = audioOutputs[audioRouteIndex].deviceId;
+    await Promise.all(targets.map(el => (typeof el.setSinkId === 'function' ? el.setSinkId(devId) : Promise.resolve())));
     document.getElementById('btn-audio-route').innerText = audioRouteLabel();
     showToast('🔈 Звук: ' + audioRouteLabel());
   } catch (e) { showToast('Не удалось сменить устройство вывода'); }
@@ -5131,7 +6312,7 @@ document.getElementById('btn-end-call').onclick = () => {
   // mesh: сообщаем всем участникам (включая основного), что выходим
   if (groupCallActive) {
     for (const m of groupCallMembers) {
-      if (m !== currentUser) sendSignal({ action: 'call_end', target: m });
+      if (!sameNick(m, currentUser)) sendSignal({ action: 'call_end', target: m });
     }
   } else {
     const partnerNow = currentCallPartner;
@@ -5140,7 +6321,7 @@ document.getElementById('btn-end-call').onclick = () => {
   endCall();
 };
 
-function endCall() {
+function endCall(silent = false) {
   clearTimeout(callTimeoutTimer);
   clearTimeout(callConnectTimer);
   stopRing();
@@ -5154,11 +6335,15 @@ function endCall() {
   if (localCamStream) localCamStream.getTracks().forEach(t => t.stop());
   if (screenStream) screenStream.getTracks().forEach(t => t.stop());
   localStream = null; localCamStream = null; screenStream = null;
-  // mesh: закрываем все пир-соединения
-  for (const nick of Object.keys(peers)) {
-    try { peers[nick].close(); } catch (e) {}
+  // mesh: закрываем все пир-соединения и персональные audio
+  for (const low of Object.keys(peers)) {
+    try { peers[low].close(); } catch (e) {}
+    removeCallPeerAudio(low);
   }
+  for (const low of Object.keys(callAudioEls)) removeCallPeerAudio(low);
   peers = {};
+  peerDisplayNames = {};
+  callAudioEls = {};
   groupPeerIce = {};
   if (groupAudioStream) {
     try { groupAudioStream.getTracks().forEach(t => t.stop()); } catch (e) {}
@@ -5182,6 +6367,7 @@ function endCall() {
   isCamOn = false;
   isScreenOn = false;
   isMicOn = true;
+  isCallDeafened = false;
   groupCallActive = false;
   groupCallMembers = [];
   groupCallId = null;
@@ -5192,12 +6378,16 @@ function endCall() {
   if (gt) { gt.innerHTML = ''; gt.style.display = 'none'; }
 
   const peerAudio = document.getElementById('peer-audio');
-  if (peerAudio) { try { peerAudio.pause(); peerAudio.srcObject = null; } catch (e) {} }
+  if (peerAudio) { try { peerAudio.pause(); peerAudio.srcObject = null; peerAudio.muted = false; } catch (e) {} }
+  const pool = document.getElementById('remote-audio-pool');
+  if (pool) pool.innerHTML = '';
 
   document.getElementById('btn-toggle-cam').classList.remove('active');
   document.getElementById('btn-toggle-screen').classList.remove('active');
   document.getElementById('btn-toggle-mic').classList.add('active');
   document.getElementById('btn-toggle-mic').innerText = '🎙️ Микрофон';
+  const dBtn = document.getElementById('btn-toggle-deafen');
+  if (dBtn) { dBtn.classList.add('active'); dBtn.classList.remove('danger'); dBtn.innerText = '🎧 Звук'; }
   document.getElementById('call-overlay').style.display = 'none';
   document.getElementById('call-fab').style.display = 'none';
   document.getElementById('call-timer').style.display = 'none';
@@ -5210,9 +6400,12 @@ function endCall() {
   setCallRinging(null);
   const badgeEl = document.getElementById('call-status-badge');
   if (badgeEl) badgeEl.innerText = 'Вызов...';
+  const hintEl = document.getElementById('call-avatar-hint');
+  if (hintEl) hintEl.textContent = 'Камера собеседника выключена';
 
   stopCallTimer();
-  finishCallMessage(partner, startedAt, connectedAt);
+  if (!silent) finishCallMessage(partner, startedAt, connectedAt);
+  else if (callStartMsgEl) { setCallMessageActions(callStartMsgEl, null); }
   callStartedAt = null;
   callConnectedAt = null;
   callStartMsgEl = null;
@@ -5259,7 +6452,7 @@ function markCallAccepted() {
   if (callStartMsgEl) {
     const txt = callStartMsgEl.querySelector('.msg-call-text');
     if (txt && currentCallPartner) {
-      txt.innerHTML = `📞 <b>Звонок @${currentCallPartner}</b> — собеседник принял, соединение…`;
+      txt.innerHTML = `📞 <b>Звонок @${escapeHtml(currentCallPartner)}</b> — собеседник принял, соединение…`;
     }
     setCallMessageActions(callStartMsgEl, [
       { label: '🗕 Свернуть', onClick: minimizeCall },
@@ -5274,7 +6467,7 @@ function markCallConnected(statusText) {
   if (callStartMsgEl) {
     const txt = callStartMsgEl.querySelector('.msg-call-text');
     if (txt && currentCallPartner) {
-      txt.innerHTML = `📞 <b>Звонок @${currentCallPartner}</b> — разговор идёт с ${fmtClock(new Date(callConnectedAt))}`;
+      txt.innerHTML = `📞 <b>Звонок @${escapeHtml(currentCallPartner)}</b> — разговор идёт с ${fmtClock(new Date(callConnectedAt))}`;
     }
     setCallMessageActions(callStartMsgEl, [
       { label: '🗕 Свернуть', onClick: minimizeCall },
@@ -5338,11 +6531,11 @@ function finishCallMessage(partner, startedAt, connectedAt) {
     summary.innerHTML = `📞 <b>Звонок завершён.</b> Начат в <b>${startedStr}</b>, завершён в <b>${fmtClock(new Date(endAt))}</b>. ` +
       `Длительность разговора: <b>${dur}</b> (ожидание ответа: ${wait})`;
   } else if (startedAt) {
-    summary.innerHTML = `📞 <b>Звонок @${partner || '—'}</b> начат в <b>${startedStr}</b> — без ответа.`;
+    summary.innerHTML = `📞 <b>Звонок @${escapeHtml(partner || '—')}</b> начат в <b>${startedStr}</b> — без ответа.`;
   } else {
     summary.innerHTML = `📞 Звонок завершён.`;
   }
-  if (startTxt) startTxt.innerHTML = `📞 <b>Звонок @${partner || '—'}</b> начат в ${startedStr}`;
+  if (startTxt) startTxt.innerHTML = `📞 <b>Звонок @${escapeHtml(partner || '—')}</b> начат в ${startedStr}`;
   box.appendChild(summary);
   box.scrollTop = box.scrollHeight;
 }
@@ -5370,15 +6563,14 @@ document.getElementById('fab-end').onclick = () => document.getElementById('btn-
 // Определяем, кому звоним: в ЛС — собеседник, в группе — выбор из друзей
 function resolveCallTarget() {
   if (activeChatId.startsWith('dm_')) {
-    // Для ЛС берём ник собеседника из метаданных чата (не из заголовка — он может быть переименован локально)
+    // Для ЛС берём ник собеседника из метаданных чата (без учёта регистра)
     const meta = (window.chatsMeta || {})[activeChatId];
     if (meta && meta.direct_user1 && meta.direct_user2) {
-      return meta.direct_user1 === currentUser ? meta.direct_user2 : meta.direct_user1;
+      return sameNick(meta.direct_user1, currentUser) ? meta.direct_user2 : meta.direct_user1;
     }
-    // fallback: из серверного списка chats
-    const srv = (window._allChats || []).find(c => c.id === activeChatId);
+    const srv = (latestChatsCache || []).find(c => c.id === activeChatId);
     if (srv && srv.direct_user1 && srv.direct_user2) {
-      return srv.direct_user1 === currentUser ? srv.direct_user2 : srv.direct_user1;
+      return sameNick(srv.direct_user1, currentUser) ? srv.direct_user2 : srv.direct_user1;
     }
   }
   return null;
@@ -5388,6 +6580,11 @@ document.getElementById('call-header-btn').onclick = () => {
   if (currentCallPartner) {
     restoreCallPanel();
     document.getElementById('call-overlay').style.display = 'flex';
+    return;
+  }
+  const metaCur = chatMeta(activeChatId);
+  if (metaCur && (metaCur.channel_kind === 'voice' || metaCur.chat_type === 'voice') && voiceRoomActiveChatId === activeChatId) {
+    callVoiceRoomPeers();
     return;
   }
   const target = resolveCallTarget();
@@ -5444,9 +6641,8 @@ async function openCallPicker(mode) {
       row.className = 'chat-item';
       row.style.justifyContent = 'space-between';
       if (isAdd) {
-        // в режиме добавления — онлайн-друзья, которых ещё нет в звонке
-        const inCall = groupCallMembers.some(m => m.toLowerCase() === f.nickname.toLowerCase());
-        row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${f.nickname}</span>` +
+        const inCall = groupCallMembers.some(m => sameNick(m, f.nickname));
+        row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${escapeHtml(f.nickname)}</span>` +
           `<span style="font-size:12px;color:${f.is_online ? 'var(--success)' : 'var(--text-dim)'};">${inCall ? 'Уже в звонке' : (f.is_online ? '➕ Добавить' : 'Не в сети')}</span>`;
         if (!f.is_online || inCall) row.style.opacity = '0.5';
         row.onclick = () => {
@@ -5455,7 +6651,7 @@ async function openCallPicker(mode) {
           addToCall(f.nickname);
         };
       } else {
-        row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${f.nickname}</span>` +
+        row.innerHTML = `<span>${f.is_online ? '🟢' : '⚪'} @${escapeHtml(f.nickname)}</span>` +
           `<span style="font-size:12px;color:${f.is_online ? 'var(--success)' : 'var(--text-dim)'};">${f.is_online ? '📞 Позвонить' : 'Не в сети'}</span>`;
         row.onclick = () => {
           closeModal('call-picker-modal');
@@ -5522,44 +6718,47 @@ async function ensureGroupServerChat(membersToInvite) {
 
 // mesh: отправить group-offer конкретному участнику
 async function sendGroupOfferTo(nick) {
-  if (!nick || nick === currentUser) return;
+  if (!nick || sameNick(nick, currentUser)) return;
   try {
     const pc = createPeerConnectionInstance(true, nick); // precreate=true: offerer объявляет audio+video
-    if (localStream) await attachTrack('audio', localStream.getAudioTracks()[0], pc);
-    const offer = await pc.createOffer();
-    offer.sdp = offer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    if (localStream && localStream.getAudioTracks().length) {
+      await attachTrack('audio', localStream.getAudioTracks()[0], pc);
+    }
+    const vTrack = getActiveCallVideoTrack();
+    if (vTrack) await attachTrack('video', vTrack, pc);
+
+    const offer = tuneOpusSdp(await pc.createOffer());
     await pc.setLocalDescription(offer);
-    sendSignal({ action: 'call_offer', caller: currentUser, target: nick, sdp: offer,
+    sendSignal({ action: 'call_offer', caller: currentUser, target: nick, sdp: pc.localDescription || offer,
                  group: true, groupId: groupCallId, groupName: groupCallName,
                  members: groupCallMembers });
-    if (isCamOn && localStream) {
-      const vTrack = localStream.getVideoTracks()[0];
-      if (vTrack) await attachTrack('video', vTrack, pc);
-    }
   } catch (e) { console.log('sendGroupOfferTo failed:', e); }
 }
 
 // mesh: вошли в чужой групповой звонок — отвечаем всем, у кого нет пира
 async function handleGroupOffer(data) {
   if (!data.caller) return;
+  const cLow = peerKey(data.caller);
   // уже есть пир с этим участником — дубликат, игнорируем
-  if (data.caller === groupPrimaryPartner && peerConnection) return;
-  if (peers[data.caller]) return;
+  if (sameNick(data.caller, groupPrimaryPartner) && peerConnection) return;
+  if (peers[cLow]) return;
 
   const oldPartner = currentCallPartner;
   groupCallActive = true;
   if (!groupCallId) groupCallId = data.groupId;
   if (!groupCallName) groupCallName = data.groupName || '';
-  // primary — тот, с кем уже был основной пир (peerConnection), иначе первый входящий
   if (!groupPrimaryPartner) {
-    if (peerConnection && oldPartner && oldPartner !== data.caller) groupPrimaryPartner = oldPartner;
+    if (peerConnection && oldPartner && !sameNick(oldPartner, data.caller)) groupPrimaryPartner = oldPartner;
     else groupPrimaryPartner = data.caller;
   }
   const incoming = data.members || [data.caller];
-  groupCallMembers = Array.from(new Set([currentUser].concat(incoming).concat(groupCallMembers).concat(oldPartner ? [oldPartner] : [])));
+  const merged = [];
+  const addUniq = (n) => { if (n && !merged.some(x => sameNick(x, n))) merged.push(n); };
+  [currentUser].concat(incoming).concat(groupCallMembers).concat(oldPartner ? [oldPartner] : []).forEach(addUniq);
+  groupCallMembers = merged;
 
   ensureAudioContext();
-  currentCallPartner = data.caller;
+  currentCallPartner = groupPrimaryPartner || data.caller;
   callState = 'active';
   pendingIncomingOffer = null;
   iceCandidatesQueue = [];
@@ -5568,33 +6767,41 @@ async function handleGroupOffer(data) {
   document.getElementById('btn-add-participant').style.display = 'inline-block';
   document.getElementById('call-overlay').style.display = 'flex';
   document.getElementById('call-timer').style.display = 'inline-block';
+  document.getElementById('call-partner-header').innerText = '👥 Групповой звонок';
 
   try {
-    if (!localStream) localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    if (!localStream) {
+      const micRes = await acquireCallMic();
+      localStream = micRes.stream;
+    }
     const pc = createPeerConnectionInstance(false, data.caller);
     await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    if (Array.isArray(groupPeerIce[data.caller]) && groupPeerIce[data.caller].length) {
-      for (const cand of groupPeerIce[data.caller]) {
+    if (Array.isArray(groupPeerIce[cLow]) && groupPeerIce[cLow].length) {
+      for (const cand of groupPeerIce[cLow]) {
         try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (_) {}
       }
-      groupPeerIce[data.caller] = [];
+      groupPeerIce[cLow] = [];
     }
     // видео m-line живой — иначе Chrome отключит его в ответе (port 9)
     const vTr = pc.getTransceivers().find(t =>
       t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
-    if (vTr && vTr.direction === 'recvonly') vTr.direction = 'sendrecv';
-    await attachTrack('audio', localStream.getAudioTracks()[0], pc);
-    const answer = await pc.createAnswer();
-    answer.sdp = answer.sdp.replace('useinbandfec=1', 'useinbandfec=1;minptime=10;cbr=1');
+    if (vTr && (vTr.direction === 'recvonly' || vTr.direction === 'inactive')) vTr.direction = 'sendrecv';
+    if (localStream && localStream.getAudioTracks().length) {
+      await attachTrack('audio', localStream.getAudioTracks()[0], pc);
+    }
+    const vTrack = getActiveCallVideoTrack();
+    if (vTrack) await attachTrack('video', vTrack, pc);
+
+    const answer = tuneOpusSdp(await pc.createAnswer());
     await pc.setLocalDescription(answer);
-    sendSignal({ action: 'call_answer', target: data.caller, sdp: answer, group: true });
-    if (!callConnectedAt) callConnectedAt = Date.now();
+    sendSignal({ action: 'call_answer', target: data.caller, sdp: pc.localDescription || answer, group: true });
+    armCallConnectTimeout();
 
     // кому ещё нет пира — отправляем offers (mesh); основной пир (primary) уже в peerConnection
     for (const m of groupCallMembers) {
-      if (m === currentUser || m === data.caller) continue;
-      if (m === groupPrimaryPartner && peerConnection) continue;
-      if (!peers[m]) await sendGroupOfferTo(m);
+      if (sameNick(m, currentUser) || sameNick(m, data.caller)) continue;
+      if (sameNick(m, groupPrimaryPartner) && peerConnection) continue;
+      if (!peers[peerKey(m)]) await sendGroupOfferTo(m);
     }
   } catch (e) { console.log('handleGroupOffer failed:', e); }
 }
@@ -5602,21 +6809,18 @@ async function handleGroupOffer(data) {
 // кнопка «➕ Добавить»: позвать друга в текущий звонок (он станет групповым)
 async function addToCall(nick) {
   if (!nick || !callState) return;
-  if (nick === currentUser) return;
+  if (sameNick(nick, currentUser)) return;
   const existing = groupCallActive ? groupCallMembers.slice() : [currentUser, currentCallPartner].filter(Boolean);
-  if (existing.some(m => m.toLowerCase() === nick.toLowerCase())) {
+  if (existing.some(m => sameNick(m, nick))) {
     showToast('@' + nick + ' уже в этом звонке', 'warning');
     return;
   }
-  // переходим из 1:1 в mesh-режим (если ещё не в нём)
   if (!groupCallActive) enterGroupCallMode(existing);
-  // серверная группа-обёртка + инвайты в чат звонка (переписка)
   await ensureGroupServerChat(existing.concat([nick]));
-  groupCallMembers = Array.from(new Set(groupCallMembers.concat([nick])));
+  if (!groupCallMembers.some(m => sameNick(m, nick))) groupCallMembers.push(nick);
   const b = document.getElementById('call-status-badge');
   if (b) b.innerText = (callConnectedAt ? '🔊 Разговор идёт · ' : 'Групповой звонок · ') + groupCallMembers.length + ' участников';
   document.getElementById('call-partner-header').innerText = '👥 Групповой звонок';
-  // отправляем новичку group-offer (mesh: он сам доберёт остальных)
   await sendGroupOfferTo(nick);
   showToast('Приглашение в звонок отправлено @' + nick);
 }
@@ -5624,33 +6828,33 @@ async function addToCall(nick) {
 // mesh: закрыть пир одного участника (он вышел/отклонил/отвалился)
 function closeGroupPeer(nick, reason) {
   if (!nick) return;
-  if (nick === groupPrimaryPartner && peerConnection) {
+  const low = peerKey(nick);
+  removeCallPeerAudio(low);
+  if (sameNick(nick, groupPrimaryPartner) && peerConnection) {
     try { peerConnection.close(); } catch (e) {}
     peerConnection = null;
-    // primary вышел — его tile-remote очищаем, переназначаем primary на первого участника
     document.getElementById('remote-video').srcObject = null;
     document.getElementById('remote-video').style.display = 'none';
     document.getElementById('call-avatar-wrap').style.display = 'flex';
-    const rest = groupCallMembers.filter(m => m !== nick && m !== currentUser);
+    const rest = groupCallMembers.filter(m => !sameNick(m, nick) && !sameNick(m, currentUser));
     groupPrimaryPartner = rest[0] || null;
-  } else if (peers[nick]) {
-    try { peers[nick].close(); } catch (e) {}
-    delete peers[nick];
+  } else if (peers[low]) {
+    try { peers[low].close(); } catch (e) {}
+    delete peers[low];
   }
-  delete groupPeerIce[nick];
-  const tile = document.getElementById('gtile-' + nick);
+  delete peerDisplayNames[low];
+  delete groupPeerIce[low];
+  const tile = document.getElementById('gtile-' + escapeAttrNick(nick));
   if (tile) tile.remove();
-  groupCallMembers = groupCallMembers.filter(m => m !== nick);
+  groupCallMembers = groupCallMembers.filter(m => !sameNick(m, nick));
   if (reason) showToast(`@${nick}: ${reason}`, 'warning');
 
-  // участников не осталось — завершаем звонок
-  if (groupCallMembers.filter(m => m !== currentUser).length === 0) {
+  const others = groupCallMembers.filter(m => !sameNick(m, currentUser));
+  if (others.length === 0) {
     endCall();
     return;
   }
-  // остался ровно один собеседник — выходим из mesh в обычный 1:1
-  if (groupCallMembers.filter(m => m !== currentUser).length === 1 && groupPrimaryPartner) {
-    // mesh сворачиваем: primary остаётся в peerConnection, остальные пир-сети закрыты
+  if (others.length === 1 && groupPrimaryPartner) {
     groupCallActive = false;
     updateGroupTilesVisibility();
     const b = document.getElementById('call-status-badge');
@@ -5661,18 +6865,19 @@ function closeGroupPeer(nick, reason) {
 
 // mesh: динамическая плитка для remote-участника (его видео)
 function ensureGroupTile(nick) {
-  let tile = document.getElementById('gtile-' + nick);
+  const safeId = 'gtile-' + escapeAttrNick(nick);
+  let tile = document.getElementById(safeId);
   if (tile) return tile;
   tile = document.createElement('div');
   tile.className = 'call-tile';
-  tile.id = 'gtile-' + nick;
+  tile.id = safeId;
   tile.style.position = 'relative';
   tile.innerHTML = `
     <video autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:10px;background:#000;"></video>
     <div class="call-avatar-placeholder" style="display:flex;">
       <div class="call-avatar-large">👤</div>
     </div>
-    <div class="tile-label">@${nick}</div>`;
+    <div class="tile-label">@${escapeHtml(nick)}</div>`;
   document.getElementById('group-tiles').appendChild(tile);
   return tile;
 }
@@ -6574,10 +7779,14 @@ document.getElementById('delete-chat-btn').onclick = () => {
     });
     return;
   }
-  confirmAction('Удаление', 'Удалить этот чат?', () => {
+  const curMeta = chatMeta(activeChatId) || {};
+  const kmDel = chatKindMeta(curMeta);
+  const cTitle = curMeta.name || window.activeChatName || '';
+  confirmAction('Удаление', `Удалить ${kmDel.acc} «${cTitle}»?`, () => {
     fetch(`${BACKEND_URL}/chats/${activeChatId}?user=${currentUser}`, { method: 'DELETE' })
       .then(r=>r.json()).then(d=>{
         showToast(d.msg||'Удалено');
+        if (voiceRoomActiveChatId === activeChatId) leaveVoiceRoom(true);
         loadChats();
         switchChat('general', '🌐 Общий чат');
       });
@@ -6596,7 +7805,10 @@ document.getElementById('archive-chat-btn').onclick = () => {
 document.getElementById('new-chat-btn').onclick = () => {
   document.getElementById('new-chat-name-input').value = '';
   const tSel = document.getElementById('new-chat-type-select');
-  if (tSel) tSel.value = 'group';
+  if (tSel) {
+    tSel.value = 'group';
+    if (typeof tSel.onchange === 'function') tSel.onchange();
+  }
   const topInp = document.getElementById('new-chat-topic-input');
   if (topInp) topInp.value = '';
   openModal('new-chat-modal');

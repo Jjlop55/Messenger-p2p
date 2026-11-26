@@ -655,77 +655,80 @@ AI_MAX_ANSWER = 3000    # длина ответа
 BOT_INTRO = (
     "Привет! Я Utopia — бот-помощник, я живу прямо в этом чате.\n"
     "Знаю все функции мессенджера и объясню, как ими пользоваться.\n"
-    "Спроси меня, например: «как позвонить?», «как создать группу?», «почему фото удаляются?»\n"
+    "Спроси меня, например: «как позвонить?», «как работают голосовые каналы?», «где настройки панели?», «какие есть игры?»\n"
     "Или напиши «функции» — покажу весь список."
 )
 
 # Справочник функций: desc — это описание, которое бот выдаёт пользователю,
 # short — однострочник для списка, keys — слова-триггеры для подбора темы.
 FEATURES = [
-    {"id": "calls", "emoji": "📞", "title": "Звонки", "short": "аудиозвонки с экраном ожидания",
-     "desc": "Кнопка 📞 в шапке чата зовёт собеседника. Звонящий видит «Идёт вызов — ждём ответа», "
-             "у того, кто принимает, — экран входящего с анимацией и звуком. После соединения идёт "
-             "таймер разговора. В разговоре есть выключение микрофона, камера и показ экрана. "
-             "Нужен микрофон и открытый сайт по https.",
-     "keys": ["звонок", "звонки", "позвон", "аудиозвонок", "микрофон", "камер", "видеозвонок", "дозвон"]},
-    {"id": "groups", "emoji": "👥", "title": "Группы и роли", "short": "своя группа, роли и права",
-     "desc": "«+ Новый чат» создаёт группу — её создатель сразу владелец. Владелец и админы с правом "
-             "«promote» назначают админов, дают права (переименование, приглашение, кик, удаление "
-             "сообщений), ставят титулы и передают владение. В шапке — кнопка 👥 со списком участников, "
-             "по клику на участника откроется меню действий.",
-     "keys": ["групп", "роль", "роли", "админ", "владел", "права", "титул", "приглас", "участник", "кик"]},
-    {"id": "friends", "emoji": "🤝", "title": "Друзья и личные сообщения", "short": "заявки и лимит ЛС",
-     "desc": "Кнопка 🤝 — друзья: заявки входящие/исходящие и список. Пока собеседник не принял "
-             "заявку, ему можно отправить ровно одно сообщение — дальше чат закрывается до "
-             "подтверждения дружбы. Как приняли — лимит снимается.",
-     "keys": ["друз", "друг", "заявк", "лс", "личн", "собеседник", "лимит"]},
-    {"id": "files", "emoji": "📎", "title": "Файлы, фото и голос", "short": "вложения до 10 МБ",
-     "desc": "Скрепка 🎎 (📎) прикрепляет файл, фото или документ до 10 МБ, а микрофон 🎙 записывает "
-             "голосовое. Удаление сообщения удаляет и сам файл с сервера — в чате его больше нет, "
-             "хранить незачем. Файлы старше 4 дней сервер чистит сам.",
-     "keys": ["файл", "фото", "картинк", "скрепк", "прикреп", "голос", "удален", "удалить", "вложен"]},
-    {"id": "reactions", "emoji": "😀", "title": "Реакции и ответы", "short": "смайлы на сообщениях",
-     "desc": "Наведи на сообщение — появится меню: можно поставить реакцию (смайл-счётчик, как в "
-             "Telegram), ответить цитатой или удалить (своё — всегда, чужое — если есть права).",
-     "keys": ["реакц", "смайл", "ответ", "цитат", "эмодзи"]},
-    {"id": "sessions", "emoji": "📱", "title": "Устройства и сессии", "short": "где и когда вы входили",
-     "desc": "Кнопка 📱 показывает, с каких устройств идёт вход: активные и заброшенные сессии, IP и "
-             "время. Оттуда можно завершить чужую сессию, а админ — кикнуть пользователя (30 секунд "
-             "блок входа). Сессия без активности 7 дней считается заброшенной.",
+    {"id": "calls", "emoji": "📞", "title": "Аудио, видео и групповые звонки", "short": "1 на 1 и созвоны на несколько человек",
+     "desc": "Кнопка 📞 в шапке чата зовёт собеседника (в ЛС — сразу, в группе/общем — выбор из списка друзей или по нику). "
+             "Во время звонка доступны: 🎙️ Микрофон (не глушит собеседника), 🎧 Звук (режим тишины без звука входящих), "
+             "📹 Камера, 🖥️ Демка экрана, ➕ Добавить ещё участников в общий созвон и выбор динамиков. "
+             "Сигнализация работает через отдельный фоновый канал, поэтому переключение чатов больше не рвёт звонок! "
+             "Если нет микрофона, можно подключиться в режиме прослушивания (нужен https://).",
+     "keys": ["звонок", "звонки", "позвон", "аудиозвонок", "микрофон", "камер", "видеозвонок", "дозвон", "демк", "экран"]},
+    {"id": "voice_channels", "emoji": "🔊", "title": "Голосовые каналы (Discord)", "short": "комнаты с живым голосом без обрыва при смене чата",
+     "desc": "Создай канал с типом «🔊 Голосовой канал» через кнопку «+ Канал». Нажми «🔊 Войти в голос» — сразу "
+             "включится живая аудиосвязь со всеми участниками в комнате, с индикаторами речи, кнопками 🎙️ Микр и 🎧 Звук. "
+             "Можно свободно переключаться в другие текстовые чаты или ЛС — голос продолжит работать в фоне, а внизу "
+             "будет висеть компактная панель управления.",
+     "keys": ["голосов", "войс", "комнат", "дискорд", "discord", "audio", "канал голос"]},
+    {"id": "groups", "emoji": "👥", "title": "Группы, каналы и роли", "short": "свои чаты, #каналы, роли и права",
+     "desc": "Кнопка «+ Канал» создаёт 👥 Группу, # Текстовый канал или 🔊 Голосовой канал с темой. Создатель — владелец. "
+             "Можно назначать админов, выдавать точечные права (переименование, приглашение, кик, удаление сообщений), "
+             "ставить титулы и передавать владение. Пригласить участника можно кнопкой «+ Пригласить» — входящее "
+             "приглашение чётко укажет, куда вас зовут (в голосовой канал, текстовый канал или группу).",
+     "keys": ["групп", "канал", "роль", "роли", "админ", "владел", "права", "титул", "приглас", "участник", "кик"]},
+    {"id": "interface", "emoji": "🎨", "title": "Настройка интерфейса и панели", "short": "профиль и кнопки сверху, сбоку или везде",
+     "desc": "В Настройках ⚙ есть переключатель «Расположение профиля и кнопок»: можно оставить аватарку и кнопки "
+             "только сверху в шапке, убрать на боковую панель (слева или справа) либо показывать и там, и там. "
+             "А справа у любого чата кнопка 👤 открывает Discord-панель участников с онлайн-статусом и голосовой активностью.",
+     "keys": ["интерфейс", "панел", "кнопк", "аватар", "сбоку", "справа", "сверху", "расположен", "меню", "тема"]},
+    {"id": "friends", "emoji": "🤝", "title": "Друзья и личные сообщения", "short": "заявки, архив и лимит ЛС",
+     "desc": "Кнопка 🤝 открывает друзей: кто в сети, заявки и поиск. Пока заявка не принята, незнакомцу можно отправить "
+             "ровно одно сообщение — после дружбы лимит снимается. ЛС можно переименовать только для себя или убрать в 📦 Архив.",
+     "keys": ["друз", "друг", "заявк", "лс", "личн", "собеседник", "лимит", "архив"]},
+    {"id": "files", "emoji": "📎", "title": "Файлы, фото и голосовые", "short": "вложения до 10 МБ, фото с приближением",
+     "desc": "Скрепка 📎 прикрепляет файл, картинку или документ до 10 МБ (фото открываются на весь экран по клику). "
+             "Кнопка 🎙 записывает голосовое сообщение до 5 минут (можно тянуть вверх для фиксации или влево для отмены), "
+             "а 🗣️ диктует текст голосом прямо в строку ввода. Файлы автоматически чистятся через 4 дня.",
+     "keys": ["файл", "фото", "картинк", "скрепк", "прикреп", "голосов", "дикт", "удален", "вложен"]},
+    {"id": "reactions", "emoji": "😀", "title": "Реакции, ответы, закреп и поиск", "short": "смайлы, редактирование, 📌 и 🔍",
+     "desc": "ПКМ или долгое нажатие на сообщение открывает меню: поставить реакцию, ответить цитатой, "
+             "редактировать своё сообщение, закрепить важное в шапке 📌 или удалить. Кнопка 🔍 в шапке ищет по истории чата.",
+     "keys": ["реакц", "смайл", "ответ", "цитат", "эмодзи", "закреп", "поиск", "редакт"]},
+    {"id": "sessions", "emoji": "📱", "title": "Устройства и сессии", "short": "активные входы и сброс",
+     "desc": "Кнопка 📱 показывает устройства, с которых выполнен вход: активные и заброшенные сессии (7 дней без активности), "
+             "IP и время входа. Можно сбросить чужое устройство или выйти со всех сразу.",
      "keys": ["сесси", "устройств", "вход", "ip", "кикнуть", "разлогин"]},
-    {"id": "notifications", "emoji": "🔔", "title": "Уведомления", "short": "системные пуш-уведомления",
-     "desc": "В настройках ⚙ есть два тумблера: уведомлять о новых сообщениях и играть звук, если окно "
-             "свёрнуто. Кнопка «Разрешить системные уведомления» включает пуш от браузера — клик по "
-             "уведомлению сразу открывает чат.",
+    {"id": "notifications", "emoji": "🔔", "title": "Уведомления и звук", "short": "системные пуши и тоны",
+     "desc": "В Настройках ⚙ можно отдельно включать уведомления о новых сообщениях и звук, когда вкладка свёрнута. "
+             "Кнопка «Разрешить системные уведомления» включает пуш-сообщения браузера с переходом прямо в нужный чат.",
      "keys": ["уведомлен", "пуш", "звук", "настройк", "оповещен", "notifications"]},
     {"id": "support", "emoji": "🎧", "title": "Поддержка", "short": "тикеты и ответы саппорта",
-     "desc": "Кнопка 🎧 открывает службу поддержки: можно написать обращение даже до входа (укажи "
-             "никнейм — ответ будет ждать тебя после входа). Тикеты видны во вкладке «Мои тикеты», "
-             "ответ саппорта хранится 4 часа после просмотра.",
+     "desc": "Кнопка 🎧 открывает службу поддержки: тикет можно отправить даже до входа в аккаунт (просто впиши свой ник). "
+             "Ответ хранится 4 часа после прочтения.",
      "keys": ["поддержк", "тикет", "обращен", "жалоб", "проблем", "help"]},
-    {"id": "admin", "emoji": "⚡", "title": "Админ-панель", "short": "баны, мьюты, права",
-     "desc": "Кнопка ⚡ (видна админам): пользователи (бан/мьют/кик/удаление), группы (в том числе "
-             "выдача владельца чата кнопкой 👑), баны, саппорт и заявки. У каждого раздела свои права — "
-             "их выдаёт главный администратор.",
+    {"id": "admin", "emoji": "⚡", "title": "Админ-панель", "short": "баны, мьюты, монеты, права",
+     "desc": "Кнопка ⚡ (видна админам): управление пользователями (бан/мьют/кик/выдача монет/удаление), группами "
+             "(передача владения кнопкой 👑), списком блокировок, саппортом и заявками.",
      "keys": ["админ", "панел", "бан", "мьют", "заглушить", "права админа"]},
     {"id": "cleanup", "emoji": "🧹", "title": "Автоочистка", "short": "сообщения живут недолго",
-     "desc": "Сообщения хранятся недолго: общий чат — 3 часа, группы — 4 часа, личные диалоги — 10 часов. "
-             "Файлы при этом удаляются вместе с сообщениями, а не висят на сервере.",
+     "desc": "Сообщения хранятся временно: общий чат — 3 часа, группы и каналы — 4 часа, ЛС — 10 часов. "
+             "Вложения удаляются с диска одновременно с сообщениями.",
      "keys": ["очистк", "удаляется", "истек", "срок", "хранятся", "истори"]},
-    {"id": "monitoring", "emoji": "📊", "title": "Мониторинг сервера", "short": "пинг и статус",
-     "desc": "Кнопка 📊 показывает состояние сервера: задержку ответа, количество онлайн-пользователей "
-             "и статус сервиса.",
+    {"id": "monitoring", "emoji": "📊", "title": "Мониторинг сервера", "short": "аптайм, онлайн и память",
+     "desc": "Кнопка 📊 показывает статус сервиса, время безотказной работы, число пользователей онлайн и место на диске.",
      "keys": ["мониторинг", "сервер", "пинг", "статус", "задержк", "онлайн"]},
-    {"id": "games", "emoji": "🎮", "title": "Игровой зал", "short": "три игры, поиск соперника, лидеры",
-     "desc": "Кнопка 🎮 открывает игровой зал. Три игры: ✊ камень-ножницы-бумага (матч до 3 побед), "
-             "❌ крестики-нолики и 🚢 морской бой (случайная расстановка). Жми «Играть» — сервер сам "
-             "найдёт соперника: видно, сколько игроков онлайн, сколько ищут игру и сколько играют "
-             "прямо сейчас. После матча результат попадает в таблицу лидеров — там топ по числу "
-             "сыгранных 1х1 игр и побед.",
-     "keys": ["игр", "игров", "игра", "соперник", "поиск", "лидер", "таблиц", "кости", "крестик", "морской"]},
+    {"id": "games", "emoji": "🎮", "title": "Игровой зал, Дуэли и Кликер", "short": "5 игр, лобби, лидеры и 👆 Кликер",
+     "desc": "Кнопка 🎮 открывает Игровой зал: ⚔️ Утопия (2D-арена), 🌿 Green Valley (3D с ботами и PvP), "
+             "✊ Камень-ножницы-бумага, ❌ Крестики-нолики и 🚢 Морской бой. Через профиль можно бросить прямую ⚔️ Дуэль другу! "
+             "А кнопка 👆 открывает Кликер с прокачками, скинами, сундуком и обменом на общие 💰 игровые монеты.",
+     "keys": ["игр", "игров", "игра", "соперник", "поиск", "лидер", "таблиц", "утопи", "green", "кликер", "дуэл", "монет", "крестик", "морской"]},
     {"id": "bot", "emoji": "🤖", "title": "Бот-помощник (это я)", "short": "справки по всем функциям",
-     "desc": "Этот чат. Напиши вопрос словами — я подберу нужную функцию и объясню по шагам. "
-             "Команда /ai больше не нужна: просто пиши сюда.",
+     "desc": "Этот чат. Пиши вопрос обычными словами или жми быстрые кнопки внизу — подскажу любую функцию по шагам.",
      "keys": ["бот", "помощник", "кто ты", "что умеешь", "функции", "список"]},
 ]
 
@@ -1277,6 +1280,8 @@ class ConnectionManager:
     def __init__(self):
         self.user_sockets: Dict[str, Set[WebSocket]] = {}
         self.chat_sockets: Dict[str, Set[WebSocket]] = {}
+        self.signal_sockets: Dict[str, Set[WebSocket]] = {}
+        self.voice_socket_rooms: Dict[WebSocket, Set[str]] = {}
 
     async def connect(self, chat_id: str, ws: WebSocket, nick: str):
         await ws.accept()
@@ -1295,20 +1300,73 @@ class ConnectionManager:
             if not self.chat_sockets[chat_id]:
                 del self.chat_sockets[chat_id]
 
-    def is_online(self, nick: str) -> bool:
+    async def connect_signal(self, ws: WebSocket, nick: str):
+        await ws.accept()
         canonical = nick.lower()
-        return canonical in self.user_sockets and bool(self.user_sockets[canonical])
+        self.signal_sockets.setdefault(canonical, set()).add(ws)
+
+    def disconnect_signal(self, ws: WebSocket, nick: str) -> Set[str]:
+        canonical = nick.lower()
+        if canonical in self.signal_sockets:
+            self.signal_sockets[canonical].discard(ws)
+            if not self.signal_sockets[canonical]:
+                del self.signal_sockets[canonical]
+        return self.voice_socket_rooms.pop(ws, set())
+
+    def bind_voice_socket(self, ws: WebSocket, chat_id: str):
+        if ws is None or not chat_id:
+            return
+        self.voice_socket_rooms.setdefault(ws, set()).add(chat_id)
+
+    def unbind_voice_socket(self, ws: WebSocket, chat_id: str = ""):
+        if ws is None:
+            return
+        if not chat_id:
+            self.voice_socket_rooms.pop(ws, None)
+            return
+        s = self.voice_socket_rooms.get(ws)
+        if s:
+            s.discard(chat_id)
+            if not s:
+                self.voice_socket_rooms.pop(ws, None)
+
+    def is_online(self, nick: str) -> bool:
+        canonical = (nick or "").strip().lower()
+        if not canonical:
+            return False
+        return bool(self.user_sockets.get(canonical)) or bool(self.signal_sockets.get(canonical))
 
     def online_users(self) -> List[str]:
-        return list(self.user_sockets.keys())
+        return list(set(self.user_sockets.keys()) | set(self.signal_sockets.keys()))
 
     async def send_to_user(self, nick: str, payload: dict):
-        canonical = nick.lower()
+        canonical = (nick or "").strip().lower()
         for ws in list(self.user_sockets.get(canonical, [])):
             try:
                 await ws.send_json(payload)
             except Exception:
                 pass
+
+    async def send_signal_to_user(self, nick: str, payload: dict, exclude_ws: Optional[WebSocket] = None, allow_chat_fallback: bool = True):
+        """Доставка сигнализации звонка/голоса без дублирования, в первую очередь в signalWs."""
+        canonical = (nick or "").strip().lower()
+        all_sig = self.signal_sockets.get(canonical, set())
+        if all_sig:
+            targets = [ws for ws in all_sig if ws is not exclude_ws]
+        elif allow_chat_fallback:
+            targets = [ws for ws in self.user_sockets.get(canonical, set()) if ws is not exclude_ws]
+        else:
+            targets = []
+        for ws in list(targets):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                pass
+
+    async def broadcast_signal_or_chat_all(self, payload: dict):
+        """Шлёт по 1 разу каждому онлайн-юзеру: в signalWs (не рвётся при switchChat), иначе в userWs."""
+        for canonical in self.online_users():
+            await self.send_signal_to_user(canonical, payload)
 
     async def broadcast_chat(self, chat_id: str, payload: dict):
         for ws in list(self.chat_sockets.get(chat_id, [])):
@@ -1361,6 +1419,12 @@ class ConnectionManager:
     async def kick_user(self, nick: str, reason: str = "Вы были принудительно отключены."):
         canonical = nick.lower()
         for ws in list(self.user_sockets.get(canonical, [])):
+            try:
+                await ws.send_json({"action": "kicked", "msg": reason})
+                await ws.close()
+            except Exception:
+                pass
+        for ws in list(self.signal_sockets.get(canonical, [])):
             try:
                 await ws.send_json({"action": "kicked", "msg": reason})
                 await ws.close()
@@ -1818,32 +1882,83 @@ async def rename_chat(data: ChatRenameData):
 #  СИСТЕМА ПРИГЛАШЕНИЙ В ЧАТЫ
 # ═══════════════════════════════════════════════════════════
 
+def _chat_kind_accusative(chat_type: str, channel_kind: str) -> str:
+    if channel_kind == "voice" or chat_type == "voice":
+        return "голосовой канал"
+    if chat_type == "channel":
+        return "текстовый канал"
+    return "группу"
+
 @app.post("/invite")
 async def send_invite(data: InviteData):
+    if data.chat_id == "general" or str(data.chat_id).startswith(("dm_", "bot_")):
+        return {"status": "error", "msg": "В этот чат нельзя отправить приглашение"}
+
     cursor.execute("SELECT nickname FROM users WHERE LOWER(nickname)=LOWER(?)", (data.to_user,))
     target_row = cursor.fetchone()
     if not target_row:
         return {"status": "error", "msg": "Пользователь не найден!"}
     canonical_target = target_row[0]
+    canonical_from = _canonical_nick(data.from_user)
+
+    cursor.execute("SELECT name, chat_type, channel_kind, is_direct FROM chats WHERE id=?", (data.chat_id,))
+    chat_row = cursor.fetchone()
+    if not chat_row or chat_row[3]:
+        return {"status": "error", "msg": "Чат не найден или является личным"}
+    real_name = chat_row[0] or data.chat_name
+    ctype = chat_row[1] or "group"
+    ch_kind = chat_row[2] or ("voice" if ctype == "voice" else "text")
 
     cursor.execute("SELECT 1 FROM members WHERE chat_id=? AND LOWER(nickname)=LOWER(?)", (data.chat_id, canonical_target))
     if cursor.fetchone():
         return {"status": "error", "msg": "Пользователь уже в этом чате!"}
 
-    # Приглашать в группу может владелец или админ с правом invite
-    if not chat_permission(data.chat_id, data.from_user, "invite"):
-        return {"status": "error", "msg": "Нет прав: приглашать может владелец группы или админ с правом invite!"}
+    # Приглашать в группу/канал может владелец или админ с правом invite
+    if not chat_permission(data.chat_id, canonical_from, "invite"):
+        return {"status": "error", "msg": "Нет прав: приглашать может владелец или админ с правом invite!"}
+
+    cursor.execute("SELECT id FROM invites WHERE chat_id=? AND LOWER(to_user)=LOWER(?)", (data.chat_id, canonical_target))
+    if cursor.fetchone():
+        return {"status": "ok", "msg": f"Приглашение в {_chat_kind_accusative(ctype, ch_kind)} уже отправлено @{canonical_target}!"}
 
     cursor.execute("INSERT INTO invites (chat_id, chat_name, from_user, to_user) VALUES (?, ?, ?, ?)",
-                   (data.chat_id, data.chat_name, data.from_user, canonical_target))
+                   (data.chat_id, real_name, canonical_from, canonical_target))
     conn.commit()
-    await manager.send_to_user(canonical_target, {"action": "new_invite", "from": data.from_user, "chat": data.chat_name})
-    return {"status": "ok", "msg": f"Приглашение отправлено @{canonical_target}!"}
+    payload = {
+        "action": "new_invite",
+        "from": canonical_from,
+        "chat": real_name,
+        "chat_id": data.chat_id,
+        "chat_type": ctype,
+        "channel_kind": ch_kind,
+    }
+    await manager.send_to_user(canonical_target, payload)
+    # На случай если получатель прямо сейчас переключает activeWs
+    if not manager.user_sockets.get(canonical_target.lower()):
+        await manager.send_signal_to_user(canonical_target, payload)
+    return {"status": "ok", "msg": f"Приглашение в {_chat_kind_accusative(ctype, ch_kind)} отправлено @{canonical_target}!"}
 
 @app.get("/invites/{nickname}")
 def get_invites(nickname: str):
-    cursor.execute("SELECT id, chat_id, chat_name, from_user FROM invites WHERE LOWER(to_user)=LOWER(?)", (nickname,))
-    return [{"id": r[0], "chat_id": r[1], "chat_name": r[2], "from_user": r[3]} for r in cursor.fetchall()]
+    cursor.execute("""
+        SELECT i.id, i.chat_id, COALESCE(c.name, i.chat_name), i.from_user,
+               COALESCE(c.chat_type, 'group'), COALESCE(c.channel_kind, 'text'),
+               COALESCE(c.topic, ''), c.id
+        FROM invites i
+        LEFT JOIN chats c ON i.chat_id = c.id
+        WHERE LOWER(i.to_user)=LOWER(?)
+    """, (nickname,))
+    rows = cursor.fetchall()
+    orphan_ids = [r[0] for r in rows if not r[7]]
+    if orphan_ids:
+        marks = ",".join("?" for _ in orphan_ids)
+        cursor.execute(f"DELETE FROM invites WHERE id IN ({marks})", orphan_ids)
+        conn.commit()
+    return [{
+        "id": r[0], "chat_id": r[1], "chat_name": r[2], "from_user": r[3],
+        "chat_type": r[4] or "group", "channel_kind": r[5] or ("voice" if r[4] == "voice" else "text"),
+        "topic": r[6] or "",
+    } for r in rows if r[7]]
 
 @app.post("/invite/respond")
 async def respond_invite(data: InviteAction):
@@ -1853,14 +1968,19 @@ async def respond_invite(data: InviteAction):
         return {"status": "error", "msg": "Приглашение не найдено!"}
 
     chat_id = row[0]
-    if data.action == "accept":
-        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (chat_id, data.nickname))
+    canonical_user = _canonical_nick(data.nickname)
+    cursor.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,))
+    chat_exists = cursor.fetchone() is not None
+    if data.action == "accept" and chat_exists:
+        cursor.execute("INSERT OR IGNORE INTO members (chat_id, nickname) VALUES (?, ?)", (chat_id, canonical_user))
     cursor.execute("DELETE FROM invites WHERE id=?", (data.invite_id,))
     conn.commit()
-    await manager.send_to_user(data.nickname, {"action": "invites_updated"})
-    if data.action == "accept":
-        await manager.send_to_user(data.nickname, {"action": "chats_updated"})
+    await manager.send_to_user(canonical_user, {"action": "invites_updated"})
+    if data.action == "accept" and chat_exists:
+        await manager.send_to_user(canonical_user, {"action": "chats_updated"})
         await manager.broadcast_chat_event(chat_id, {"action": "members_updated", "chat_id": chat_id})
+    elif data.action == "accept" and not chat_exists:
+        return {"status": "error", "msg": "Этот чат уже удалён"}
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════
@@ -1904,6 +2024,59 @@ async def get_or_create_direct_chat(data: DirectChatData):
     return {"status": "ok", "chat_id": cid, "chat_name": cname}
 
 _voice_rooms: Dict[str, List[str]] = {}  # chat_id -> list of active voice participants
+_voice_states: Dict[str, Dict[str, dict]] = {}  # chat_id -> { low_nick: {nickname, muted, deafened} }
+
+def _voice_room_states(chat_id: str) -> List[dict]:
+    st_map = _voice_states.get(chat_id) or {}
+    out = []
+    for u in _voice_rooms.get(chat_id, []):
+        low = u.lower()
+        st = st_map.get(low) or {"nickname": u, "muted": False, "deafened": False}
+        out.append({"nickname": u, "muted": bool(st.get("muted")), "deafened": bool(st.get("deafened"))})
+    return out
+
+async def _broadcast_voice_room(chat_id: str):
+    payload = {
+        "action": "voice_room_updated",
+        "chat_id": chat_id,
+        "users": list(_voice_rooms.get(chat_id, [])),
+        "states": _voice_room_states(chat_id),
+    }
+    await manager.broadcast_all(payload)
+    # Доставляем также в signalWs на случай, если user прямо сейчас переключает chatWs
+    for u_low, socks in list(manager.signal_sockets.items()):
+        if u_low not in manager.user_sockets:
+            for ws in list(socks):
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    pass
+
+def _remove_user_from_voice_room(chat_id: str, nick: str) -> bool:
+    low = (nick or "").strip().lower()
+    if not low or chat_id not in _voice_rooms:
+        return False
+    before = _voice_rooms.get(chat_id, [])
+    after = [u for u in before if u.lower() != low]
+    changed = len(after) != len(before)
+    if after:
+        _voice_rooms[chat_id] = after
+    else:
+        _voice_rooms.pop(chat_id, None)
+    st_map = _voice_states.get(chat_id)
+    if st_map and low in st_map:
+        st_map.pop(low, None)
+        if not st_map:
+            _voice_states.pop(chat_id, None)
+        changed = True
+    return changed
+
+async def _leave_all_voice_rooms_for(nick: str, except_chat_id: str = ""):
+    for vcid in list(_voice_rooms.keys()):
+        if except_chat_id and vcid == except_chat_id:
+            continue
+        if _remove_user_from_voice_room(vcid, nick):
+            await _broadcast_voice_room(vcid)
 
 def _get_pinned_preview(chat_id: str, pinned_id) -> Optional[dict]:
     if not pinned_id:
@@ -1950,6 +2123,7 @@ def get_user_chats(nickname: str):
             "channel_kind": ch_kind or ("voice" if ctype == "voice" else "text"),
             "pinned_msg": _get_pinned_preview(cid, pinned_id),
             "voice_users": list(_voice_rooms.get(cid, [])),
+            "voice_states": _voice_room_states(cid),
             "owner": owner or "",
             "my_role": my_role or ("owner" if cid == "general" else "member"),
             "my_title": my_title or "",
@@ -2017,24 +2191,48 @@ async def create_custom_chat(data: ChatCreateData):
 
 @app.post("/voice/{chat_id}/join")
 async def join_voice_room(chat_id: str, data: VoiceRoomActionData):
-    nick = (data.nickname or "").strip()
+    cursor.execute("""
+        SELECT id, name, chat_type, channel_kind FROM chats WHERE id=?
+    """, (chat_id,))
+    crow = cursor.fetchone()
+    if not crow:
+        return {"status": "error", "msg": "Голосовой канал не найден"}
+    nick = _canonical_nick(data.nickname)
     if not nick:
         return {"status": "error", "msg": "Укажите ник"}
+    if data.session_token:
+        try:
+            _auth_session(nick, data.session_token)
+        except Exception:
+            return {"status": "error", "msg": "Сессия недействительна"}
+    await _leave_all_voice_rooms_for(nick, except_chat_id=chat_id)
     peers = _voice_rooms.setdefault(chat_id, [])
     if not any(p.lower() == nick.lower() for p in peers):
         peers.append(nick)
-    await manager.broadcast_all({"action": "voice_room_updated", "chat_id": chat_id, "users": list(peers)})
-    return {"status": "ok", "users": list(peers)}
+    st_map = _voice_states.setdefault(chat_id, {})
+    st_map[nick.lower()] = {"nickname": nick, "muted": False, "deafened": False}
+    await _broadcast_voice_room(chat_id)
+    return {"status": "ok", "users": list(peers), "states": _voice_room_states(chat_id)}
 
 @app.post("/voice/{chat_id}/leave")
-async def leave_voice_room(chat_id: str, data: VoiceRoomActionData):
-    nick = (data.nickname or "").strip()
-    peers = _voice_rooms.get(chat_id, [])
-    _voice_rooms[chat_id] = [p for p in peers if p.lower() != nick.lower()]
-    if not _voice_rooms[chat_id]:
-        _voice_rooms.pop(chat_id, None)
-    await manager.broadcast_all({"action": "voice_room_updated", "chat_id": chat_id, "users": list(_voice_rooms.get(chat_id, []))})
-    return {"status": "ok", "users": list(_voice_rooms.get(chat_id, []))}
+async def leave_voice_room(chat_id: str, request: Request):
+    nick = ""
+    try:
+        raw = await request.body()
+        if raw:
+            body = json.loads(raw.decode("utf-8"))
+            nick = (body.get("nickname") or "").strip()
+    except Exception:
+        nick = ""
+    if not nick:
+        return {"status": "ok", "users": list(_voice_rooms.get(chat_id, []))}
+    nick = _canonical_nick(nick)
+    if chat_id == "__all__":
+        await _leave_all_voice_rooms_for(nick)
+        return {"status": "ok", "users": []}
+    _remove_user_from_voice_room(chat_id, nick)
+    await _broadcast_voice_room(chat_id)
+    return {"status": "ok", "users": list(_voice_rooms.get(chat_id, [])), "states": _voice_room_states(chat_id)}
 
 @app.delete("/chats/{chat_id}")
 async def delete_chat(chat_id: str, user: str):
@@ -2048,7 +2246,12 @@ async def delete_chat(chat_id: str, user: str):
     cursor.execute("DELETE FROM chats WHERE id=?", (chat_id,))
     cursor.execute("DELETE FROM members WHERE chat_id=?", (chat_id,))
     cursor.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    cursor.execute("DELETE FROM invites WHERE chat_id=?", (chat_id,))
     conn.commit()
+    had_voice = bool(_voice_rooms.pop(chat_id, None))
+    _voice_states.pop(chat_id, None)
+    if had_voice:
+        await _broadcast_voice_room(chat_id)
     await manager.broadcast_all({"action": "chat_deleted", "id": chat_id})
     return {"status": "ok"}
 
@@ -2226,6 +2429,8 @@ async def remove_member(chat_id: str, target: str, by: str = ""):
 
     cursor.execute("DELETE FROM members WHERE chat_id=? AND LOWER(nickname)=LOWER(?)", (chat_id, target))
     conn.commit()
+    if _remove_user_from_voice_room(chat_id, target):
+        await _broadcast_voice_room(chat_id)
     await manager.broadcast_chat_event(chat_id, {"action": "members_updated", "chat_id": chat_id})
     await manager.send_to_user(target, {"action": "chats_updated"})
     if leaving_self:
@@ -2570,7 +2775,7 @@ def get_admin_users(admin: str, query: str = "", filter_type: str = "all"):
     pend_sup = cursor.fetchone()[0]
     return {
         "total_users": total,
-        "online_count": len(manager.user_sockets),
+        "online_count": len(manager.online_users()),
         "active_bans": active_bans,
         "active_mutes": active_mutes,
         "open_tickets": open_tickets,
@@ -4606,6 +4811,138 @@ async def games_websocket(websocket: WebSocket, nickname: str):
             await _lobby_broadcast()
 
 
+SIGNAL_ACTIONS = (
+    "call_offer", "call_answer", "call_ice", "call_reject", "call_end",
+    "call_busy", "call_timeout", "call_video_state", "call_mute_state",
+    "voice_offer", "voice_answer", "voice_ice",
+)
+
+async def _handle_signal_message(websocket: WebSocket, nickname: str, data: dict):
+    action = data.get("action")
+    if action in SIGNAL_ACTIONS:
+        target = (data.get("target") or "").strip()
+        # Отправитель строго из проверенного сокета — подделать чужой ник нельзя
+        data["caller"] = nickname
+        if action in ("call_answer", "call_reject", "call_end"):
+            # Останавливаем входящий звонок на остальных открытых вкладках/устройствах этого юзера
+            await manager.send_signal_to_user(
+                nickname,
+                {"action": "call_sync_stop", "by_action": action, "partner": target},
+                exclude_ws=websocket,
+                allow_chat_fallback=False,
+            )
+        if not target:
+            return
+        target_canon = _canonical_nick(target)
+        if manager.is_online(target_canon):
+            await manager.send_signal_to_user(target_canon, data)
+        elif action.startswith("call_"):
+            await websocket.send_json({"action": "call_offline", "target": target_canon})
+        return
+
+    if action == "voice_join":
+        cid = (data.get("chat_id") or "").strip()
+        if not cid:
+            return
+        await _leave_all_voice_rooms_for(nickname, except_chat_id=cid)
+        peers = _voice_rooms.setdefault(cid, [])
+        if not any(p.lower() == nickname.lower() for p in peers):
+            peers.append(nickname)
+        st_map = _voice_states.setdefault(cid, {})
+        st_map[nickname.lower()] = {
+            "nickname": nickname,
+            "muted": bool(data.get("muted", False)),
+            "deafened": bool(data.get("deafened", False)),
+        }
+        manager.unbind_voice_socket(websocket)
+        manager.bind_voice_socket(websocket, cid)
+        await _broadcast_voice_room(cid)
+        return
+
+    if action == "voice_leave":
+        cid = (data.get("chat_id") or "").strip()
+        manager.unbind_voice_socket(websocket, cid)
+        if cid:
+            if _remove_user_from_voice_room(cid, nickname):
+                await _broadcast_voice_room(cid)
+        else:
+            await _leave_all_voice_rooms_for(nickname)
+        return
+
+    if action == "voice_state":
+        cid = (data.get("chat_id") or "").strip()
+        if not cid:
+            return
+        st_map = _voice_states.setdefault(cid, {})
+        if nickname.lower() in st_map or any(p.lower() == nickname.lower() for p in _voice_rooms.get(cid, [])):
+            st_map[nickname.lower()] = {
+                "nickname": nickname,
+                "muted": bool(data.get("muted", False)),
+                "deafened": bool(data.get("deafened", False)),
+            }
+            manager.bind_voice_socket(websocket, cid)
+            await _broadcast_voice_room(cid)
+
+
+@app.get("/webrtc/ice")
+def get_webrtc_ice_config():
+    """Список ICE-серверов: живые STUN + опциональный TURN из env (если задан на сервере)."""
+    servers = [
+        {"urls": "stun:stun.l.google.com:19302"},
+        {"urls": "stun:stun1.l.google.com:19302"},
+        {"urls": "stun:stun2.l.google.com:19302"},
+        {"urls": "stun:stun.cloudflare.com:3478"},
+    ]
+    turn_urls = [u.strip() for u in (os.environ.get("TURN_URLS") or "").split(",") if u.strip()]
+    turn_user = (os.environ.get("TURN_USERNAME") or "").strip()
+    turn_cred = (os.environ.get("TURN_CREDENTIAL") or "").strip()
+    if turn_urls:
+        entry = {"urls": turn_urls if len(turn_urls) > 1 else turn_urls[0]}
+        if turn_user:
+            entry["username"] = turn_user
+        if turn_cred:
+            entry["credential"] = turn_cred
+        servers.append(entry)
+    return {"status": "ok", "iceServers": servers}
+
+
+@app.websocket("/ws/signal/{nickname}")
+async def signal_websocket(websocket: WebSocket, nickname: str):
+    """Постоянный канал WebRTC-сигнализации и голосовых комнат (не рвётся при переключении чатов)."""
+    token = (websocket.query_params.get("token") or "").strip()
+    try:
+        _auth_session(nickname, token)
+    except Exception:
+        await websocket.accept()
+        await websocket.close(code=4401)
+        return
+    nickname = _canonical_nick(nickname)
+    await manager.connect_signal(websocket, nickname)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action", "")
+            if action == "ping":
+                tok = data.get("session_token") or token
+                if tok:
+                    cursor.execute("UPDATE user_sessions SET last_active=?, is_active=1 WHERE LOWER(nickname)=LOWER(?) AND session_token=?",
+                                   (now_str(), nickname, tok))
+                    conn.commit()
+                await websocket.send_json({"action": "pong"})
+            elif action in SIGNAL_ACTIONS or action in ("voice_join", "voice_leave", "voice_state"):
+                await _handle_signal_message(websocket, nickname, data)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        bound_rooms = manager.disconnect_signal(websocket, nickname)
+        if not manager.is_online(nickname):
+            await _leave_all_voice_rooms_for(nickname)
+        elif bound_rooms:
+            for cid in bound_rooms:
+                if _remove_user_from_voice_room(cid, nickname):
+                    await _broadcast_voice_room(cid)
+
+
 @app.websocket("/ws/{chat_id}/{nickname}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
     # Сокет тоже требует живую сессию — иначе можно было писать от чужого имени
@@ -4631,14 +4968,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
                     conn.commit()
                 await websocket.send_json({"action": "pong"})
 
-            elif action in ("call_offer", "call_answer", "call_ice", "call_reject", "call_end", "call_busy", "call_timeout", "call_video_state"):
-                target = data.get("target")
-                # Звонящий тоже берётся из URL сокета — нельзя представиться чужим именем
-                data["caller"] = nickname
-                if target and manager.is_online(target):
-                    await manager.send_to_user(target, data)
-                elif target:
-                    await websocket.send_json({"action": "call_offline", "target": target})
+            elif action in SIGNAL_ACTIONS or action in ("voice_join", "voice_leave", "voice_state"):
+                await _handle_signal_message(websocket, nickname, data)
 
             elif action == "send":
                 # Отправитель берётся из URL сокета, а не из тела сообщения —
@@ -4812,18 +5143,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, nickname: str):
     finally:
         manager.disconnect(chat_id, websocket, nickname)
         if not manager.is_online(nickname):
-            for vcid in list(_voice_rooms.keys()):
-                before = _voice_rooms.get(vcid, [])
-                after = [u for u in before if u.lower() != nickname.lower()]
-                if len(after) != len(before):
-                    if after:
-                        _voice_rooms[vcid] = after
-                    else:
-                        _voice_rooms.pop(vcid, None)
-                    try:
-                        await manager.broadcast_all({"action": "voice_room_updated", "chat_id": vcid, "users": after})
-                    except Exception:
-                        pass
+            await _leave_all_voice_rooms_for(nickname)
 
 
 # ── Статические маршруты страниц (мессенджер, игры) ──
