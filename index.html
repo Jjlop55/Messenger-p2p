@@ -89,6 +89,11 @@
       border: 1px solid rgba(255, 154, 224, 0.32); cursor: pointer; transition: transform .16s, box-shadow .16s;
     }
     html[data-accent="femboy"] .bk-mascot-bar { display: flex; }
+    #bk-sticker-btn, #bk-profile-section, #auth-bk-img { display: none !important; }
+    html[data-accent="femboy"] #bk-sticker-btn { display: inline-flex !important; }
+    html[data-accent="femboy"] #bk-profile-section { display: block !important; }
+    html[data-accent="femboy"] #auth-bk-img { display: block !important; }
+    html:not([data-accent="femboy"]) #bk-sticker-popover { display: none !important; }
     .bk-mascot-bar:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(255, 119, 200, 0.28); }
     .bk-mascot-img {
       width: 38px; height: 38px; border-radius: 11px; object-fit: cover; background: #fff;
@@ -1119,8 +1124,8 @@
 <div id="auth-screen" style="position: fixed; inset: 0; background: var(--bg-main); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
   <div class="modal-card" style="max-width: 370px;">
     <img id="auth-bk-img" src="/boykisser/bk_socks.png" alt="Boykisser :3" title="Тыкни :3" onclick="if(typeof cycleAuthBoykisser==='function')cycleAuthBoykisser()" style="width:96px; height:96px; border-radius:22px; object-fit:cover; background:#fff; margin:0 auto; border:2px solid var(--neon-cyan); box-shadow:var(--neon-glow); cursor:pointer; transition:transform .15s;">
-    <h2 style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger :3</h2>
-    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Тебе ведь нравится общаться с мальчиками? :3</p>
+    <h2 id="auth-title-h2" style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger</h2>
+    <p id="auth-sub-p" style="font-size: 12px; color: var(--text-dim); text-align: center;">Кибер-неон · Полная версия 2026</p>
     <input type="text" id="login-nick" placeholder="Ваш никнейм (до 8 символов)" class="modal-input" autocomplete="off" maxlength="8">
     <input type="password" id="login-pwd" placeholder="Пароль" class="modal-input">
     <button class="pill-btn" id="auth-btn" style="background: var(--neon-cyan); color: #000; font-weight: 700;">Войти в сеть</button>
@@ -1543,7 +1548,7 @@
       <div class="emoji-avatar-grid" id="emoji-avatar-picker"></div>
     </div>
 
-    <div>
+    <div id="bk-profile-section">
       <label style="font-size:12px; color:var(--neon-cyan); font-weight:600;">🎀 Или аватарку Бойкиссера :3</label>
       <div class="bk-avatar-grid">
         <img class="bk-avatar-opt" src="/boykisser/bk_socks.png" title="В полосатых чулочках" onclick="setPresetBoykisserAvatar('/boykisser/bk_socks.png')">
@@ -5691,10 +5696,13 @@ document.addEventListener('click', function notifFirstClick() {
 function msgNotifEnabled() { return localStorage.getItem('utopia_notif_msgs') !== '0'; }
 function msgSoundEnabled() { return localStorage.getItem('utopia_notif_sound') !== '0'; }
 
-let uiAccentTheme = localStorage.getItem('utopia_ui_accent') || 'femboy';
+let uiAccentTheme = localStorage.getItem('utopia_ui_accent') || 'cyan';
 function applyAccentTheme(accent, shouldSync = false) {
   const valid = ['femboy', 'cyan', 'purple', 'emerald', 'gold'];
-  const val = valid.includes(accent) ? accent : 'femboy';
+  const val = valid.includes(accent) ? accent : 'cyan';
+  if (val !== 'femboy') {
+    try { localStorage.setItem('utopia_prev_accent', val); } catch (_) {}
+  }
   uiAccentTheme = val;
   if (val === 'cyan') document.documentElement.removeAttribute('data-accent');
   else document.documentElement.setAttribute('data-accent', val);
@@ -5702,7 +5710,28 @@ function applyAccentTheme(accent, shouldSync = false) {
   document.querySelectorAll('.theme-chip-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.accent === val);
   });
+  const fbChk = document.getElementById('femboy-mode-toggle');
+  if (fbChk) fbChk.checked = (val === 'femboy');
+  const mi = document.getElementById('msg-input');
+  if (mi) mi.placeholder = (val === 'femboy') ? 'Написать сообщение... :3' : 'Сообщение...';
+  const authH = document.getElementById('auth-title-h2');
+  const authP = document.getElementById('auth-sub-p');
+  if (authH) authH.textContent = (val === 'femboy') ? 'Utopia Messenger :3' : 'Utopia Messenger';
+  if (authP) authP.textContent = (val === 'femboy') ? 'Тебе ведь нравится общаться с мальчиками? :3' : 'Кибер-неон · Полная версия 2026';
+  const pop = document.getElementById('bk-sticker-popover');
+  if (pop && val !== 'femboy') pop.classList.remove('open');
   if (shouldSync && typeof syncSettingsToServer === 'function') syncSettingsToServer();
+}
+function toggleFemboyMode(enabled) {
+  if (enabled) {
+    applyAccentTheme('femboy', true);
+    if (typeof showToast === 'function') showToast('🎀 Фембой-режим включён! Стикеры и Бойкиссеры активированы :3');
+  } else {
+    const prev = localStorage.getItem('utopia_prev_accent');
+    const back = (prev && prev !== 'femboy') ? prev : 'cyan';
+    applyAccentTheme(back, true);
+    if (typeof showToast === 'function') showToast('Фембой-режим выключен');
+  }
 }
 applyAccentTheme(uiAccentTheme, false);
 
@@ -5817,12 +5846,18 @@ function ensureThemePickerInSettings() {
   wrap.innerHTML = `
     <div style="font-size:12px; font-weight:700; color:var(--neon-cyan);">🎨 Тема мессенджера</div>
     <div class="theme-chip-grid">
-      <button type="button" class="theme-chip-btn" data-accent="femboy"><span class="theme-swatch" style="background:#ff77c8;color:#ff77c8;"></span>🎀 Фембой :3</button>
       <button type="button" class="theme-chip-btn" data-accent="cyan"><span class="theme-swatch" style="background:#00f0ff;color:#00f0ff;"></span>Cyber Cyan</button>
       <button type="button" class="theme-chip-btn" data-accent="purple"><span class="theme-swatch" style="background:#c084fc;color:#c084fc;"></span>Synth Purple</button>
       <button type="button" class="theme-chip-btn" data-accent="emerald"><span class="theme-swatch" style="background:#00ff88;color:#00ff88;"></span>Matrix Green</button>
       <button type="button" class="theme-chip-btn" data-accent="gold"><span class="theme-swatch" style="background:#ffd166;color:#ffd166;"></span>Solar Gold</button>
-    </div>`;
+    </div>
+    <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:6px; padding:9px 11px; border-radius:11px; background:rgba(255,119,200,0.09); border:1px solid rgba(255,154,224,0.28); cursor:pointer;">
+      <div>
+        <div style="font-size:12.5px; font-weight:700; color:#ff77c8;">🎀 Фембой-режим (Boykisser :3)</div>
+        <div style="font-size:11px; color:var(--text-dim);">Розовая тема, стикеры, аватарки и отсылки</div>
+      </div>
+      <input type="checkbox" id="femboy-mode-toggle" onchange="toggleFemboyMode(this.checked)" style="width:18px; height:18px; accent-color:#ff77c8; cursor:pointer;">
+    </label>`;
   wrap.querySelectorAll('.theme-chip-btn').forEach(btn => {
     btn.onclick = () => applyAccentTheme(btn.dataset.accent, true);
   });
