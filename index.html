@@ -47,6 +47,61 @@
       --glass-border: 1px solid rgba(255, 209, 102, 0.28);
       --neon-glow: 0 0 18px rgba(255, 209, 102, 0.32);
     }
+    html[data-accent="femboy"] {
+      --bg-main: #120814;
+      --bg-panel: rgba(27, 12, 32, 0.94);
+      --bg-card: rgba(48, 20, 56, 0.86);
+      --bg-card-hover: rgba(68, 28, 80, 0.95);
+      --neon-cyan: #ff77c8;
+      --neon-cyan-glow: rgba(255, 119, 200, 0.42);
+      --neon-blue: #ff5eb8;
+      --neon-purple: #c084fc;
+      --accent-2: #c084fc;
+      --glass-border: 1px solid rgba(255, 154, 224, 0.3);
+      --neon-glow: 0 0 18px rgba(255, 119, 200, 0.38);
+    }
+    html[data-accent="femboy"] body {
+      background:
+        radial-gradient(circle at 14% 16%, rgba(255, 119, 200, 0.16), transparent 44%),
+        radial-gradient(circle at 86% 82%, rgba(192, 132, 252, 0.16), transparent 46%),
+        var(--bg-main);
+    }
+    html[data-accent="femboy"] body::before {
+      content: "";
+      position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 30000; pointer-events: none;
+      background: repeating-linear-gradient(90deg, #ff77c8 0 18px, #fff5fb 18px 36px);
+      opacity: 0.9;
+    }
+    html[data-accent="femboy"] .msg.mine {
+      background: linear-gradient(135deg, #ff5eb8, #c084fc);
+      box-shadow: 0 4px 18px rgba(255, 119, 200, 0.3);
+    }
+    html[data-accent="femboy"] .messages-box {
+      background-image: url('/boykisser/bk_socks.png');
+      background-repeat: no-repeat;
+      background-position: right 22px bottom 18px;
+      background-size: 165px auto;
+      background-blend-mode: soft-light;
+    }
+    .bk-mascot-bar {
+      display: none; align-items: center; gap: 10px; padding: 8px 12px; margin: 4px 10px 8px;
+      border-radius: 14px; background: linear-gradient(135deg, rgba(255, 119, 200, 0.14), rgba(192, 132, 252, 0.14));
+      border: 1px solid rgba(255, 154, 224, 0.32); cursor: pointer; transition: transform .16s, box-shadow .16s;
+    }
+    html[data-accent="femboy"] .bk-mascot-bar { display: flex; }
+    .bk-mascot-bar:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(255, 119, 200, 0.28); }
+    .bk-mascot-img {
+      width: 38px; height: 38px; border-radius: 11px; object-fit: cover; background: #fff;
+      border: 1.5px solid #ff9ae0; flex: none;
+    }
+    .bk-avatar-grid {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 6px;
+    }
+    .bk-avatar-opt {
+      width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: #fff;
+      border: 2px solid rgba(255, 154, 224, 0.3); cursor: pointer; transition: transform .15s, border-color .15s;
+    }
+    .bk-avatar-opt:hover { transform: scale(1.1); border-color: #ff77c8; box-shadow: 0 0 12px rgba(255, 119, 200, 0.45); }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
     body {
       background:
@@ -1041,10 +1096,11 @@
 </div>
 
 <!-- Вход -->
-<div id="auth-screen" style="position: fixed; inset: 0; background: #060911; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
-  <div class="modal-card" style="max-width: 360px;">
-    <h2 style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger</h2>
-    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Кибер-неон · Полная версия 2026</p>
+<div id="auth-screen" style="position: fixed; inset: 0; background: var(--bg-main); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
+  <div class="modal-card" style="max-width: 370px;">
+    <img src="/boykisser/bk_socks.png" alt="Boykisser :3" style="width:92px; height:92px; border-radius:22px; object-fit:cover; background:#fff; margin:0 auto; border:2px solid var(--neon-cyan); box-shadow:var(--neon-glow);">
+    <h2 style="color: var(--neon-cyan); text-align: center; text-shadow: var(--neon-glow);">Utopia Messenger :3</h2>
+    <p style="font-size: 12px; color: var(--text-dim); text-align: center;">Тебе ведь нравится общаться с мальчиками? :3</p>
     <input type="text" id="login-nick" placeholder="Ваш никнейм (до 8 символов)" class="modal-input" autocomplete="off" maxlength="8">
     <input type="password" id="login-pwd" placeholder="Пароль" class="modal-input">
     <button class="pill-btn" id="auth-btn" style="background: var(--neon-cyan); color: #000; font-weight: 700;">Войти в сеть</button>
@@ -1108,6 +1164,13 @@
       <button class="folder-pill" data-folder="bot" onclick="setChatFolder('bot')">🤖 Бот</button>
     </div>
     <div class="chat-list" id="chat-list"></div>
+    <div class="bk-mascot-bar" id="bk-mascot-bar" onclick="cycleBoykisserMascot()" title="Тыкни на Бойкиссера :3">
+      <img id="bk-mascot-img" class="bk-mascot-img" src="/boykisser/bk_paws.jpg" alt=":3">
+      <div style="min-width:0; flex:1;">
+        <div style="font-size:11.5px; font-weight:700; color:var(--neon-cyan);">Boykisser :3</div>
+        <div id="bk-mascot-quote" style="font-size:10.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Тебе нравится общаться с мальчиками?~</div>
+      </div>
+    </div>
     <div id="voice-connected-bar">
       <div class="voice-bar-row">
         <span id="voice-connected-label" style="font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; flex:1;" title="Открыть голосовой канал">🔊 Голос подключён</span>
@@ -1444,6 +1507,18 @@
     <div>
       <label style="font-size:12px; color:var(--text-dim);">Выберите аватарку из смайликов:</label>
       <div class="emoji-avatar-grid" id="emoji-avatar-picker"></div>
+    </div>
+
+    <div>
+      <label style="font-size:12px; color:var(--neon-cyan); font-weight:600;">🎀 Или аватарку Бойкиссера :3</label>
+      <div class="bk-avatar-grid">
+        <img class="bk-avatar-opt" src="/boykisser/bk_socks.png" title="В полосатых чулочках" onclick="setPresetBoykisserAvatar('/boykisser/bk_socks.png')">
+        <img class="bk-avatar-opt" src="/boykisser/bk_maid.png" title="Горничная в чулочках" onclick="setPresetBoykisserAvatar('/boykisser/bk_maid.png')">
+        <img class="bk-avatar-opt" src="/boykisser/bk_paws.jpg" title="Лапки :3" onclick="setPresetBoykisserAvatar('/boykisser/bk_paws.jpg')">
+        <img class="bk-avatar-opt" src="/boykisser/bk_hearts.png" title="Сердечки в глазах" onclick="setPresetBoykisserAvatar('/boykisser/bk_hearts.png')">
+        <img class="bk-avatar-opt" src="/boykisser/bk_happy.png" title="Счастливый >w<" onclick="setPresetBoykisserAvatar('/boykisser/bk_happy.png')">
+        <img class="bk-avatar-opt" src="/boykisser/bk_basin.png" title="В тазике" onclick="setPresetBoykisserAvatar('/boykisser/bk_basin.png')">
+      </div>
     </div>
 
     <div>
@@ -5570,10 +5645,10 @@ document.addEventListener('click', function notifFirstClick() {
 function msgNotifEnabled() { return localStorage.getItem('utopia_notif_msgs') !== '0'; }
 function msgSoundEnabled() { return localStorage.getItem('utopia_notif_sound') !== '0'; }
 
-let uiAccentTheme = localStorage.getItem('utopia_ui_accent') || 'cyan';
+let uiAccentTheme = localStorage.getItem('utopia_ui_accent') || 'femboy';
 function applyAccentTheme(accent, shouldSync = false) {
-  const valid = ['cyan', 'purple', 'emerald', 'gold'];
-  const val = valid.includes(accent) ? accent : 'cyan';
+  const valid = ['femboy', 'cyan', 'purple', 'emerald', 'gold'];
+  const val = valid.includes(accent) ? accent : 'femboy';
   uiAccentTheme = val;
   if (val === 'cyan') document.documentElement.removeAttribute('data-accent');
   else document.documentElement.setAttribute('data-accent', val);
@@ -5585,6 +5660,33 @@ function applyAccentTheme(accent, shouldSync = false) {
 }
 applyAccentTheme(uiAccentTheme, false);
 
+const BOYKISSER_QUOTES = [
+  { img: '/boykisser/bk_socks.png', text: 'Чулочки надеты — пинг 0 ms! :3' },
+  { img: '/boykisser/bk_maid.png', text: 'Горничная Бойкиссер к вашим услугам~' },
+  { img: '/boykisser/bk_paws.jpg', text: 'Тебе ведь нравится целовать мальчиков, да? :3' },
+  { img: '/boykisser/bk_hearts.png', text: 'Мяу~ Кто тут хороший мальчик?' },
+  { img: '/boykisser/bk_happy.png', text: 'Ураа! Полосатые гольфы рулят >w<' },
+  { img: '/boykisser/bk_basin.png', text: 'В тазике уютнее всего сидеть :3' },
+];
+let _bkMascotIdx = 2;
+function cycleBoykisserMascot() {
+  _bkMascotIdx = (_bkMascotIdx + 1) % BOYKISSER_QUOTES.length;
+  const item = BOYKISSER_QUOTES[_bkMascotIdx];
+  const img = document.getElementById('bk-mascot-img');
+  const q = document.getElementById('bk-mascot-quote');
+  if (img) img.src = item.img;
+  if (q) q.textContent = item.text;
+  if (typeof showToast === 'function') showToast('🎀 ' + item.text);
+}
+function setPresetBoykisserAvatar(url) {
+  const inp = document.getElementById('prof-avatar-input');
+  if (inp) inp.value = url;
+  const prev = document.getElementById('prof-avatar-preview');
+  const prevImg = document.getElementById('prof-avatar-preview-img');
+  if (prev && prevImg) { prevImg.src = url; prev.style.display = 'block'; }
+  if (typeof showToast === 'function') showToast('🎀 Выбрана аватарка Бойкиссера! Нажми «Сохранить изменения» :3');
+}
+
 function ensureThemePickerInSettings() {
   const card = document.querySelector('#settings-modal .modal-card');
   if (!card || document.getElementById('theme-accent-section')) return;
@@ -5592,8 +5694,9 @@ function ensureThemePickerInSettings() {
   wrap.id = 'theme-accent-section';
   wrap.style.cssText = 'display:flex; flex-direction:column; gap:7px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,0.03); border:var(--glass-border);';
   wrap.innerHTML = `
-    <div style="font-size:12px; font-weight:700; color:var(--neon-cyan);">🎨 Неоновая тема акцента</div>
+    <div style="font-size:12px; font-weight:700; color:var(--neon-cyan);">🎨 Тема мессенджера</div>
     <div class="theme-chip-grid">
+      <button type="button" class="theme-chip-btn" data-accent="femboy"><span class="theme-swatch" style="background:#ff77c8;color:#ff77c8;"></span>🎀 Фембой :3</button>
       <button type="button" class="theme-chip-btn" data-accent="cyan"><span class="theme-swatch" style="background:#00f0ff;color:#00f0ff;"></span>Cyber Cyan</button>
       <button type="button" class="theme-chip-btn" data-accent="purple"><span class="theme-swatch" style="background:#c084fc;color:#c084fc;"></span>Synth Purple</button>
       <button type="button" class="theme-chip-btn" data-accent="emerald"><span class="theme-swatch" style="background:#00ff88;color:#00ff88;"></span>Matrix Green</button>

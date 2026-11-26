@@ -30,6 +30,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+BOYKISSER_DIR = os.path.join(BASE_DIR, "boykisser")
+if os.path.isdir(BOYKISSER_DIR):
+    app.mount("/boykisser", StaticFiles(directory=BOYKISSER_DIR), name="boykisser")
 
 
 def delete_upload_file(file_url: str) -> bool:
