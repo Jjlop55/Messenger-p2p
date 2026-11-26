@@ -255,10 +255,10 @@
       padding: 8px 18px; align-items: center; justify-content: space-between; z-index: 30;
     }
 
-    /* Модалки */
+    /* Модалки — всегда поверх звонка и любых оверлеев */
     .modal-overlay {
       display: none; position: fixed; inset: 0; background: rgba(4, 7, 14, 0.85); backdrop-filter: blur(12px);
-      z-index: 8000; align-items: center; justify-content: center; padding: 20px;
+      z-index: 20000; align-items: center; justify-content: center; padding: 20px;
     }
     .modal-card {
       background: var(--bg-panel); border: var(--glass-border); border-radius: var(--radius-lg);
@@ -508,18 +508,82 @@
       18% { opacity: 1; transform: translateY(-28px) scale(1.22); }
       100% { opacity: 0; transform: translateY(-210px) scale(.95); }
     }
-    .call-quick-dock {
-      display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-      padding: 6px 12px; border-radius: 16px; background: rgba(12, 19, 34, 0.85); border: var(--glass-border);
+    .call-dock-label {
+      font-size: 11px; font-weight: 700; color: var(--text-dim); margin-right: 4px; letter-spacing: 0.2px;
     }
-    .call-dock-group { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .call-quick-dock {
+      display: none; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+      padding: 8px 14px; border-radius: 16px; background: rgba(12, 19, 34, 0.85); border: var(--glass-border);
+    }
+    .call-dock-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .call-dock-btn {
-      padding: 4px 8px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+      padding: 5px 9px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
       background: rgba(255,255,255,0.05); color: #fff; font-size: 14px; cursor: pointer; transition: transform .12s, background .15s;
     }
     .call-dock-btn:hover { background: rgba(0, 240, 255, 0.2); border-color: var(--neon-cyan); transform: scale(1.1); }
-    .call-vol-wrap { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-dim); font-weight: 700; }
-    .call-vol-wrap input[type="range"] { width: 88px; accent-color: var(--neon-cyan); cursor: pointer; }
+    .call-vol-wrap { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-dim); font-weight: 700; }
+    .call-vol-wrap input[type="range"] { width: 92px; accent-color: var(--neon-cyan); cursor: pointer; }
+
+    /* ── Telegram-минимализм для личных звонков 1-на-1 (.call-dm) ── */
+    #call-overlay.call-dm {
+      background: rgba(5, 9, 18, 0.84); backdrop-filter: blur(16px);
+    }
+    #call-overlay.call-dm .call-panel {
+      width: min(460px, 94vw); height: min(650px, 90vh);
+      background: radial-gradient(circle at 50% 24%, rgba(28, 60, 96, 0.45), rgba(9, 14, 24, 0.98) 72%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.8);
+      transition: width .28s ease, height .28s ease;
+    }
+    #call-overlay.call-dm.has-video .call-panel {
+      width: min(980px, 94vw); height: min(710px, 90vh);
+    }
+    #call-overlay.call-dm .call-panel-head {
+      background: transparent; border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding: 14px 18px;
+    }
+    #call-overlay.call-dm #call-net-stats,
+    #call-overlay.call-dm #call-quality-warning,
+    #call-overlay.call-dm #call-quick-dock,
+    #call-overlay.call-dm #call-chat-drawer,
+    #call-overlay.call-dm #btn-call-chat,
+    #call-overlay.call-dm #btn-toggle-ptt,
+    #call-overlay.call-dm #btn-call-snap,
+    #call-overlay.call-dm #btn-toggle-deafen,
+    #call-overlay.call-dm #call-minimize-btn2 {
+      display: none !important;
+    }
+    #call-overlay.call-dm:not(.has-video) #tile-local {
+      display: none !important;
+    }
+    #call-overlay.call-dm:not(.has-video) #tile-remote {
+      background: transparent; border: none; box-shadow: none; cursor: default;
+    }
+    #call-overlay.call-dm:not(.has-video) #tile-remote .tile-label,
+    #call-overlay.call-dm:not(.has-video) #tile-remote .tile-actions-top,
+    #call-overlay.call-dm:not(.has-video) #call-avatar-hint {
+      display: none !important;
+    }
+    #call-overlay.call-dm:not(.has-video) .call-avatar-large {
+      width: 138px; height: 138px; font-size: 64px;
+      border: 2px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 14px 45px rgba(0, 0, 0, 0.55), 0 0 36px rgba(56, 189, 248, 0.22);
+    }
+    #call-overlay.call-dm .call-controls-bar {
+      background: rgba(15, 23, 40, 0.72); backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 14px 20px; gap: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    }
+    #call-overlay.call-dm .call-ctrl-btn {
+      padding: 10px 15px; border-radius: 22px; font-size: 13px;
+      background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    #call-overlay.call-dm .call-ctrl-btn.active {
+      background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.28); box-shadow: none;
+    }
+    #call-overlay.call-dm .call-ctrl-btn.danger {
+      background: #ef4444; border-color: #ef4444; box-shadow: 0 4px 18px rgba(239, 68, 68, 0.4);
+    }
     #call-chat-drawer {
       display: none; width: min(290px, 42%); flex: none; flex-direction: column; gap: 8px;
       background: rgba(8, 13, 25, 0.94); border: var(--glass-border); border-radius: 16px; padding: 10px; min-height: 0;
@@ -644,14 +708,14 @@
 
     /* Панель активного голосового канала Discord внутри <main> */
     #voice-room-stage {
-      display: none; flex-direction: column; gap: 10px; padding: 12px 16px;
+      display: none; flex-direction: column; gap: 12px; padding: 14px 18px;
       background: linear-gradient(180deg, rgba(10, 22, 38, 0.96), rgba(8, 14, 28, 0.92));
       border-bottom: 1px solid rgba(0, 255, 136, 0.28);
     }
-    .voice-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-    .voice-stage-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--success); }
-    .voice-stage-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-    .voice-stage-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .voice-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .voice-stage-title { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; color: var(--success); flex-wrap: wrap; }
+    .voice-stage-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .voice-stage-chips { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .voice-peer-card {
       display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px;
       background: rgba(255,255,255,0.04); border: 1.5px solid rgba(255,255,255,0.1);
@@ -838,24 +902,26 @@
         </div>
       </div>
 
-      <!-- Быстрая док-панель звонка: реакции, саундборд, громкость -->
+      <!-- Быстрая док-панель звонка: только в групповых звонках -->
       <div class="call-quick-dock" id="call-quick-dock">
-        <div class="call-dock-group" title="Реакции поверх видео">
-          <button class="call-dock-btn" onclick="sendCallReaction('🔥')">🔥</button>
-          <button class="call-dock-btn" onclick="sendCallReaction('😂')">😂</button>
-          <button class="call-dock-btn" onclick="sendCallReaction('👍')">👍</button>
-          <button class="call-dock-btn" onclick="sendCallReaction('❤️')">❤️</button>
-          <button class="call-dock-btn" onclick="sendCallReaction('💀')">💀</button>
-          <button class="call-dock-btn" onclick="sendCallReaction('🤯')">🤯</button>
+        <div class="call-dock-group" title="Отправить быструю реакцию поверх видео">
+          <span class="call-dock-label">Реакции:</span>
+          <button class="call-dock-btn" onclick="sendCallReaction('🔥')" title="Огонь">🔥</button>
+          <button class="call-dock-btn" onclick="sendCallReaction('😂')" title="Смех">😂</button>
+          <button class="call-dock-btn" onclick="sendCallReaction('👍')" title="Лайк">👍</button>
+          <button class="call-dock-btn" onclick="sendCallReaction('❤️')" title="Сердце">❤️</button>
+          <button class="call-dock-btn" onclick="sendCallReaction('💀')" title="Шок / смех">💀</button>
+          <button class="call-dock-btn" onclick="sendCallReaction('🤯')" title="Взрыв мозга">🤯</button>
         </div>
-        <div class="call-dock-group" title="Мини-саундборд звонка">
-          <button class="call-dock-btn" onclick="playCallSfx('bell', true)" title="Звоночек">🔔</button>
-          <button class="call-dock-btn" onclick="playCallSfx('horn', true)" title="Фанфары">🎺</button>
-          <button class="call-dock-btn" onclick="playCallSfx('bonk', true)" title="Боньк!">💥</button>
-          <button class="call-dock-btn" onclick="playCallSfx('clap', true)" title="Аплодисменты">👏</button>
+        <div class="call-dock-group" title="Звуковые эффекты — услышат все в звонке">
+          <span class="call-dock-label">Звуки:</span>
+          <button class="call-dock-btn" onclick="playCallSfx('bell', true)" title="Звоночек (услышат все)">🔔</button>
+          <button class="call-dock-btn" onclick="playCallSfx('horn', true)" title="Фанфары (услышат все)">🎺</button>
+          <button class="call-dock-btn" onclick="playCallSfx('bonk', true)" title="Боньк! (услышат все)">💥</button>
+          <button class="call-dock-btn" onclick="playCallSfx('clap', true)" title="Аплодисменты (услышат все)">👏</button>
         </div>
         <div class="call-vol-wrap" title="Громкость собеседников (можно усилить до 200%)">
-          <span>🔊</span>
+          <span>🔊 Громкость:</span>
           <input type="range" id="call-remote-vol" min="0" max="200" value="100" step="5">
           <span id="call-remote-vol-val" style="min-width:34px; color:var(--neon-cyan);">100%</span>
         </div>
@@ -867,17 +933,17 @@
       </div>
 
       <div class="call-controls-bar" id="call-active-bar" style="display:flex;">
-        <button class="call-ctrl-btn active" id="btn-toggle-mic" title="Включить или выключить свой микрофон (собеседников всё равно слышно)">🎙️ Микрофон</button>
-        <button class="call-ctrl-btn active" id="btn-toggle-deafen" title="Выключить или включить звук собеседников (режим тишины)">🎧 Звук</button>
-        <button class="call-ctrl-btn" id="btn-toggle-ptt" title="Рация: микрофон включён только пока зажат Пробел">📻 Рация</button>
-        <button class="call-ctrl-btn" id="btn-toggle-cam">📹 Камера</button>
-        <button class="call-ctrl-btn" id="btn-toggle-screen">🖥️ Демка экрана</button>
-        <button class="call-ctrl-btn" id="btn-call-snap" title="Сделать снимок экрана/видео звонка">📸 Снимок</button>
-        <button class="call-ctrl-btn" id="btn-call-chat" title="Мини-чат внутри звонка">💬 Чат <span id="call-chat-unread" style="display:none; background:var(--danger); color:#fff; border-radius:8px; padding:0 5px; font-size:10px;">0</span></button>
-        <button class="call-ctrl-btn" id="btn-add-participant" style="display:none;" title="Добавить друга в звонок — будет групповой звонок">➕ Добавить</button>
-        <button class="call-ctrl-btn" id="btn-audio-route" title="Куда выводить звук: динамики или трубка/наушники">🔊 Динамики</button>
-        <button class="call-ctrl-btn" id="call-minimize-btn2">🗕 Свернуть</button>
-        <button class="call-ctrl-btn danger" id="btn-end-call">🔴 Завершить</button>
+        <button class="call-ctrl-btn active" id="btn-toggle-mic" title="Включить или заглушить ваш микрофон">🎙️ Микрофон</button>
+        <button class="call-ctrl-btn active" id="btn-toggle-deafen" title="Отключить или включить звук всех собеседников">🎧 Звук</button>
+        <button class="call-ctrl-btn" id="btn-toggle-ptt" title="Рация: микрофон работает только пока вы держите Пробел">📻 Рация</button>
+        <button class="call-ctrl-btn" id="btn-toggle-cam" title="Включить или выключить вашу камеру">📹 Камера</button>
+        <button class="call-ctrl-btn" id="btn-toggle-screen" title="Показать ваш экран собеседникам">🖥️ Экран</button>
+        <button class="call-ctrl-btn" id="btn-call-snap" title="Сохранить скриншот текущего видео">📸 Снимок</button>
+        <button class="call-ctrl-btn" id="btn-call-chat" title="Открыть мини-чат внутри звонка">💬 Чат <span id="call-chat-unread" style="display:none; background:var(--danger); color:#fff; border-radius:8px; padding:0 5px; font-size:10px;">0</span></button>
+        <button class="call-ctrl-btn" id="btn-add-participant" style="display:none;" title="Пригласить ещё человека в звонок (станет групповым)">➕ Добавить</button>
+        <button class="call-ctrl-btn" id="btn-audio-route" title="Переключить вывод звука: динамики или наушники/гарнитура">🔊 Динамики</button>
+        <button class="call-ctrl-btn" id="call-minimize-btn2" title="Свернуть звонок в угол экрана и продолжить переписку">🗕 Свернуть</button>
+        <button class="call-ctrl-btn danger" id="btn-end-call" title="Завершить текущий звонок">🔴 Завершить</button>
       </div>
     </div>
   </div>
@@ -3129,6 +3195,7 @@ function handleSignalEvent(data) {
         const aw = document.getElementById('call-avatar-wrap');
         if (rv && !isCallDeafened) rv.style.display = on ? 'block' : 'none';
         if (aw && !isCallDeafened) aw.style.display = on ? 'none' : 'flex';
+        if (typeof syncCallModeUI === 'function') syncCallModeUI();
       } else if (groupCallActive && data.caller) {
         const tile = document.getElementById('gtile-' + escapeAttrNick(data.caller));
         if (tile) {
@@ -4179,11 +4246,13 @@ function renderVoiceRoomStage() {
       </div>
       <div class="voice-stage-actions">
         ${inThisRoom
-          ? `<button class="voice-ctrl-mini ${voiceMicMuted ? 'off' : 'on'}" id="vstage-mic-btn">${voiceMicMuted ? '🔇 Микр выкл' : '🎙️ Микрофон'}</button>
-             <button class="voice-ctrl-mini ${voiceDeafened ? 'off' : 'on'}" id="vstage-deaf-btn">${voiceDeafened ? '🎧🔇 Звук выкл' : '🎧 Звук'}</button>
-             <button class="voice-ctrl-mini" id="vstage-video-btn" title="Перейти в видеозвонок с камерой и экраном">📹 Видеозвонок</button>
-             <button class="voice-ctrl-mini off" id="vstage-leave-btn">🚪 Выйти</button>`
-          : `<button class="voice-ctrl-mini on" id="vstage-join-btn">🔊 Войти в голос</button>`}
+          ? `<button class="voice-ctrl-mini ${voiceMicMuted ? 'off' : 'on'}" id="vstage-mic-btn" title="Включить или заглушить ваш микрофон">${voiceMicMuted ? '🔇 Микрофон выкл' : '🎙️ Микрофон'}</button>
+             <button class="voice-ctrl-mini ${voiceDeafened ? 'off' : 'on'}" id="vstage-deaf-btn" title="Заглушить или включить звук всех участников">${voiceDeafened ? '🎧🔇 Звук выкл' : '🎧 Звук'}</button>
+             <button class="voice-ctrl-mini" id="vstage-video-btn" title="Открыть групповой видеозвонок с камерой, экраном и реакциями">📹 Видео / Экран</button>
+             <button class="voice-ctrl-mini" id="vstage-invite-btn" title="Пригласить друга в этот голосовой канал">➕ Позвать</button>
+             <button class="voice-ctrl-mini off" id="vstage-leave-btn" title="Отключиться от голосового канала">🚪 Выйти</button>`
+          : `<button class="voice-ctrl-mini on" id="vstage-join-btn" title="Подключиться к голосовому каналу">🔊 Войти в голос</button>
+             <button class="voice-ctrl-mini" id="vstage-invite-btn" title="Пригласить друга в этот голосовой канал">➕ Позвать</button>`}
       </div>
     </div>
     <div class="voice-stage-chips" id="voice-stage-chips"></div>
@@ -4199,6 +4268,8 @@ function renderVoiceRoomStage() {
   if (d) d.onclick = () => toggleVoiceDeafen();
   const v = stage.querySelector('#vstage-video-btn');
   if (v) v.onclick = () => callVoiceRoomPeers();
+  const inv = stage.querySelector('#vstage-invite-btn');
+  if (inv) inv.onclick = () => { if (typeof openInviteModal === 'function') openInviteModal(); };
 
   const chips = stage.querySelector('#voice-stage-chips');
   if (!users.length) {
@@ -5905,8 +5976,9 @@ function createPeerConnectionInstance(precreate, peerNick) {
         remoteVid.style.display = 'block';
         document.getElementById('call-avatar-wrap').style.display = 'none';
       }
-      const hideRemoteVid = () => { remoteVid.style.display = 'none'; document.getElementById('call-avatar-wrap').style.display = 'flex'; };
-      const showRemoteVid = () => { if (!isCallDeafened) { remoteVid.style.display = 'block'; document.getElementById('call-avatar-wrap').style.display = 'none'; } };
+      if (typeof syncCallModeUI === 'function') syncCallModeUI();
+      const hideRemoteVid = () => { remoteVid.style.display = 'none'; document.getElementById('call-avatar-wrap').style.display = 'flex'; if (typeof syncCallModeUI === 'function') syncCallModeUI(); };
+      const showRemoteVid = () => { if (!isCallDeafened) { remoteVid.style.display = 'block'; document.getElementById('call-avatar-wrap').style.display = 'none'; } if (typeof syncCallModeUI === 'function') syncCallModeUI(); };
       event.track.onmute = hideRemoteVid;
       event.track.onunmute = showRemoteVid;
       event.track.onended = () => { remoteVid.srcObject = null; hideRemoteVid(); };
@@ -5939,8 +6011,7 @@ function createPeerConnectionInstance(precreate, peerNick) {
     setCallRinging(null);
     markCallConnected(groupCallActive ? `🔊 Разговор идёт · ${groupCallMembers.length} участников` : '🔊 Разговор идёт');
     document.getElementById('call-mini-toast').style.display = 'none';
-    const qDock = document.getElementById('call-quick-dock');
-    if (qDock) qDock.style.display = 'flex';
+    if (typeof syncCallModeUI === 'function') syncCallModeUI();
     startCallStatsLoop();
     playRemoteAudio();
   };
@@ -6069,6 +6140,7 @@ async function startCall(target) {
   document.getElementById('call-active-bar').style.display = 'flex';
   document.getElementById('btn-add-participant').style.display = 'inline-block';
   restoreCallPanel();
+  if (typeof syncCallModeUI === 'function') syncCallModeUI();
   document.getElementById('call-overlay').style.display = 'flex';
   document.getElementById('call-timer').style.display = 'inline-block';
   showCallMiniToast(`📞 Вызов <b>@${escapeHtml(target)}</b> — ждём ответа…`, () => {
@@ -6168,6 +6240,7 @@ function handleIncomingCall(data) {
   document.getElementById('call-incoming-bar').style.display = 'flex';
   document.getElementById('call-active-bar').style.display = 'none';
   restoreCallPanel();
+  if (typeof syncCallModeUI === 'function') syncCallModeUI();
   document.getElementById('call-overlay').style.display = 'flex';
   document.getElementById('call-timer').style.display = 'inline-block';
   if (!document.hasFocus()) {
@@ -6369,6 +6442,7 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
       await broadcastTrack('video', vTrack);
       notifyVideoState(true);
       btn.classList.add('active');
+      if (typeof syncCallModeUI === 'function') syncCallModeUI();
     } catch(e) {
       isCamOn = false;
       btn.classList.remove('active');
@@ -6385,6 +6459,7 @@ document.getElementById('btn-toggle-cam').onclick = async () => {
     await broadcastTrack('video', null);
     notifyVideoState(false);
     btn.classList.remove('active');
+    if (typeof syncCallModeUI === 'function') syncCallModeUI();
   }
 };
 
@@ -6413,6 +6488,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
       await broadcastTrack('video', sTrack);
       notifyVideoState(true);
       btn.classList.add('active');
+      if (typeof syncCallModeUI === 'function') syncCallModeUI();
 
       sTrack.onended = async () => {
         if (!isScreenOn) return;
@@ -6423,6 +6499,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
         document.getElementById('local-avatar-wrap').style.display = 'flex';
         await broadcastTrack('video', null);
         notifyVideoState(false);
+        if (typeof syncCallModeUI === 'function') syncCallModeUI();
       };
     } catch(e) {
       isScreenOn = false;
@@ -6436,6 +6513,7 @@ document.getElementById('btn-toggle-screen').onclick = async () => {
     await broadcastTrack('video', null);
     notifyVideoState(false);
     btn.classList.remove('active');
+    if (typeof syncCallModeUI === 'function') syncCallModeUI();
   }
 };
 
@@ -7076,7 +7154,28 @@ async function toggleCallPiP() {
     showToast('Режим «Картинка-в-картинке» не поддерживается', 'warning');
   }
 }
+function syncCallModeUI() {
+  const ov = document.getElementById('call-overlay');
+  if (!ov) return;
+  const isGroup = !!(groupCallActive || pendingGroupOffer);
+  ov.classList.toggle('call-group', isGroup);
+  ov.classList.toggle('call-dm', !isGroup);
+
+  const rv = document.getElementById('remote-video');
+  const lv = document.getElementById('local-video');
+  const remoteOn = !!(rv && rv.srcObject && rv.style.display !== 'none');
+  const localOn = !!(isCamOn || isScreenOn || (lv && lv.srcObject && lv.style.display !== 'none'));
+  ov.classList.toggle('has-video', remoteOn || localOn);
+
+  const qDock = document.getElementById('call-quick-dock');
+  if (qDock) {
+    qDock.style.display = (isGroup && callState === 'active') ? 'flex' : 'none';
+  }
+}
+
 function cleanupAllCallFeatures() {
+  const ov = document.getElementById('call-overlay');
+  if (ov) ov.classList.remove('call-dm', 'call-group', 'has-video');
   const qDock = document.getElementById('call-quick-dock');
   if (qDock) qDock.style.display = 'none';
   toggleCallChatDrawer(false);
@@ -7367,6 +7466,7 @@ function enterGroupCallMode(existingMembers) {
   groupCallMembers = Array.from(new Set([currentUser].concat(existingMembers).concat([currentCallPartner]).filter(Boolean)));
   // основной пир (primary) остаётся в peerConnection — остальные живут в peers
   updateGroupTilesVisibility();
+  if (typeof syncCallModeUI === 'function') syncCallModeUI();
   const b = document.getElementById('call-status-badge');
   if (b && !callConnectedAt) b.innerText = `Групповой звонок (${groupCallMembers.length} участников)`;
   else if (b) b.innerText = `🔊 Разговор идёт · ${groupCallMembers.length} участников`;
@@ -7450,6 +7550,7 @@ async function handleGroupOffer(data) {
   pendingIncomingOffer = null;
   iceCandidatesQueue = [];
   updateGroupTilesVisibility();
+  if (typeof syncCallModeUI === 'function') syncCallModeUI();
   document.getElementById('call-active-bar').style.display = 'flex';
   document.getElementById('btn-add-participant').style.display = 'inline-block';
   document.getElementById('call-overlay').style.display = 'flex';
