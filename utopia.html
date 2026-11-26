@@ -183,19 +183,21 @@
     }
 
     .player-card {
-      background: rgba(255, 255, 255, 0.05);
+      background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(10, 14, 24, 0.72));
+      backdrop-filter: blur(10px);
       border-radius: 18px;
       padding: 12px 18px;
       display: flex;
       flex-direction: column;
       align-items: center;
       width: clamp(120px, 20vw, 170px);
-      border: 3px solid transparent;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      border: 2px solid transparent;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+      transition: transform .18s ease, box-shadow .18s ease;
     }
-
-    .player-card.red-card { border-color: #ff3333; }
-    .player-card.blue-card { border-color: #3388ff; }
+    .player-card:hover { transform: translateY(-3px); }
+    .player-card.red-card { border-color: #ff3333; box-shadow: 0 8px 24px rgba(255, 51, 51, 0.22); }
+    .player-card.blue-card { border-color: #3388ff; box-shadow: 0 8px 24px rgba(51, 136, 255, 0.22); }
 
     .card-title {
       color: #fff;
@@ -648,25 +650,38 @@ class ExplosiveBarrel {
   explode(particles, players) {
     this.alive = false;
     sfx.playExplosion();
-    particles.spark(this.x, this.y, '#ff4400', 25);
-    particles.spark(this.x, this.y, '#ffcc00', 15);
+    particles.spark(this.x, this.y, '#ff4400', 28);
+    particles.spark(this.x, this.y, '#ffcc00', 18);
+    if (particles.shockwave) particles.shockwave(this.x, this.y, '#ff6600', 120);
     for (const p of players) {
       if (p.alive && Math.hypot(p.x - this.x, p.y - this.y) < 110) {
-        if (!p.buff || p.buff.type !== 'shield') p.die(particles);
+        if (!p.buff || p.buff.type !== 'shield') applyHazardHit(p, particles, 'Подорвался на бочке!');
       }
     }
   }
   draw(c) {
     if (!this.alive) return;
     c.save();
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.006);
+    c.beginPath();
+    c.arc(this.x, this.y, this.r + 8, 0, Math.PI * 2);
+    c.fillStyle = `rgba(255, 80, 0, ${0.14 * pulse})`;
+    c.fill();
+    c.beginPath();
+    c.arc(this.x + 2, this.y + 4, this.r, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(0,0,0,0.45)';
+    c.fill();
+    const bg = c.createRadialGradient(this.x - 5, this.y - 5, 2, this.x, this.y, this.r);
+    bg.addColorStop(0, '#ff5c33');
+    bg.addColorStop(1, '#8c1908');
     c.beginPath();
     c.arc(this.x, this.y, this.r, 0, Math.PI * 2);
-    c.fillStyle = '#b7280f';
+    c.fillStyle = bg;
     c.fill();
     c.strokeStyle = '#ffbb00';
     c.lineWidth = 3;
     c.stroke();
-    c.fillStyle = '#ffbb00';
+    c.fillStyle = '#fff3b0';
     c.font = '14px Fredoka, sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -678,6 +693,35 @@ class ExplosiveBarrel {
 let lavaPools = [];
 let barrels = [];
 let cyberPortals = [];
+
+function applyHazardHit(player, particles, reason) {
+  if (!player || !player.alive) return;
+  if (pvpActive) {
+    if (player.id !== 1 || player.invincibleTimer > 0) return;
+    player.hp = Math.max(0, (player.hp || 3) - 1);
+    player.invincibleTimer = 45;
+    sfx.playHit();
+    particles.spark(player.x, player.y, player.color, 12);
+    if (player.hp <= 0) {
+      player.die(particles);
+      p2.score++;
+      pvpActive = false;
+      if (pvpWs && pvpWs.readyState === 1) {
+        pvpWs.send(JSON.stringify({ action: 'utopia_state', match_id: pvpMatchId, state: { alive: false, hp: 0, hp_pts: 0 } }));
+      }
+      pvpShowResult(false, reason || 'Ты погиб!');
+    } else {
+      pvpSendState(true);
+    }
+  } else {
+    player.die(particles);
+    if (currentGameMode !== 'flag') {
+      if (player.id === 1) p2.score++;
+      else p1.score++;
+      pveCheckMatchEnd();
+    }
+  }
+}
 
 function initBiomeHazards() {
   lavaPools = [];
@@ -1091,19 +1135,30 @@ class Particles {
   constructor() {
     this.list = [];
     this.popups = [];
+    this.waves = [];
+  }
+  shockwave(x, y, color, maxR = 90) {
+    this.waves.push({ x, y, r: 10, maxR, color, life: 1 });
+  }
+  muzzleFlash(x, y, angle, color) {
+    this.list.push({
+      x, y, vx: Math.cos(angle) * 1.4, vy: Math.sin(angle) * 1.4,
+      color: color || '#fff4a3', size: 12, life: 1, decay: 0.22, isGlow: true
+    });
   }
   spark(x, y, color, count = 6) {
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const spd = 2 + Math.random() * 4;
+      const spd = 2 + Math.random() * 4.5;
       this.list.push({
         x, y,
         vx: Math.cos(ang) * spd,
         vy: Math.sin(ang) * spd,
         color,
-        size: 2 + Math.random() * 3,
+        size: 2 + Math.random() * 3.5,
         life: 1,
-        decay: 0.04
+        decay: 0.04,
+        isGlow: i % 2 === 0
       });
     }
   }
@@ -1154,6 +1209,12 @@ class Particles {
       p.life -= p.decay;
       if (p.life <= 0) this.list.splice(i, 1);
     }
+    for (let i = this.waves.length - 1; i >= 0; i--) {
+      const w = this.waves[i];
+      w.r += (w.maxR - w.r) * 0.22;
+      w.life -= 0.06;
+      if (w.life <= 0) this.waves.splice(i, 1);
+    }
     for (let i = this.popups.length - 1; i >= 0; i--) {
       const pop = this.popups[i];
       pop.y += pop.vy;
@@ -1162,8 +1223,20 @@ class Particles {
     }
   }
   draw(c) {
+    for (const w of this.waves) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = Math.max(0, w.life * 0.75);
+      c.strokeStyle = w.color;
+      c.lineWidth = Math.max(1.5, 5 * w.life);
+      c.beginPath();
+      c.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
     for (const p of this.list) {
       c.save();
+      if (p.isGlow) c.globalCompositeOperation = 'lighter';
       c.globalAlpha = Math.max(0, p.life);
       c.fillStyle = p.color;
       if (p.isBone) {
@@ -1172,7 +1245,7 @@ class Particles {
         c.fillRect(-p.size, -2, p.size * 2, 4);
       } else {
         c.beginPath();
-        c.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        c.arc(p.x, p.y, p.size * (p.isGlow ? 1.25 : 1), 0, Math.PI * 2);
         c.fill();
       }
       c.restore();
@@ -1286,24 +1359,37 @@ class Bullet {
     }
   }
   draw(c) {
+    c.save();
+    c.globalCompositeOperation = 'lighter';
     for (let i = 0; i < this.trail.length; i++) {
       const pt = this.trail[i];
       const a = (i + 1) / this.trail.length;
       c.beginPath();
-      c.arc(pt.x, pt.y, 3 * a, 0, Math.PI * 2);
-      c.fillStyle = this.color === '#ff2a2a' ? `rgba(255, 100, 50, ${a * 0.4})` : `rgba(60, 160, 255, ${a * 0.4})`;
+      c.arc(pt.x, pt.y, 4.5 * a, 0, Math.PI * 2);
+      c.fillStyle = this.color === '#ff2a2a' ? `rgba(255, 95, 45, ${a * 0.55})` : `rgba(45, 175, 255, ${a * 0.55})`;
       c.fill();
     }
+    // Внешнее неоновое свечение пули
+    const glow = c.createRadialGradient(this.x, this.y, 1, this.x, this.y, 14);
+    glow.addColorStop(0, '#ffffff');
+    glow.addColorStop(0.35, this.color === '#ff2a2a' ? 'rgba(255, 80, 50, 0.7)' : 'rgba(50, 170, 255, 0.7)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = glow;
+    c.beginPath();
+    c.arc(this.x, this.y, 14, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+
     c.save();
     c.translate(this.x, this.y);
     c.rotate(Math.atan2(this.vy, this.vx));
     c.fillStyle = '#ffffff';
     c.beginPath();
-    c.roundRect(-7, -3, 14, 6, 3);
+    c.roundRect(-8, -3.5, 16, 7, 3.5);
     c.fill();
     c.fillStyle = this.color;
     c.beginPath();
-    c.roundRect(-5, -2, 10, 4, 2);
+    c.roundRect(-5.5, -2.2, 11, 4.4, 2.2);
     c.fill();
     c.restore();
   }
@@ -1474,7 +1560,7 @@ class Stickman {
     if (currentTheme === 'lava') {
       for (const lp of lavaPools) {
         if (Math.hypot(this.x - lp.x, this.y - lp.y) < lp.r) {
-          if (!this.buff || this.buff.type !== 'shield') this.die(particles);
+          if (!this.buff || this.buff.type !== 'shield') applyHazardHit(this, particles, 'Сгорел в лаве!');
         }
       }
     }
@@ -1509,7 +1595,9 @@ class Stickman {
     const bx = this.x + Math.cos(this.angle) * gunDist;
     const by = this.y + Math.sin(this.angle) * gunDist;
     bullets.push(new Bullet(bx, by, this.angle, this.id, this.color));
-    particles.spark(bx, by, infinite ? '#ff0077' : '#fff275', 5);
+    particles.spark(bx, by, infinite ? '#ff0077' : '#fff275', 6);
+    if (particles.muzzleFlash) particles.muzzleFlash(bx, by, this.angle, infinite ? '#ff0077' : '#fff5a3');
+    this.recoilFrames = 6;
     if (this.id === 1 && pvpActive && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
       pvpSendShot(bx, by, this.angle);
     }
@@ -1518,6 +1606,7 @@ class Stickman {
     this.alive = false;
     this.respawnTimer = 80;
     this.buff = null;
+    if (particles.shockwave) particles.shockwave(this.x, this.y, this.color, 72);
     particles.death(this.x, this.y, this.color);
     sfx.playHit();
   }
@@ -1556,8 +1645,11 @@ class Stickman {
     c.arc(-4, 10 - legOffset, 4.5, 0, Math.PI * 2);
     c.fill();
 
-    c.fillStyle = '#444';
-    c.fillRect(12, 5, 12, 5);
+    const recoilPush = (this.recoilFrames && this.recoilFrames > 0) ? (this.recoilFrames--, 3.5) : 0;
+    c.fillStyle = '#2d333f';
+    c.fillRect(10 - recoilPush, 4.5, 14, 6);
+    c.fillStyle = '#9aa5b8';
+    c.fillRect(21 - recoilPush, 5.5, 4, 4);
 
     c.fillStyle = this.color;
     c.beginPath();
@@ -1567,7 +1659,10 @@ class Stickman {
 
     c.beginPath();
     c.arc(0, 0, this.radius, 0, Math.PI * 2);
-    c.fillStyle = '#1c1f24';
+    const bodyGrad = c.createRadialGradient(-4, -4, 2, 0, 0, this.radius);
+    bodyGrad.addColorStop(0, '#323846');
+    bodyGrad.addColorStop(1, '#12151b');
+    c.fillStyle = bodyGrad;
     c.fill();
     c.strokeStyle = '#ffffff';
     c.lineWidth = 2.5;
@@ -1578,6 +1673,12 @@ class Stickman {
     c.lineTo(this.radius * 1.15, 0);
     c.closePath();
     c.fillStyle = this.color;
+    c.fill();
+
+    // Тактический визор-блик
+    c.fillStyle = 'rgba(255,255,255,0.65)';
+    c.beginPath();
+    c.ellipse(6, -3, 3.5, 1.5, -0.4, 0, Math.PI * 2);
     c.fill();
 
     c.restore();
@@ -2194,42 +2295,102 @@ function updateStick(pad, pl, tx, ty) {
 /**
  * ОТРИСОВКА КАРТЫ
  */
+// ── Процедурные 2D-текстуры биомов и атмосферные частицы (60 FPS) ──
+const _biomePatterns = {};
+const _ambientMotes = Array.from({ length: 38 }, () => ({
+  x: Math.random() * 1280, y: Math.random() * 720,
+  r: 1.2 + Math.random() * 2.2, spd: 0.3 + Math.random() * 0.6,
+  phase: Math.random() * Math.PI * 2
+}));
+function getBiomePattern(c, theme) {
+  if (_biomePatterns[theme]) return _biomePatterns[theme];
+  const tile = document.createElement('canvas');
+  tile.width = 128; tile.height = 128;
+  const g = tile.getContext('2d');
+  if (theme === 'cyber') {
+    g.fillStyle = '#070d1a';
+    g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = 'rgba(0, 229, 255, 0.11)';
+    g.lineWidth = 1;
+    for (let i = 0; i <= 128; i += 32) {
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke();
+      g.beginPath(); g.moveTo(0, i); g.lineTo(128, i); g.stroke();
+    }
+    g.fillStyle = 'rgba(0, 229, 255, 0.2)';
+    g.fillRect(30, 30, 4, 4); g.fillRect(94, 94, 4, 4);
+    g.strokeStyle = 'rgba(192, 132, 252, 0.08)';
+    g.beginPath(); g.moveTo(0, 64); g.lineTo(32, 64); g.lineTo(48, 48); g.lineTo(128, 48); g.stroke();
+  } else if (theme === 'lava') {
+    g.fillStyle = '#201012';
+    g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 18; i++) {
+      g.fillStyle = i % 2 ? 'rgba(48, 22, 22, 0.55)' : 'rgba(18, 8, 8, 0.6)';
+      g.beginPath();
+      g.arc((i * 37) % 128, (i * 53) % 128, 10 + (i % 7) * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.strokeStyle = 'rgba(255, 90, 20, 0.22)';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(0, 28); g.lineTo(42, 52); g.lineTo(88, 36); g.lineTo(128, 66);
+    g.moveTo(42, 52); g.lineTo(58, 128);
+    g.stroke();
+  } else {
+    g.fillStyle = '#389632';
+    g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 60; i++) {
+      const gx = (i * 47 + 13) % 128, gy = (i * 71 + 29) % 128;
+      g.fillStyle = i % 3 === 0 ? 'rgba(95, 205, 75, 0.35)' : 'rgba(30, 105, 32, 0.32)';
+      g.fillRect(gx, gy, 3, 7);
+      g.fillRect(gx + 3, gy + 2, 2, 5);
+    }
+  }
+  _biomePatterns[theme] = c.createPattern(tile, 'repeat');
+  return _biomePatterns[theme];
+}
+
 function drawWorld(c) {
+  const nowSec = performance.now() * 0.001;
+  const pat = getBiomePattern(c, currentTheme);
+
   if (currentGameMode === 'flag') {
-    if (currentTheme === 'lava') c.fillStyle = '#1c0f0f';
-    else if (currentTheme === 'cyber') c.fillStyle = '#070c14';
-    else c.fillStyle = '#2d6d24';
+    c.fillStyle = pat || (currentTheme === 'lava' ? '#1c0f0f' : (currentTheme === 'cyber' ? '#070c14' : '#2d6d24'));
     c.fillRect(MAZE_BOUNDS.x, MAZE_BOUNDS.y, MAZE_BOUNDS.w, MAZE_BOUNDS.h);
 
     for (const w of MAZE_WALLS) {
-      c.fillStyle = currentTheme === 'lava' ? '#261414' : (currentTheme === 'cyber' ? '#111b2b' : '#333');
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      c.fillRect(w.x + 5, w.y + 6, w.w, w.h);
+      c.fillStyle = currentTheme === 'lava' ? '#2c1616' : (currentTheme === 'cyber' ? '#111d30' : '#2f3540');
       c.fillRect(w.x, w.y, w.w, w.h);
-      c.strokeStyle = currentTheme === 'lava' ? '#ff4400' : (currentTheme === 'cyber' ? '#00e5ff' : '#666');
-      c.lineWidth = 3;
-      c.strokeRect(w.x + 2, w.y + 2, w.w - 4, w.h - 4);
+      c.fillStyle = 'rgba(255,255,255,0.06)';
+      c.fillRect(w.x, w.y, w.w, 4);
+      c.strokeStyle = currentTheme === 'lava' ? '#ff5500' : (currentTheme === 'cyber' ? '#00e5ff' : '#707a8a');
+      c.lineWidth = 2.5;
+      c.strokeRect(w.x + 1.5, w.y + 1.5, w.w - 3, w.h - 3);
     }
 
     redFlag.draw(c);
     blueFlag.draw(c);
   } else {
-    if (currentTheme === 'forest') c.fillStyle = '#48ab3d';
-    else if (currentTheme === 'cyber') c.fillStyle = '#0a101d';
-    else c.fillStyle = '#2d1818';
+    c.fillStyle = pat || (currentTheme === 'forest' ? '#48ab3d' : (currentTheme === 'cyber' ? '#0a101d' : '#2d1818'));
     c.fillRect(0, 0, V_WIDTH, V_HEIGHT);
 
     if (currentGameMode === 'cells') drawCellGrid(c);
 
     c.fillStyle = '#3d3a36';
-    c.strokeStyle = currentTheme === 'cyber' ? '#00e5ff' : (currentTheme === 'lava' ? '#ff4400' : '#d6832e');
+    c.strokeStyle = currentTheme === 'cyber' ? '#00e5ff' : (currentTheme === 'lava' ? '#ff5500' : '#e08b36');
     c.lineWidth = 6;
     c.strokeRect(ARENA_BOUNDS.x, ARENA_BOUNDS.y, ARENA_BOUNDS.w, ARENA_BOUNDS.h);
 
     WALL_CUTOUTS.forEach(w => {
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      c.fillRect(w.x + 4, w.y + 5, w.w, w.h);
+      c.fillStyle = '#3d3a36';
       c.fillRect(w.x, w.y, w.w, w.h);
       c.strokeRect(w.x, w.y, w.w, w.h);
     });
 
-    c.fillStyle = currentTheme === 'cyber' ? '#0077aa' : (currentTheme === 'lava' ? '#882200' : '#c57833');
+    c.fillStyle = currentTheme === 'cyber' ? '#0088cc' : (currentTheme === 'lava' ? '#992800' : '#c57833');
     c.fillRect(ARENA_BOUNDS.x, ARENA_BOUNDS.y, ARENA_BOUNDS.w, 14);
     c.fillRect(ARENA_BOUNDS.x, ARENA_BOUNDS.y + ARENA_BOUNDS.h - 14, ARENA_BOUNDS.w, 14);
     c.fillRect(ARENA_BOUNDS.x, ARENA_BOUNDS.y, 14, ARENA_BOUNDS.h);
@@ -2240,19 +2401,44 @@ function drawWorld(c) {
     drawBasePlatform(c, ARENA_BOUNDS.x, ARENA_BOUNDS.y + ARENA_BOUNDS.h - 120, 130, 120, '#ff2a2a', redAmmo);
     drawBasePlatform(c, ARENA_BOUNDS.x + ARENA_BOUNDS.w - 130, ARENA_BOUNDS.y, 130, 120, '#2a82ff', blueAmmo);
 
-    c.fillStyle = '#27292d';
+    // Яма с глубиной и внутренней тенью
+    const pitGrad = c.createRadialGradient(ARENA_PIT.x + ARENA_PIT.w/2, ARENA_PIT.y + ARENA_PIT.h/2, 6, ARENA_PIT.x + ARENA_PIT.w/2, ARENA_PIT.y + ARENA_PIT.h/2, ARENA_PIT.w * 0.75);
+    pitGrad.addColorStop(0, '#07090d');
+    pitGrad.addColorStop(1, '#252932');
+    c.fillStyle = pitGrad;
     c.fillRect(ARENA_PIT.x, ARENA_PIT.y, ARENA_PIT.w, ARENA_PIT.h);
+    c.strokeStyle = 'rgba(255,255,255,0.14)';
+    c.lineWidth = 2;
+    c.strokeRect(ARENA_PIT.x, ARENA_PIT.y, ARENA_PIT.w, ARENA_PIT.h);
 
+    // 2.5D Колонны с тенями и фаской
     ARENA_PILLARS.forEach(p => {
-      c.fillStyle = '#b76527';
-      c.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+      const px = p.x - p.size/2, py = p.y - p.size/2;
+      c.fillStyle = 'rgba(0,0,0,0.38)';
+      c.fillRect(px + 6, py + 8, p.size, p.size);
+      c.fillStyle = currentTheme === 'cyber' ? '#172844' : (currentTheme === 'lava' ? '#51231c' : '#b76527');
+      c.fillRect(px, py, p.size, p.size);
+      c.fillStyle = 'rgba(255,255,255,0.12)';
+      c.fillRect(px, py, p.size, 6);
+      c.strokeStyle = currentTheme === 'cyber' ? '#00e5ff' : (currentTheme === 'lava' ? '#ff6622' : '#7a3f12');
+      c.lineWidth = 2;
+      c.strokeRect(px + 1, py + 1, p.size - 2, p.size - 2);
     });
 
     if (currentTheme === 'forest') {
-      ARENA_BUSHES.forEach(b => {
+      ARENA_BUSHES.forEach((b, idx) => {
+        const sway = Math.sin(nowSec * 1.8 + idx) * 1.5;
         c.beginPath();
-        c.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-        c.fillStyle = '#59c748';
+        c.arc(b.x + 4, b.y + 5, b.r, 0, Math.PI * 2);
+        c.fillStyle = 'rgba(0, 0, 0, 0.25)';
+        c.fill();
+        const bg = c.createRadialGradient(b.x - b.r * 0.25, b.y - b.r * 0.25, 4, b.x + sway, b.y, b.r);
+        bg.addColorStop(0, '#72e85c');
+        bg.addColorStop(0.65, '#46b538');
+        bg.addColorStop(1, '#26731f');
+        c.beginPath();
+        c.arc(b.x + sway, b.y, b.r, 0, Math.PI * 2);
+        c.fillStyle = bg;
         c.fill();
       });
     }
@@ -2264,10 +2450,24 @@ function drawWorld(c) {
   }
 
   if (currentTheme === 'lava') {
-    lavaPools.forEach(lp => {
+    lavaPools.forEach((lp, idx) => {
+      const pulse = 1 + Math.sin(nowSec * 3.5 + idx) * 0.08;
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      const glow = c.createRadialGradient(lp.x, lp.y, 4, lp.x, lp.y, lp.r * 1.5 * pulse);
+      glow.addColorStop(0, 'rgba(255, 190, 40, 0.45)');
+      glow.addColorStop(1, 'rgba(255, 40, 0, 0)');
+      c.fillStyle = glow;
+      c.beginPath(); c.arc(lp.x, lp.y, lp.r * 1.5 * pulse, 0, Math.PI * 2); c.fill();
+      c.restore();
+
+      const lg = c.createRadialGradient(lp.x, lp.y, 3, lp.x, lp.y, lp.r);
+      lg.addColorStop(0, '#ffd000');
+      lg.addColorStop(0.55, '#ff4500');
+      lg.addColorStop(1, '#9e1300');
       c.beginPath();
       c.arc(lp.x, lp.y, lp.r, 0, Math.PI * 2);
-      c.fillStyle = '#ff3300';
+      c.fillStyle = lg;
       c.fill();
       c.strokeStyle = '#ffbb00';
       c.lineWidth = 3;
@@ -2275,11 +2475,22 @@ function drawWorld(c) {
     });
     barrels.forEach(b => b.draw(c));
   } else if (currentTheme === 'cyber') {
-    cyberPortals.forEach(pt => {
-      c.beginPath();
-      c.arc(pt.x, pt.y, 24, 0, Math.PI * 2);
-      c.fillStyle = pt.color;
-      c.fill();
+    cyberPortals.forEach((pt, idx) => {
+      c.save();
+      c.translate(pt.x, pt.y);
+      c.globalCompositeOperation = 'lighter';
+      const pg = c.createRadialGradient(0, 0, 4, 0, 0, 38);
+      pg.addColorStop(0, '#ffffff');
+      pg.addColorStop(0.45, pt.color);
+      pg.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = pg;
+      c.beginPath(); c.arc(0, 0, 38, 0, Math.PI * 2); c.fill();
+      c.rotate(nowSec * (idx % 2 === 0 ? 2.4 : -2.4));
+      c.strokeStyle = '#ffffff';
+      c.lineWidth = 2.5;
+      c.setLineDash([10, 6]);
+      c.beginPath(); c.arc(0, 0, 22, 0, Math.PI * 2); c.stroke();
+      c.restore();
     });
   }
 
@@ -2287,6 +2498,19 @@ function drawWorld(c) {
   p2.draw(c);
   bullets.forEach(b => b.draw(c));
   particles.draw(c);
+
+  // Атмосферные летающие частицы + мягкая виньетка (только поверх арены)
+  c.save();
+  const moteColor = currentTheme === 'lava' ? '#ff9933' : (currentTheme === 'cyber' ? '#00f0ff' : '#d9ff99');
+  c.fillStyle = moteColor;
+  for (const m of _ambientMotes) {
+    m.y -= m.spd;
+    m.x += Math.sin(nowSec + m.phase) * 0.35;
+    if (m.y < 0) m.y = V_HEIGHT;
+    c.globalAlpha = 0.22 + 0.18 * Math.sin(nowSec * 2 + m.phase);
+    c.beginPath(); c.arc(m.x, m.y, m.r, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
 }
 
 function drawBasePlatform(c, x, y, w, h, color, ammo) {
@@ -2511,7 +2735,10 @@ function loop() {
     if (!pvpActive) p2.update(currentWalls, bullets, particles, arenaCrate);
     else {
       if (p2.invincibleTimer > 0) p2.invincibleTimer--;
-      p2.walkCycle += 0.2;
+      const moved = Math.hypot(p2.x - (p2._prevX ?? p2.x), p2.y - (p2._prevY ?? p2.y));
+      p2._prevX = p2.x; p2._prevY = p2.y;
+      p2.isMoving = moved > 0.2;
+      if (p2.isMoving) p2.walkCycle += 0.25;
     }
 
     if (currentGameMode === 'flag') {
@@ -2766,7 +2993,9 @@ menuBtn.addEventListener('click', () => {
   if (pvpActive && pvpWs && pvpWs.readyState === 1 && pvpMatchId) {
     try { pvpWs.send(JSON.stringify({ action: 'forfeit', match_id: pvpMatchId })); } catch (_) {}
   }
+  if (pvpWs) { try { pvpWs.close(); } catch (_) {} pvpWs = null; }
   pvpActive = false;
+  pvpSearching = false;
   gameRunning = false;
   resultOverlay.style.display = 'none';
   menuOverlay.style.display = 'flex';
@@ -3047,7 +3276,9 @@ function pvpStartMatch() {
   p2.score = 0;
   p1.isBot = false;
   p2.isBot = false;
-  p1.name = localStorage.getItem('utopia_nickname') || 'Игрок';
+  let savedNick = '';
+  try { savedNick = JSON.parse(localStorage.getItem('utopia_saved_user') || '{}').nickname || ''; } catch (_) {}
+  p1.name = localStorage.getItem('utopia_nickname') || savedNick || 'Игрок';
   p2.name = pvpOppNick || 'Соперник';
 
   // цвета: свой цвет от сервера, соперник — противоположный

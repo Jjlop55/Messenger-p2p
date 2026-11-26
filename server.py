@@ -4666,27 +4666,28 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                 # создатель перекидывает игрока в другую команду
                 room = _room_of(nickname)
                 target = (data.get("target") or "").strip()
-                if not room or room["host"] != nickname or not target:
+                if not room or room["host"].lower() != nickname.lower() or not target:
                     continue
                 for m in room["members"]:
-                    if m["nick"] == target:
+                    if m["nick"].lower() == target.lower():
                         m["team"] = "blue" if m["team"] == "red" else "red"
                 await _room_broadcast(room)
             elif action == "room_kick":
                 # создатель выкидывает игрока из лобби
                 room = _room_of(nickname)
                 target = (data.get("target") or "").strip()
-                if not room or room["host"] != nickname or not target or target == nickname:
+                if not room or room["host"].lower() != nickname.lower() or not target or target.lower() == nickname.lower():
                     continue
-                if not any(m["nick"] == target for m in room["members"]):
+                kicked_m = next((m for m in room["members"] if m["nick"].lower() == target.lower()), None)
+                if not kicked_m:
                     continue
-                room["members"] = [m for m in room["members"] if m["nick"] != target]
-                await _gsend(target, {"action": "room_kicked", "by": nickname})
+                room["members"] = [m for m in room["members"] if m["nick"].lower() != target.lower()]
+                await _gsend(kicked_m["nick"], {"action": "room_kicked", "by": nickname})
                 await _room_broadcast(room)
             elif action == "room_bots":
                 # включить/выключить ботов в команде (0..3 минус игроки)
                 room = _room_of(nickname)
-                if not room or room["host"] != nickname:
+                if not room or room["host"].lower() != nickname.lower():
                     continue
                 team = data.get("team")
                 if team not in ("blue", "red"):
@@ -4701,7 +4702,7 @@ async def games_websocket(websocket: WebSocket, nickname: str):
             elif action == "room_start":
                 # создатель запускает матч: 2 человека — PvP/co-op + боты по конфигу
                 room = _room_of(nickname)
-                if not room or room["host"] != nickname:
+                if not room or room["host"].lower() != nickname.lower():
                     await _gsend(nickname, {"action": "error", "msg": "Только создатель может начать"})
                     continue
                 humans = room["members"]
@@ -4777,8 +4778,9 @@ async def games_websocket(websocket: WebSocket, nickname: str):
                         await _gsend(nickname, {"action": "error", "msg": "Соперник оффлайн"})
             elif action == "duel_decline":
                 challenger = (data.get("from") or "").strip()
-                if challenger:
-                    await _gsend(challenger, {
+                chal_key = _gsock_find(challenger) or challenger
+                if chal_key:
+                    await _gsend(chal_key, {
                         "action": "duel_declined",
                         "by": nickname,
                     })
@@ -4814,8 +4816,10 @@ async def games_websocket(websocket: WebSocket, nickname: str):
 SIGNAL_ACTIONS = (
     "call_offer", "call_answer", "call_ice", "call_reject", "call_end",
     "call_busy", "call_timeout", "call_video_state", "call_mute_state",
+    "call_reaction", "call_chat", "call_sfx",
     "voice_offer", "voice_answer", "voice_ice",
 )
+CALL_SFX_IDS = ("bell", "horn", "bonk", "clap")
 
 async def _handle_signal_message(websocket: WebSocket, nickname: str, data: dict):
     action = data.get("action")
@@ -4823,6 +4827,21 @@ async def _handle_signal_message(websocket: WebSocket, nickname: str, data: dict
         target = (data.get("target") or "").strip()
         # Отправитель строго из проверенного сокета — подделать чужой ник нельзя
         data["caller"] = nickname
+        if action == "call_reaction":
+            emoji = str(data.get("emoji") or "").strip()[:12]
+            if not emoji:
+                return
+            data["emoji"] = emoji
+        elif action == "call_chat":
+            text = str(data.get("text") or "").strip()[:500]
+            if not text:
+                return
+            data["text"] = text
+        elif action == "call_sfx":
+            sfx_id = str(data.get("sfx") or "").strip()
+            if sfx_id not in CALL_SFX_IDS:
+                return
+            data["sfx"] = sfx_id
         if action in ("call_answer", "call_reject", "call_end"):
             # Останавливаем входящий звонок на остальных открытых вкладках/устройствах этого юзера
             await manager.send_signal_to_user(
@@ -4836,7 +4855,7 @@ async def _handle_signal_message(websocket: WebSocket, nickname: str, data: dict
         target_canon = _canonical_nick(target)
         if manager.is_online(target_canon):
             await manager.send_signal_to_user(target_canon, data)
-        elif action.startswith("call_"):
+        elif action == "call_offer":
             await websocket.send_json({"action": "call_offline", "target": target_canon})
         return
 
