@@ -365,11 +365,12 @@
             <div class="guide-section">
                 <div class="guide-title">🎮 Управление и тактика</div>
                 <div class="guide-grid">
-                    <div class="guide-card"><b>WASD:</b> Передвижение. С винтовкой и РПГ шаг замедлен.</div>
-                    <div class="guide-card"><b>Shift (Спринт):</b> Длится 6 секунд. Расходует выносливость до 0%. Перезапуск спринта возможен только после восстановления от 15%!</div>
+                    <div class="guide-card"><b>WASD:</b> Передвижение (как в Minecraft). С винтовкой и РПГ шаг замедлен.</div>
+                    <div class="guide-card"><b>Ctrl или 2×W (Спринт):</b> Бег как в Майне (длится до 6 сек, тратит выносливость). Перезапуск от 15%!</div>
+                    <div class="guide-card"><b>Shift (Красться):</b> Приседание как в Minecraft — камера ниже, шаг тише и точнее.</div>
                     <div class="guide-card"><b>Пробел (Прыжок):</b> Расходует 5% выносливости. Недоступен с тяжёлым оружием или при выносливости &lt; 15%.</div>
-                    <div class="guide-card"><b>Клавиша [E]:</b> Открытие/закрытие дверей бункера (-15% энергии), активация аптечек на базах и в доме.</div>
-                    <div class="guide-card"><b>Клавиша [V]:</b> Мгновенное переключение 1-е лицо (FPS) / 3-е лицо (TPS со спины).</div>
+                    <div class="guide-card"><b>Клавиша [E] / [R] / [Q]:</b> [E] — двери/аптечки, [R] — перезарядка, [Q] — пред. оружие.</div>
+                    <div class="guide-card"><b>[F5] Камера / [F1] HUD / [F3] Отладка:</b> [F5] меняет 1-е лицо → 3-е сзади → 3-е спереди, всё как в Minecraft!</div>
                     <div class="guide-card"><b>Режим Наблюдателя:</b> Если вас убили, но союзники живы — вы свободно летаете по карте на WASD, Пробел (вверх) и Shift (вниз).</div>
                 </div>
             </div>
@@ -543,17 +544,20 @@
 
         <div id="pcHintsBar">
             <span><span class="key-badge">WASD</span> Ходьба</span>
-            <span><span class="key-badge">SHIFT</span> Спринт</span>
-            <span><span class="key-badge">ПРОБЕЛ</span> Прыжок (-5%)</span>
-            <span><span class="key-badge">E</span> Дверь / Хил (-15%)</span>
+            <span><span class="key-badge">CTRL / 2×W</span> Бег</span>
+            <span><span class="key-badge">SHIFT</span> Красться</span>
+            <span><span class="key-badge">ПРОБЕЛ</span> Прыжок</span>
+            <span><span class="key-badge">E</span> Дверь / Хил</span>
             <span><span class="key-badge">ЛКМ</span> Огонь</span>
             <span><span class="key-badge">ПКМ</span> Прицел</span>
-            <span><span class="key-badge">R</span> Зарядка</span>
-            <span><span class="key-badge">1-8</span> Оружие</span>
-            <span><span class="key-badge">V</span> 1-е/3-е лицо</span>
-            <span><span class="key-badge">ESC</span> Меню</span>
+            <span><span class="key-badge">R</span> Перезарядка</span>
+            <span><span class="key-badge">1-8 / Q</span> Оружие</span>
+            <span><span class="key-badge">F5</span> Камера</span>
+            <span><span class="key-badge">F1/F3</span> HUD/Инфо</span>
+            <span><span class="key-badge">ESC</span> Пауза</span>
         </div>
     </div>
+    <div id="mcDebugOverlay" style="display:none; position:fixed; top:12px; left:12px; z-index:45; background:rgba(0,0,0,0.58); color:#e2e8f0; font-family:monospace; font-size:12px; line-height:1.45; padding:8px 12px; border-radius:6px; pointer-events:none; text-shadow:1px 1px 0 #000; border:1px solid rgba(255,255,255,0.12);"></div>
 
     <script>
         let scene, camera, menuCamera, renderer, clock;
@@ -852,7 +856,15 @@
         const mazeOffsetX = -(maze[0].length * cellSize)/2; 
         const mazeOffsetZ = -(maze.length * cellSize)/2;
 
-        let cameraMode = 1; 
+        let cameraMode = 1; // 0 = 1-е лицо, 1 = 3-е сзади, 2 = 3-е спереди (как F5 в Minecraft)
+        let prevWeaponIndex = 0;
+        let lastWTapTime = 0;
+        let wTapSprint = false;
+        let isSneaking = false;
+        let currentEyeHeight = 1.75;
+        let hudHidden = false;
+        let f3Visible = false;
+        let f3FpsFrames = 0, f3LastTime = performance.now(), f3Fps = 60;
         let currentWeapon = 0; 
         let weaponNames = ["ПИСТОЛЕТ", "АВТОМАТ", "ДРОБОВИК", "КУЛАКИ", "НОЖИ", "СНАЙПЕРКА", "РПГ", "ПЛАЗМОГАН"];
         let currentWeaponMeshTPS = null;
@@ -3066,6 +3078,7 @@
                 showNotify(`${weaponNames[wIdx]} ЗАБЛОКИРОВАНО! ОТКРОЙТЕ «🛒 МАГАЗИН ОРУЖИЯ».`);
                 return;
             }
+            if (wIdx !== currentWeapon) prevWeaponIndex = currentWeapon;
             currentWeapon = wIdx;
             for(let i=0; i<8; i++) {
                 let m = document.getElementById('menuWpn'+i); if(m) m.classList.remove('active');
@@ -3279,9 +3292,22 @@
             }
         }
 
+        function cycleCameraMode() {
+            cameraMode = (cameraMode + 1) % 3;
+            const labels = ["ВИД: 1-Е ЛИЦО (FPS)", "ВИД: 3-Е ЛИЦО СЗАДИ (F5)", "ВИД: 3-Е ЛИЦО СПЕРЕДИ (F5)"];
+            showNotify(labels[cameraMode]);
+        }
+
         function setupPCControls() {
             window.addEventListener('keydown', (e) => {
                 if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+                if (isGameRunning && ['F1', 'F3', 'F5', 'Tab'].includes(e.code)) e.preventDefault();
+
+                if (e.code === 'KeyW' && !e.repeat && !keys['KeyW']) {
+                    const now = performance.now();
+                    if (now - lastWTapTime < 280) wTapSprint = true;
+                    lastWTapTime = now;
+                }
                 keys[e.code] = true;
 
                 if (!isGameRunning) return;
@@ -3301,12 +3327,25 @@
                 if (e.code === 'Digit6') selectWeapon(5);
                 if (e.code === 'Digit7') selectWeapon(6);
                 if (e.code === 'Digit8') selectWeapon(7);
+                if (e.code === 'KeyQ' && prevWeaponIndex !== currentWeapon && gvHasWeapon(prevWeaponIndex)) selectWeapon(prevWeaponIndex);
 
                 if (e.code === 'KeyE') interactNearby();
 
-                if (e.code === 'KeyV') {
-                    cameraMode = (cameraMode === 1) ? 0 : 1;
-                    showNotify(cameraMode === 1 ? "ВИД: 3-Е ЛИЦО (TPS)" : "ВИД: 1-Е ЛИЦО (FPS)");
+                if (e.code === 'F5' || e.code === 'KeyV') {
+                    cycleCameraMode();
+                }
+
+                if (e.code === 'F1') {
+                    hudHidden = !hudHidden;
+                    const gUI = document.getElementById('gameUI');
+                    if (gUI) gUI.style.opacity = hudHidden ? '0' : '1';
+                    showNotify(hudHidden ? "HUD СКРЫТ (F1)" : "HUD ПОКАЗАН (F1)");
+                }
+
+                if (e.code === 'F3') {
+                    f3Visible = !f3Visible;
+                    const dbg = document.getElementById('mcDebugOverlay');
+                    if (dbg) dbg.style.display = f3Visible ? 'block' : 'none';
                 }
 
                 if (e.code === 'Escape') pauseGame();
@@ -3314,6 +3353,7 @@
 
             window.addEventListener('keyup', (e) => {
                 keys[e.code] = false;
+                if (e.code === 'KeyW') wTapSprint = false;
             });
 
             window.addEventListener('mousedown', (e) => {
@@ -3464,7 +3504,7 @@
                 sb.addEventListener('touchstart', (e) => {
                     e.preventDefault();
                     sprintOn = !sprintOn;
-                    setKey('ShiftLeft', sprintOn);
+                    setKey('ControlLeft', sprintOn);
                     sb.classList.toggle('on', sprintOn);
                 }, { passive: false });
 
@@ -3495,14 +3535,13 @@
                     }
                 }, { passive: false });
 
-                // Взаимодействие [E] (двери / аптечки) и камера [V]
+                // Взаимодействие [E] (двери / аптечки) и камера [F5]
                 const ub = document.getElementById('mobUse');
                 if (ub) ub.addEventListener('touchstart', (e) => { e.preventDefault(); interactNearby(); }, { passive: false });
                 const cb = document.getElementById('mobCam');
                 if (cb) cb.addEventListener('touchstart', (e) => {
                     e.preventDefault();
-                    cameraMode = (cameraMode === 1) ? 0 : 1;
-                    showNotify(cameraMode === 1 ? "ВИД: 3-Е ЛИЦО (TPS)" : "ВИД: 1-Е ЛИЦО (FPS)");
+                    cycleCameraMode();
                 }, { passive: false });
             })();
 
@@ -3655,7 +3694,8 @@
                 if (playerContainer.position.y <= 0) { playerContainer.position.y = 0; velocityY = 0; isGrounded = true; }
 
                 const isHeavy = (currentWeapon === 5 || currentWeapon === 6);
-                let wantsSprint = (keys['ShiftLeft'] || keys['ShiftRight']) && isGrounded;
+                isSneaking = (keys['ShiftLeft'] || keys['ShiftRight']) && isGrounded;
+                let wantsSprint = (keys['ControlLeft'] || keys['ControlRight'] || wTapSprint) && isGrounded && !isSneaking;
 
                 if (wantsSprint && isHeavy) {
                     warnHeavyWeapon();
@@ -3697,6 +3737,9 @@
                     sBar.style.background = 'linear-gradient(90deg, #ff9900, #00ffaa)';
                 }
 
+                currentEyeHeight = THREE.MathUtils.lerp(currentEyeHeight, isSneaking ? 1.32 : 1.75, 0.22);
+                if (tpsBody) tpsBody.scale.y = THREE.MathUtils.lerp(tpsBody.scale.y, isSneaking ? 0.82 : 1.0, 0.22);
+
                 let moveX = 0, moveZ = 0;
                 if (keys['KeyW'] || keys['ArrowUp']) moveZ -= 1;
                 if (keys['KeyS'] || keys['ArrowDown']) moveZ += 1;
@@ -3706,7 +3749,8 @@
                 const moveLen = Math.hypot(moveX, moveZ);
                 if (moveLen > 0.001) {
                     let speed = canSprint ? 11.2 : 7.6;
-                    if (isHeavy) speed = 5.0;
+                    if (isSneaking) speed = isHeavy ? 3.8 : 4.6;
+                    else if (isHeavy) speed = 5.0;
 
                     const normX = moveX / moveLen;
                     const normZ = moveZ / moveLen;
@@ -3763,22 +3807,23 @@
                     playerContainer.position.z = (playerContainer.position.z/distFromCenter)*config.worldSize; 
                 }
 
-                // КАМЕРА
+                // КАМЕРА (0 = 1-е лицо, 1 = 3-е сзади, 2 = 3-е спереди — как F5 в Minecraft)
                 if (cameraMode === 0) {
                     tpsBody.visible = false;
                     fpsWeaponMount.visible = true;
 
-                    camera.position.copy(playerContainer.position).add(new THREE.Vector3(0, 1.75, 0));
+                    camera.position.copy(playerContainer.position).add(new THREE.Vector3(0, currentEyeHeight, 0));
                     camera.rotation.set(playerRotation.pitch, playerRotation.yaw, 0, 'YXZ');
                 } else {
                     tpsBody.visible = true;
                     fpsWeaponMount.visible = false;
 
-                    const headPos = playerContainer.position.clone().add(new THREE.Vector3(0, 1.75, 0));
+                    const headPos = playerContainer.position.clone().add(new THREE.Vector3(0, currentEyeHeight, 0));
                     const idealDist = isAiming ? 3.4 : 5.0;
+                    const dirSign = (cameraMode === 2) ? -1 : 1;
 
-                    const camDir = new THREE.Vector3(0, 0.45, 1)
-                        .applyAxisAngle(new THREE.Vector3(1, 0, 0), playerRotation.pitch * 0.7)
+                    const camDir = new THREE.Vector3(0, cameraMode === 2 ? 0.35 : 0.45, dirSign)
+                        .applyAxisAngle(new THREE.Vector3(1, 0, 0), playerRotation.pitch * 0.7 * dirSign)
                         .applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.yaw)
                         .normalize();
 
@@ -3793,10 +3838,35 @@
                     const targetCamPos = headPos.clone().add(camDir.multiplyScalar(actualDist));
                     camera.position.lerp(targetCamPos, 0.45);
 
-                    const forwardLook = new THREE.Vector3(0, 0, -10)
-                        .applyAxisAngle(new THREE.Vector3(1, 0, 0), playerRotation.pitch)
-                        .applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.yaw);
-                    camera.lookAt(headPos.clone().add(forwardLook));
+                    if (cameraMode === 2) {
+                        camera.lookAt(headPos);
+                    } else {
+                        const forwardLook = new THREE.Vector3(0, 0, -10)
+                            .applyAxisAngle(new THREE.Vector3(1, 0, 0), playerRotation.pitch)
+                            .applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.yaw);
+                        camera.lookAt(headPos.clone().add(forwardLook));
+                    }
+                }
+
+                // F3-экран отладки в стиле Minecraft
+                f3FpsFrames++;
+                const nowMs = performance.now();
+                if (nowMs - f3LastTime >= 500) {
+                    f3Fps = Math.round((f3FpsFrames * 1000) / (nowMs - f3LastTime));
+                    f3FpsFrames = 0;
+                    f3LastTime = nowMs;
+                }
+                if (f3Visible) {
+                    const dbg = document.getElementById('mcDebugOverlay');
+                    if (dbg) {
+                        const p = playerContainer.position;
+                        const camNames = ['1-е лицо', '3-е сзади', '3-е спереди'];
+                        dbg.innerHTML =
+                            `<b>GreenV MC-Debug (F3)</b> | ${f3Fps} FPS<br>` +
+                            `XYZ: ${p.x.toFixed(1)} / ${p.y.toFixed(1)} / ${p.z.toFixed(1)}<br>` +
+                            `Камера (F5): ${camNames[cameraMode] || 'FPS'} | ${isSneaking ? 'Крадётся' : (canSprint ? 'Спринт' : 'Шаг')}<br>` +
+                            `Оружие: ${weaponNames[currentWeapon]} (${currentAmmo[currentWeapon] === Infinity ? '∞' : currentAmmo[currentWeapon]})`;
+                    }
                 }
             }
 

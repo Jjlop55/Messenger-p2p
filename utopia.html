@@ -1458,6 +1458,7 @@ class Stickman {
     if (this.portalCooldown > 0) this.portalCooldown--;
 
     let currentSpeed = this.baseSpeed;
+    if (this._sneaking) currentSpeed *= 0.62;
     if (this.buff) {
       this.buff.timeLeft--;
       if (this.buff.type === 'speed') currentSpeed = this.baseSpeed * 1.8;
@@ -1465,7 +1466,14 @@ class Stickman {
       if (this.buff.timeLeft <= 0) this.buff = null;
     }
 
-    if (this.ammo < this.maxAmmo && (!this.buff || this.buff.type !== 'ammo')) {
+    if (this.manualReloading) {
+      this.manualReloadTimer--;
+      if (this.manualReloadTimer <= 0) {
+        this.manualReloading = false;
+        this.ammo = this.maxAmmo;
+        this.reloadTimer = 0;
+      }
+    } else if (this.ammo < this.maxAmmo && (!this.buff || this.buff.type !== 'ammo')) {
       this.reloadTimer++;
       if (this.reloadTimer >= 150) { // патроны восстанавливаются каждые 2.5 секунды
         this.ammo++;
@@ -2055,6 +2063,13 @@ const keys = {};
 window.addEventListener('keydown', (e) => {
   sfx.init();
   keys[e.code] = true;
+  // R — быстрая перезарядка (как в шутерах / Minecraft)
+  if (e.code === 'KeyR' && !e.repeat && typeof p1 !== 'undefined' && p1 && !p1.isBot && p1.alive) {
+    if (p1.ammo < p1.maxAmmo && !p1.manualReloading) {
+      p1.manualReloading = true;
+      p1.manualReloadTimer = 40;
+    }
+  }
   // Предотвращаем скролл экрана стрелками и пробелом
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
     e.preventDefault();
@@ -2068,6 +2083,7 @@ window.addEventListener('keyup', (e) => {
 function handleKeyboardInput() {
   // 1. Игрок 1 (Красный): WASD + Пробел | мышиный режим
   if (!p1.isBot) {
+    p1._sneaking = !!(keys['ShiftLeft'] || keys['ShiftRight']);
     let mx = 0, my = 0;
 
     if (mouseControlMode !== 'wasd' && mouseP1.over && !isTouchMode) {
