@@ -635,20 +635,25 @@ cursor.execute("""
 """)
 
 DEFAULT_MUSIC_SEED = [
-    ("chill", "SONGFORMYDEATH", "YXREMI", "/music/yxremi_songformydeath.mp3"),
-    ("chill", "ural mountains", "prodwhiteball, prodbyjane", "/music/prodbyjane_ural_mountains.mp3"),
-    ("chill", "pepsi p (prod. STAKILLAZ)", "KAMZ0NER", "/music/kamz0ner_pepsi_p.mp3"),
-    ("chill", "ENTITY.096", "KLEAVE, SXCREDMANE", "/music/kleave_entity096.mp3"),
-    ("chill", "LANCA NA MAO (Super Slowed)", "OTVphonk, DJ FZ DA ZN", "/music/otvphonk_lanca_na_mao.mp3"),
-    ("chill", "DARK AGE FUNK", "DJ AURAXÉ, DR FUNKO", "/music/dj_auraxe_dark_age_funk.mp3"),
-    ("chill", "MONTAGEM SANTA FE 2 (Slowed)", "qaraqshy", "/music/qaraqshy_montagem_santa_fe_2.mp3"),
-    ("chill", "Edgy (Slowed)", "luvwillow", "/music/luvwillow_edgy_slowed.mp3"),
+    ("gamer", "SONGFORMYDEATH", "YXREMI", "/music/yxremi_songformydeath.mp3"),
+    ("gamer", "ural mountains", "prodwhiteball, prodbyjane", "/music/prodbyjane_ural_mountains.mp3"),
+    ("gamer", "pepsi p (prod. STAKILLAZ)", "KAMZ0NER", "/music/kamz0ner_pepsi_p.mp3"),
+    ("gamer", "ENTITY.096", "KLEAVE, SXCREDMANE", "/music/kleave_entity096.mp3"),
+    ("gamer", "LANCA NA MAO (Super Slowed)", "OTVphonk, DJ FZ DA ZN", "/music/otvphonk_lanca_na_mao.mp3"),
+    ("gamer", "DARK AGE FUNK", "DJ AURAXÉ, DR FUNKO", "/music/dj_auraxe_dark_age_funk.mp3"),
+    ("gamer", "MONTAGEM SANTA FE 2 (Slowed)", "qaraqshy", "/music/qaraqshy_montagem_santa_fe_2.mp3"),
+    ("gamer", "Edgy (Slowed)", "luvwillow", "/music/luvwillow_edgy_slowed.mp3"),
 ]
 for _f, _t, _a, _u in DEFAULT_MUSIC_SEED:
     cursor.execute("SELECT 1 FROM music_tracks WHERE url=? LIMIT 1", (_u,))
     if not cursor.fetchone():
         cursor.execute(
             "INSERT INTO music_tracks (fandom, title, artist, url, added_by) VALUES (?, ?, ?, ?, 'admin')",
+            (_f, _t, _a, _u),
+        )
+    else:
+        cursor.execute(
+            "UPDATE music_tracks SET fandom=?, title=?, artist=? WHERE url=? AND added_by='admin'",
             (_f, _t, _a, _u),
         )
 conn.commit()
