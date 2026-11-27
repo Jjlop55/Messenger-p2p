@@ -948,6 +948,120 @@
       .music-seek-wrap { order: 3; flex: 1 1 100%; max-width: 100%; }
       .music-vol-mini { display: none; }
     }
+
+    /* ── UI Апгрейд: скроллбары, анимации, стекло, ушки и РП-карточки ── */
+    .messages-box::-webkit-scrollbar, .chat-list::-webkit-scrollbar, .modal-card::-webkit-scrollbar, .modal-box::-webkit-scrollbar { width: 6px; height: 6px; }
+    .messages-box::-webkit-scrollbar-track, .chat-list::-webkit-scrollbar-track { background: transparent; }
+    .messages-box::-webkit-scrollbar-thumb, .chat-list::-webkit-scrollbar-thumb, .modal-card::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14); border-radius: 999px;
+    }
+    .messages-box::-webkit-scrollbar-thumb:hover, .chat-list::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
+
+    @keyframes msgPopIn {
+      from { opacity: 0; transform: translateY(7px) scale(0.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .msg { animation: msgPopIn 0.18s cubic-bezier(0.22, 1, 0.36, 1); transition: transform .14s, box-shadow .18s; }
+    .msg:hover { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.34); }
+    .modal-card, .modal-box { box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65), 0 0 28px rgba(0, 240, 255, 0.08); }
+
+    /* Кошачьи ушки в фембой-режиме :3 */
+    html[data-accent="femboy"] #my-avatar-box,
+    html[data-accent="femboy"] #rail-my-avatar-box,
+    html[data-accent="femboy"] #auth-screen .modal-card { position: relative; overflow: visible !important; }
+    html[data-accent="femboy"] #my-avatar-box::before,
+    html[data-accent="femboy"] #my-avatar-box::after,
+    html[data-accent="femboy"] #rail-my-avatar-box::before,
+    html[data-accent="femboy"] #rail-my-avatar-box::after {
+      content: ""; position: absolute; top: -6px; width: 10px; height: 10px; z-index: 4; pointer-events: none;
+      background: linear-gradient(135deg, #ff77c8, #ffb3e6);
+      clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+      filter: drop-shadow(0 0 4px rgba(255, 119, 200, 0.85));
+    }
+    html[data-accent="femboy"] #my-avatar-box::before,
+    html[data-accent="femboy"] #rail-my-avatar-box::before { left: 2px; transform: rotate(-16deg); }
+    html[data-accent="femboy"] #my-avatar-box::after,
+    html[data-accent="femboy"] #rail-my-avatar-box::after { right: 2px; transform: rotate(16deg); }
+    html[data-accent="femboy"] #auth-screen .modal-card::before,
+    html[data-accent="femboy"] #auth-screen .modal-card::after {
+      content: ""; position: absolute; top: -18px; width: 34px; height: 24px; pointer-events: none;
+      background: linear-gradient(180deg, #ff77c8, rgba(255, 119, 200, 0.25));
+      clip-path: polygon(50% 0%, 4% 100%, 96% 100%);
+      filter: drop-shadow(0 0 10px rgba(255, 119, 200, 0.7));
+    }
+    html[data-accent="femboy"] #auth-screen .modal-card::before { left: 32px; transform: rotate(-12deg); }
+    html[data-accent="femboy"] #auth-screen .modal-card::after { right: 32px; transform: rotate(12deg); }
+
+    /* Чулочная полоска на мини-плеере в фембой-режиме */
+    html[data-accent="femboy"] #music-mini-bar {
+      border-bottom: 2px solid transparent;
+      border-image: repeating-linear-gradient(90deg, #ff77c8 0 14px, #fff5fb 14px 28px) 1;
+      background: linear-gradient(90deg, rgba(42, 16, 48, 0.94), rgba(24, 14, 42, 0.94));
+    }
+
+    /* Мур-метр для Бойкиссера и частицы */
+    .bk-pet-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+    .bk-pet-lbl { font-size: 10px; font-weight: 700; color: #ff9ae0; white-space: nowrap; }
+    .bk-pet-track { flex: 1; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden; }
+    .bk-pet-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #ff77c8, #c084fc); transition: width .22s ease; }
+
+    @keyframes bkFloatUp {
+      0% { opacity: 1; transform: translate(-50%, 0) scale(0.85); }
+      100% { opacity: 0; transform: translate(-50%, -44px) scale(1.25); }
+    }
+    .bk-float-particle {
+      position: fixed; pointer-events: none; z-index: 35000; font-size: 15px; font-weight: 800;
+      text-shadow: 0 2px 8px rgba(255, 119, 200, 0.75); animation: bkFloatUp 0.9s ease-out forwards;
+    }
+
+    /* Кнопка :3 Nya-режима, кнопка ✨ и поповер фишек */
+    .nya-toggle-btn {
+      padding: 6px 9px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.05); color: var(--text-dim); font-size: 12px; font-weight: 800;
+      cursor: pointer; flex: none; transition: all .15s;
+    }
+    .nya-toggle-btn.on {
+      background: rgba(255, 119, 200, 0.22); border-color: #ff77c8; color: #ff9ae0;
+      box-shadow: 0 0 12px rgba(255, 119, 200, 0.35);
+    }
+    #fun-bar-popover {
+      display: none; position: absolute; bottom: calc(100% + 8px); left: 10px; right: 10px; max-width: 440px;
+      padding: 12px; border-radius: 16px; background: rgba(12, 16, 30, 0.96); backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65); z-index: 90;
+      flex-direction: column; gap: 10px;
+    }
+    #fun-bar-popover.open { display: flex; animation: msgPopIn 0.16s ease; }
+    .fun-sec-title { font-size: 11px; font-weight: 700; color: var(--neon-cyan); text-transform: uppercase; letter-spacing: .04em; }
+    .fun-chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .fun-chip-btn {
+      padding: 6px 10px; border-radius: 11px; border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06); color: #fff; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all .14s;
+    }
+    .fun-chip-btn:hover { background: rgba(0, 240, 255, 0.18); border-color: var(--neon-cyan); transform: translateY(-1px); }
+    .fun-chip-btn.pink { background: rgba(255, 119, 200, 0.14); border-color: rgba(255, 154, 224, 0.35); color: #ffb8e6; }
+    .fun-chip-btn.pink:hover { background: rgba(255, 119, 200, 0.28); border-color: #ff77c8; }
+
+    /* Карточки РП / Ивентов / Опросов / Звуков внутри ленты */
+    .utp-card {
+      margin-top: 4px; padding: 10px 12px; border-radius: 14px;
+      background: linear-gradient(135deg, rgba(255, 119, 200, 0.14), rgba(0, 240, 255, 0.10));
+      border: 1px solid rgba(255, 255, 255, 0.16); display: flex; align-items: center; gap: 10px;
+    }
+    .utp-card-img { width: 54px; height: 54px; border-radius: 12px; object-fit: cover; flex: none; border: 1px solid rgba(255,255,255,0.22); background: #fff; }
+    .utp-card-body { min-width: 0; flex: 1; }
+    .utp-card-title { font-size: 13px; font-weight: 800; color: #fff; margin-bottom: 2px; }
+    .utp-card-sub { font-size: 12px; color: rgba(255,255,255,0.88); line-height: 1.35; white-space: pre-wrap; }
+    .utp-sfx-btn {
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; padding: 6px 12px;
+      border-radius: 12px; border: 1px solid var(--neon-cyan); background: rgba(0, 240, 255, 0.14);
+      color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: transform .12s;
+    }
+    .utp-sfx-btn:hover { transform: scale(1.03); background: rgba(0, 240, 255, 0.25); }
+    .utp-poll-box { margin-top: 4px; padding: 10px 12px; border-radius: 14px; background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.14); }
+    .utp-poll-q { font-size: 13px; font-weight: 800; color: var(--neon-cyan); margin-bottom: 6px; }
+    .utp-poll-opt { font-size: 12px; padding: 3px 0; color: #f4f7ff; }
+    .utp-poll-hint { font-size: 10.5px; color: var(--text-dim); margin-top: 5px; }
   </style>
 </head>
 <body>
@@ -1289,11 +1403,15 @@
       <button class="folder-pill" data-folder="bot" onclick="setChatFolder('bot')">🤖 Бот</button>
     </div>
     <div class="chat-list" id="chat-list"></div>
-    <div class="bk-mascot-bar" id="bk-mascot-bar" onclick="cycleBoykisserMascot()" title="Тыкни на Бойкиссера :3">
+    <div class="bk-mascot-bar" id="bk-mascot-bar" onclick="cycleBoykisserMascot(event)" title="Погладь Бойкиссера! 100% = +15 монет в кликер :3">
       <img id="bk-mascot-img" class="bk-mascot-img" data-bk="bk_paws.jpg" alt=":3">
       <div style="min-width:0; flex:1;">
         <div style="font-size:11.5px; font-weight:700; color:var(--neon-cyan);">Boykisser :3</div>
         <div id="bk-mascot-quote" style="font-size:10.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Тебе нравится общаться с мальчиками?~</div>
+        <div class="bk-pet-row">
+          <span class="bk-pet-lbl" id="bk-pet-lbl">🐾 Мур: 0%</span>
+          <div class="bk-pet-track"><div class="bk-pet-fill" id="bk-pet-fill"></div></div>
+        </div>
       </div>
     </div>
     <div id="voice-connected-bar">
@@ -1448,11 +1566,45 @@
           <button type="button" class="bk-phrase-chip" onclick="sendBoykisserPhrase('Обнимаю плюшевую акулу Блохэй и пью белый Монстр 🦈⚡')">🦈 Блохэй + Монстр</button>
         </div>
       </div>
+      <div id="fun-bar-popover">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:12.5px; font-weight:800; color:#fff;">✨ Фишки чата, РП и звуки</span>
+          <button class="icon-btn" style="padding:2px 6px; font-size:12px;" onclick="document.getElementById('fun-bar-popover').classList.remove('open')">✕</button>
+        </div>
+        <div class="fun-sec-title">🎀 Фембой-движ и РП (работает сразу в чат)</div>
+        <div class="fun-chip-grid">
+          <button type="button" class="fun-chip-btn pink" onclick="runFunCmd('/femboy')">🎀 % Фембойности</button>
+          <button type="button" class="fun-chip-btn pink" onclick="runFunCmd('/hug')">🫂 Обнять</button>
+          <button type="button" class="fun-chip-btn pink" onclick="runFunCmd('/pat')">🐾 Погладить</button>
+          <button type="button" class="fun-chip-btn pink" onclick="runFunCmd('/kiss')">😘 Чмок :3</button>
+          <button type="button" class="fun-chip-btn pink" onclick="runFunCmd('/bonk')">🔨 Бонк!</button>
+          <button type="button" class="fun-chip-btn pink" onclick="runFunCmd('/ship')">💘 Шипнуть</button>
+          <button type="button" class="fun-chip-btn pink" onclick="toggleFemboyFromFun()">✨ Вкл/Выкл Фембой-режим</button>
+        </div>
+        <div class="fun-sec-title">🎲 Игры и опросы</div>
+        <div class="fun-chip-grid">
+          <button type="button" class="fun-chip-btn" onclick="runFunCmd('/roll')">🎲 Кубик d100</button>
+          <button type="button" class="fun-chip-btn" onclick="runFunCmd('/coin')">🪙 Монетка</button>
+          <button type="button" class="fun-chip-btn" onclick="insertFunTemplate('/8ball ')">🎱 Шар судьбы</button>
+          <button type="button" class="fun-chip-btn" onclick="insertFunTemplate('/poll Го играть? | Да, погнали! | Позже | Не сегодня')">📊 Создать опрос</button>
+        </div>
+        <div class="fun-sec-title">🔊 Саундборд в чат (играет у всех!)</div>
+        <div class="fun-chip-grid">
+          <button type="button" class="fun-chip-btn" onclick="sendChatSound('meow')">🐱 Мяу~</button>
+          <button type="button" class="fun-chip-btn" onclick="sendChatSound('uwu')">🎀 Уву!</button>
+          <button type="button" class="fun-chip-btn" onclick="sendChatSound('bonk')">🔨 БОНК</button>
+          <button type="button" class="fun-chip-btn" onclick="sendChatSound('coin')">💸 Дзынь</button>
+          <button type="button" class="fun-chip-btn" onclick="sendChatSound('boom')">💥 Бум</button>
+          <button type="button" class="fun-chip-btn" onclick="sendChatSound('fanfare')">🎺 Фанфары</button>
+        </div>
+      </div>
       <input type="file" id="file-input" style="display:none;">
       <button class="icon-btn" id="attach-btn" title="Прикрепить файл (до 10 МБ)">📎</button>
+      <button class="icon-btn" id="fun-bar-btn" title="Фишки чата, РП-карточки, опросы и звуки" onclick="event.stopPropagation(); toggleFunPopover()">✨</button>
       <button class="icon-btn" id="bk-sticker-btn" title="Стикеры и отсылки Бойкиссера :3" onclick="event.stopPropagation(); toggleBoykisserStickers()">🎀</button>
 
       <input type="text" class="text-input" id="msg-input" placeholder="Сообщение..." autocomplete="off">
+      <button type="button" class="nya-toggle-btn" id="nya-mode-btn" title="Nya-режим текста (:3, >w<, ~)" onclick="toggleNyaMode()">:3</button>
       <button id="send-btn" style="display: none; color: var(--neon-cyan);">➤</button>
       <button id="dictate-btn" title="Голосовой ввод текста (диктовка)">🗣️</button>
       <button id="voice-btn" title="Голосовое сообщение">🎙️</button>
@@ -3740,6 +3892,7 @@ async function switchChat(chatId, chatName, isDirect = null) {
       }
       if (msgChat === activeChatId) {
         renderMessage(data);
+        if (typeof handleIncomingChatSfx === 'function') handleIncomingChatSfx(data.text, fromMe);
         if (!fromMe) {
           markChatRead(msgChat);
           notifyIncomingMessage(data);
@@ -3950,7 +4103,7 @@ async function switchChat(chatId, chatName, isDirect = null) {
           msgEl.dataset.text = (data.text || '').slice(0, 400);
           const bodyDiv = msgEl.querySelector('.msg-text');
           if (bodyDiv) {
-            bodyDiv.innerHTML = `${escapeHtml(data.text || '')}<span class="msg-edited">(ред.)</span>`;
+            bodyDiv.innerHTML = `${typeof formatChatMsgHtml === 'function' ? formatChatMsgHtml(data.text || '') : escapeHtml(data.text || '')}<span class="msg-edited">(ред.)</span>`;
           }
         }
         const curMeta = (window.chatsMeta || {})[activeChatId];
@@ -4259,7 +4412,7 @@ function renderMessage(msg) {
   el.innerHTML = `
     ${quoteHtml}
     <div class="msg-author"><span class="msg-avatar" data-avatar-nick="${escapeHtml(msg.sender || '')}">${renderAvatarHtml(getCachedAvatar(msg.sender), 18)}</span><a href="#" class="msg-author-link" data-nick="${escapeHtml(msg.sender || '')}">${escapeHtml(msg.sender)}</a></div>
-    <div class="msg-text">${escapeHtml(msg.text || '')}${msg.is_edited ? '<span class="msg-edited">(ред.)</span>' : ''}</div>
+    <div class="msg-text">${typeof formatChatMsgHtml === 'function' ? formatChatMsgHtml(msg.text || '') : escapeHtml(msg.text || '')}${msg.is_edited ? '<span class="msg-edited">(ред.)</span>' : ''}</div>
     ${mediaHtml}
     <div class="msg-reactions"></div>
     <div class="msg-time">${msg.time || ''}</div>
@@ -5269,7 +5422,7 @@ msgInput.oninput = () => {
 };
 
 function sendMsg() {
-    const text = msgInput.value.trim();
+    let text = msgInput.value.trim();
     if (!text && !pendingFile) return;
     if (!activeWs || activeWs.readyState !== WebSocket.OPEN) return showToast('Нет соединения с чатом', 'warning');
     if (editingMsgId) {
@@ -5280,10 +5433,19 @@ function sendMsg() {
       clearEditMsg();
       return;
     }
+    if (text && text.startsWith('/') && typeof resolveFunSlashCommand === 'function') {
+      const cmdPayload = resolveFunSlashCommand(text);
+      if (cmdPayload) text = cmdPayload;
+    } else if (text && typeof nyaMode !== 'undefined' && nyaMode && typeof nyaifyText === 'function') {
+      text = nyaifyText(text);
+    }
     const payload = {
       action: 'send', sender: currentUser, text: text,
       time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
     };
+    if (document.documentElement.getAttribute('data-accent') === 'femboy' && typeof spawnFloatParticles === 'function') {
+      spawnFloatParticles(sendBtn || msgInput, ['💖', ':3', '✨']);
+    }
     if (pendingFile) {
       payload.file_url = pendingFile.url;
       payload.file_type = pendingFile.type;
@@ -6009,9 +6171,28 @@ document.addEventListener('click', (e) => {
   if (pop && pop.classList.contains('open') && !e.target.closest('#bk-sticker-popover') && !e.target.closest('#bk-sticker-btn')) {
     pop.classList.remove('open');
   }
+  const fpop = document.getElementById('fun-bar-popover');
+  if (fpop && fpop.classList.contains('open') && !e.target.closest('#fun-bar-popover') && !e.target.closest('#fun-bar-btn')) {
+    fpop.classList.remove('open');
+  }
 });
 let _bkMascotIdx = 2;
-function cycleBoykisserMascot() {
+let _bkPetProgress = 0;
+function spawnFloatParticles(anchorEl, glyphs = ['💖', ':3', '🌸', '✨']) {
+  if (!anchorEl || !anchorEl.getBoundingClientRect) return;
+  const r = anchorEl.getBoundingClientRect();
+  for (let i = 0; i < 3; i++) {
+    const sp = document.createElement('span');
+    sp.className = 'bk-float-particle';
+    sp.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
+    sp.style.left = (r.left + r.width * (0.25 + Math.random() * 0.5)) + 'px';
+    sp.style.top = (r.top + 4) + 'px';
+    sp.style.animationDelay = (i * 0.06) + 's';
+    document.body.appendChild(sp);
+    setTimeout(() => sp.remove(), 980);
+  }
+}
+function cycleBoykisserMascot(ev) {
   _bkMascotIdx = (_bkMascotIdx + 1) % BOYKISSER_QUOTES.length;
   const item = BOYKISSER_QUOTES[_bkMascotIdx];
   const img = document.getElementById('bk-mascot-img');
@@ -6019,7 +6200,235 @@ function cycleBoykisserMascot() {
   const bkKey = item.img.replace('/boykisser/', '');
   if (img) img.src = (window.BK_DATA && window.BK_DATA[bkKey]) ? window.BK_DATA[bkKey] : item.img;
   if (q) q.textContent = item.text;
-  if (typeof showToast === 'function') showToast('🎀 ' + item.text);
+  const bar = (ev && ev.currentTarget) || document.getElementById('bk-mascot-bar');
+  spawnFloatParticles(bar, ['💖', '🐾', ':3', '🌸']);
+  _bkPetProgress += 25;
+  if (_bkPetProgress >= 100) {
+    _bkPetProgress = 0;
+    if (typeof clickerData !== 'undefined' && clickerData) {
+      clickerData.coins = (Number(clickerData.coins) || 0) + 15;
+      clickerData.totalEarned = (Number(clickerData.totalEarned) || 0) + 15;
+      if (typeof saveClicker === 'function') saveClicker();
+      if (typeof renderClicker === 'function') renderClicker();
+      if (typeof showToast === 'function') showToast('🐾 Муррр! Бойкиссер счастлив (+15 монет в кликер) :3');
+    } else if (typeof showToast === 'function') {
+      showToast('🐾 Муррр! Бойкиссер на 100% доволен :3');
+    }
+  } else if (typeof showToast === 'function') {
+    showToast('🎀 ' + item.text);
+  }
+  const fill = document.getElementById('bk-pet-fill');
+  const lbl = document.getElementById('bk-pet-lbl');
+  if (fill) fill.style.width = _bkPetProgress + '%';
+  if (lbl) lbl.textContent = `🐾 Мур: ${_bkPetProgress}%`;
+}
+
+// ── Nya-режим (:3), РП-карточки, опросы и Web Audio саундборд ──
+let nyaMode = localStorage.getItem('utopia_nya_mode') === '1';
+(function initNyaBtn() {
+  const apply = () => {
+    const b = document.getElementById('nya-mode-btn');
+    if (b) b.classList.toggle('on', nyaMode);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+})();
+function toggleNyaMode() {
+  nyaMode = !nyaMode;
+  localStorage.setItem('utopia_nya_mode', nyaMode ? '1' : '0');
+  const b = document.getElementById('nya-mode-btn');
+  if (b) b.classList.toggle('on', nyaMode);
+  if (typeof showToast === 'function') showToast(nyaMode ? '🎀 Nya-режим (:3) включён!' : 'Nya-режим выключен');
+}
+function nyaifyText(txt) {
+  const dict = [['привет', 'мяу~ приветик'], ['да', 'агась'], ['нет', 'неа~'], ['ок', 'оки-доки']];
+  let out = txt;
+  dict.forEach(([w, rep]) => {
+    out = out.replace(new RegExp(`(^|[\\s,.!?])${w}(?=[\\s,.!?]|$)`, 'gi'), `$1${rep}`);
+  });
+  const tails = [' :3', ' >w<', ' ~ ✨', ' ня~ :3', ' uwu'];
+  if (!/(:3|>w<|uwu|ня~)/i.test(out)) out += tails[Math.floor(Math.random() * tails.length)];
+  return out;
+}
+function toggleFunPopover() {
+  const p = document.getElementById('fun-bar-popover');
+  const b = document.getElementById('bk-sticker-popover');
+  if (b) b.classList.remove('open');
+  if (p) p.classList.toggle('open');
+}
+function toggleFemboyFromFun() {
+  const isFem = document.documentElement.getAttribute('data-accent') === 'femboy';
+  toggleFemboyMode(!isFem);
+  const p = document.getElementById('fun-bar-popover');
+  if (p) p.classList.remove('open');
+}
+function insertFunTemplate(tpl) {
+  const p = document.getElementById('fun-bar-popover');
+  if (p) p.classList.remove('open');
+  const inp = document.getElementById('msg-input');
+  if (!inp) return;
+  inp.value = tpl;
+  inp.focus();
+  if (typeof inp.oninput === 'function') inp.oninput();
+}
+function runFunCmd(cmd) {
+  const p = document.getElementById('fun-bar-popover');
+  if (p) p.classList.remove('open');
+  const inp = document.getElementById('msg-input');
+  if (!inp) return;
+  inp.value = cmd;
+  sendMsg();
+}
+
+const RP_ACTIONS = {
+  '/hug':  { verb: 'крепко обнимает', targetFallback: 'всех в чате', tail: 'и дарит плюшевую акулу Блохэй~ 🦈', bk: 'bk_shark.jpg', emoji: '🫂' },
+  '/pat':  { verb: 'нежно гладит по ушкам', targetFallback: 'хорошего мальчика', tail: 'мурр~ :3', bk: 'bk_happy.png', emoji: '🐾' },
+  '/kiss': { verb: 'чмокает в щёчку', targetFallback: 'кого-то милого', tail: 'тебе ведь нравится целовать мальчиков? :3', bk: 'bk_hearts.png', emoji: '😘' },
+  '/bonk': { verb: 'делает БОНК по макушке', targetFallback: 'шалуна', tail: 'хватит кринжевать! 🔨', bk: 'bk_basin.png', emoji: '🔨' }
+};
+const FEMBOY_VERDICTS = [
+  'Врождённый фембой-легенда! Полосатые гольфы приросли к ногам :3',
+  'Программист на Rust + белый Монстр в руке ⚡',
+  'Тайный любитель Блохэя и чулочков >///<',
+  'Сегодня на 50% кибер-воин, на 50% няшка ✨',
+  'Суровый снаружи, но на самом деле мурчит :3'
+];
+const BALL8_ANSWERS = [
+  'Да, 100% база! ✨', 'Отказано ❌', 'Бесспорно, лев 🦁',
+  'Шансы есть, надень чулочки для удачи :3', 'Спроси позже, я в тазике сижу', 'Однозначно нет 💀', 'Пэм-бэм-бэм — залетит!'
+];
+const UTP_SOUNDS = {
+  meow:    { lbl: '🐱 Мяу~',     steps: [[520, 760, 0.14, 'triangle'], [760, 460, 0.22, 'sine']] },
+  uwu:     { lbl: '🎀 Уву!',     steps: [[620, 880, 0.10, 'sine'], [880, 1040, 0.14, 'triangle']] },
+  bonk:    { lbl: '🔨 БОНК!',    steps: [[220, 75, 0.18, 'square'], [110, 55, 0.12, 'sawtooth']] },
+  coin:    { lbl: '💸 Дзынь!',   steps: [[987, 987, 0.08, 'sine'], [1318, 1318, 0.22, 'sine']] },
+  boom:    { lbl: '💥 Бум!',     steps: [[140, 38, 0.35, 'sawtooth'], [90, 32, 0.30, 'triangle']] },
+  fanfare: { lbl: '🎺 Фанфары!', steps: [[523, 523, 0.10, 'triangle'], [659, 659, 0.10, 'triangle'], [784, 1046, 0.26, 'triangle']] }
+};
+let _utpAudioCtx = null;
+function playUtpSound(id) {
+  const def = UTP_SOUNDS[id];
+  if (!def) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_utpAudioCtx) _utpAudioCtx = new AC();
+    if (_utpAudioCtx.state === 'suspended') _utpAudioCtx.resume();
+    let t = _utpAudioCtx.currentTime;
+    def.steps.forEach(([f1, f2, dur, wave]) => {
+      const osc = _utpAudioCtx.createOscillator();
+      const gain = _utpAudioCtx.createGain();
+      osc.type = wave || 'sine';
+      osc.frequency.setValueAtTime(f1, t);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(20, f2), t + dur);
+      gain.gain.setValueAtTime(0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(gain); gain.connect(_utpAudioCtx.destination);
+      osc.start(t); osc.stop(t + dur);
+      t += dur * 0.92;
+    });
+  } catch (_) {}
+}
+function sendChatSound(id) {
+  const def = UTP_SOUNDS[id];
+  if (!def) return;
+  const p = document.getElementById('fun-bar-popover');
+  if (p) p.classList.remove('open');
+  playUtpSound(id);
+  if (!activeWs || activeWs.readyState !== WebSocket.OPEN) return;
+  activeWs.send(JSON.stringify({
+    action: 'send',
+    sender: currentUser,
+    text: `[[UTP_SFX:${JSON.stringify({ id, lbl: def.lbl })}]]`,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }));
+}
+function handleIncomingChatSfx(raw, fromMe) {
+  if (fromMe || !raw || !raw.startsWith('[[UTP_SFX:')) return;
+  try {
+    const obj = JSON.parse(raw.slice(10, -2));
+    if (obj && obj.id && localStorage.getItem('utopia_notif_sound') !== '0') playUtpSound(obj.id);
+  } catch (_) {}
+}
+function _pickRandomMember(excludeNick) {
+  const links = Array.from(document.querySelectorAll('#messages-box .msg-author-link'));
+  const pool = [...new Set(links.map(a => a.dataset.nick).filter(n => n && n.toLowerCase() !== String(excludeNick || '').toLowerCase()))];
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+}
+function resolveFunSlashCommand(text) {
+  const parts = text.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase();
+  const arg = parts.slice(1).join(' ').trim();
+  const me = currentUser || 'Анон';
+  if (RP_ACTIONS[cmd]) {
+    const a = RP_ACTIONS[cmd];
+    const tgt = arg || _pickRandomMember(me) || a.targetFallback;
+    return `[[UTP_CARD:${JSON.stringify({ t: `${a.emoji} ${me} ${a.verb} ${tgt}`, s: a.tail, bk: a.bk })}]]`;
+  }
+  if (cmd === '/femboy') {
+    const who = arg || me;
+    const pct = Math.floor(Math.random() * 147);
+    const v = FEMBOY_VERDICTS[Math.floor(Math.random() * FEMBOY_VERDICTS.length)];
+    return `[[UTP_CARD:${JSON.stringify({ t: `🎀 Фембометр: ${who} — ${pct}%`, s: v, bk: pct > 80 ? 'bk_socks.png' : 'bk_coder.jpg' })}]]`;
+  }
+  if (cmd === '/ship') {
+    const a1 = parts[1] || me;
+    const a2 = parts[2] || _pickRandomMember(a1) || 'Блохэй 🦈';
+    const pct = Math.floor(Math.random() * 101);
+    const verdict = pct >= 80 ? 'Идеальная пара в чулочках! 💍' : (pct >= 45 ? 'Ну тут искра точно есть ✨' : 'Лучше попить Монстр как друзья 😅');
+    return `[[UTP_CARD:${JSON.stringify({ t: `💘 Шип: ${a1} ❤️ ${a2} = ${pct}%`, s: verdict, bk: 'bk_hearts.png' })}]]`;
+  }
+  if (cmd === '/roll') {
+    const maxN = Math.max(2, Math.min(100000, parseInt(parts[1], 10) || 100));
+    const val = Math.floor(Math.random() * maxN) + 1;
+    return `[[UTP_CARD:${JSON.stringify({ t: `🎲 ${me} кидает кубик (1–${maxN})`, s: `Выпало: ${val}!` })}]]`;
+  }
+  if (cmd === '/coin') {
+    const r = Math.random();
+    const res = r < 0.03 ? 'Ребро!! Взлом матрицы ⚡' : (r < 0.515 ? 'Орёл 🦅' : 'Решка 🪙');
+    return `[[UTP_CARD:${JSON.stringify({ t: `🪙 ${me} подбрасывает монетку`, s: `Выпало: ${res}` })}]]`;
+  }
+  if (cmd === '/8ball') {
+    const q = arg || 'Что будет дальше?';
+    const ans = BALL8_ANSWERS[Math.floor(Math.random() * BALL8_ANSWERS.length)];
+    return `[[UTP_CARD:${JSON.stringify({ t: `🎱 Шар судьбы на вопрос: «${q.slice(0, 70)}»`, s: ans })}]]`;
+  }
+  if (cmd === '/poll') {
+    const segs = arg.split('|').map(x => x.trim()).filter(Boolean);
+    if (segs.length >= 3) {
+      return `[[UTP_POLL:${JSON.stringify({ q: segs[0].slice(0, 120), o: segs.slice(1, 5).map(x => x.slice(0, 60)) })}]]`;
+    }
+  }
+  if (cmd === '/meow') return `[[UTP_SFX:${JSON.stringify({ id: 'meow', lbl: UTP_SOUNDS.meow.lbl })}]]`;
+  if (cmd === '/uwu') return `[[UTP_SFX:${JSON.stringify({ id: 'uwu', lbl: UTP_SOUNDS.uwu.lbl })}]]`;
+  return null;
+}
+function formatChatMsgHtml(raw) {
+  if (!raw) return '';
+  if (raw.startsWith('[[UTP_CARD:') && raw.endsWith(']]')) {
+    try {
+      const c = JSON.parse(raw.slice(11, -2));
+      const bkSrc = (c.bk && window.BK_DATA && window.BK_DATA[c.bk]) ? window.BK_DATA[c.bk] : '';
+      const imgHtml = bkSrc ? `<img class="utp-card-img" src="${escapeHtml(bkSrc)}" alt=":3">` : '';
+      return `<div class="utp-card">${imgHtml}<div class="utp-card-body"><div class="utp-card-title">${escapeHtml(c.t || '')}</div><div class="utp-card-sub">${escapeHtml(c.s || '')}</div></div></div>`;
+    } catch (_) {}
+  }
+  if (raw.startsWith('[[UTP_POLL:') && raw.endsWith(']]')) {
+    try {
+      const p = JSON.parse(raw.slice(11, -2));
+      const nums = ['1️⃣', '2️⃣', '3️⃣', '4️⃣'];
+      const opts = (p.o || []).map((o, i) => `<div class="utp-poll-opt">${nums[i] || '•'} ${escapeHtml(o)}</div>`).join('');
+      return `<div class="utp-poll-box"><div class="utp-poll-q">📊 ${escapeHtml(p.q || 'Опрос')}</div>${opts}<div class="utp-poll-hint">Голосуй реакциями на это сообщение (1️⃣, 2️⃣, 3️⃣...)</div></div>`;
+    } catch (_) {}
+  }
+  if (raw.startsWith('[[UTP_SFX:') && raw.endsWith(']]')) {
+    try {
+      const s = JSON.parse(raw.slice(10, -2));
+      const sid = UTP_SOUNDS[s.id] ? s.id : 'meow';
+      return `<button type="button" class="utp-sfx-btn" data-sfx="${escapeHtml(sid)}" onclick="playUtpSound(this.dataset.sfx)">🔊 ${escapeHtml(s.lbl || 'Звук')}</button>`;
+    } catch (_) {}
+  }
+  return escapeHtml(raw);
 }
 function setPresetBoykisserAvatar(url) {
   const inp = document.getElementById('prof-avatar-input');
