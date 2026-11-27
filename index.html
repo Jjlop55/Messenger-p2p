@@ -11266,11 +11266,11 @@ function switchMusicTab(tab) {
 
   if (tab === 'gamer') {
     banner.style.display = 'block';
-    banner.innerHTML = '🎮 <b>Плейлист для геймеров:</b> Админ этого проекта советует вам послушать эти треки, пока вы играете в какую-то игру!';
+    banner.innerHTML = '🎮 <b>Плейлист для геймеров:</b> Админ этого проекта советует вам послушать эти треки, пока вы играете в какую-то игру!<br><span style="color:var(--warn); font-size:11px;">⚠️ Предупреждение: в треках может присутствовать ненормативная лексика (мат).</span>';
     renderMusicList('gamer');
   } else if (tab === 'femboy') {
     banner.style.display = 'block';
-    banner.innerHTML = '🎀 <b>Плейлист для фембоев:</b> Идеально подходит, когда вы переписываетесь со своим семпаем~ :3';
+    banner.innerHTML = '🎀 <b>Плейлист для фембоев:</b> Идеально подходит, когда вы переписываетесь со своим семпаем~ :3<br><span style="color:var(--warn); font-size:11px;">⚠️ Предупреждение: в треках может присутствовать ненормативная лексика (мат).</span>';
     renderMusicList('femboy');
   } else {
     banner.style.display = 'none';
