@@ -45,7 +45,6 @@ if os.path.isdir(BOYKISSER_DIR):
     app.mount("/boykisser", StaticFiles(directory=BOYKISSER_DIR), name="boykisser")
 MUSIC_DIR = os.path.join(BASE_DIR, "music")
 os.makedirs(MUSIC_DIR, exist_ok=True)
-app.mount("/music", StaticFiles(directory=MUSIC_DIR), name="music")
 
 
 def delete_upload_file(file_url: str) -> bool:
@@ -5579,6 +5578,10 @@ async def set_user_fav_track(data: dict):
     cursor.execute("UPDATE users SET fav_track=? WHERE LOWER(nickname)=LOWER(?)", (fav, nick))
     conn.commit()
     return {"status": "ok", "fav_track": fav}
+
+
+# Монтируем статику /music ПОСЛЕ всех /music/* API-эндпоинтов, чтобы StaticFiles не перехватывал /music/tracks и /music/request
+app.mount("/music", StaticFiles(directory=MUSIC_DIR), name="music")
 
 
 # ── Статические маршруты страниц (мессенджер, игры) ──
