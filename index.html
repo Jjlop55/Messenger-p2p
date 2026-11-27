@@ -2054,7 +2054,7 @@
 <script>
 const BACKEND_URL = (typeof window !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1'))
   ? `${location.protocol}//${location.host}`
-  : "https://utopia-messenger-api.onrender.com";
+  : "https://utopiachatxxxnepizdi.alwaysdata.net";
 
 let currentUser = null, currentSessionToken = null;
 let myAvatarUrl = '';
@@ -2515,7 +2515,7 @@ async function login(nickname, password) {
       try {
         if (attempt > 1 && err) {
           err.style.color = 'var(--neon-cyan)';
-          err.innerText = 'Сервер просыпается, пробуем войти ещё раз...';
+          err.innerText = 'Пробуем подключиться к серверу ещё раз...';
         }
         const res = await fetch(`${BACKEND_URL}/auth`, {
           method: 'POST',
@@ -2538,7 +2538,7 @@ async function login(nickname, password) {
         if (attempt < 2) {
           if (err) {
             err.style.color = 'var(--neon-cyan)';
-            err.innerText = 'Сервер выходит из сна... Подождите ~20 сек';
+            err.innerText = 'Повторное подключение к серверу...';
           }
           await new Promise(r => setTimeout(r, 2500));
           continue;
@@ -2549,7 +2549,7 @@ async function login(nickname, password) {
     if (lastNetErr || !d) {
       if (err) {
         err.style.color = 'var(--danger)';
-        err.innerText = 'Сервер не отвечает (сон Render или нет сети). Попробуйте через 15 сек.';
+        err.innerText = 'Сервер временно не отвечает или нет сети. Попробуйте ещё раз.';
       }
       return;
     }
