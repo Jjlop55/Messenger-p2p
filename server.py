@@ -643,6 +643,16 @@ DEFAULT_MUSIC_SEED = [
     ("gamer", "DARK AGE FUNK", "DJ AURAXÉ, DR FUNKO", "/music/dj_auraxe_dark_age_funk.mp3"),
     ("gamer", "MONTAGEM SANTA FE 2 (Slowed)", "qaraqshy", "/music/qaraqshy_montagem_santa_fe_2.mp3"),
     ("gamer", "Edgy (Slowed)", "luvwillow", "/music/luvwillow_edgy_slowed.mp3"),
+    ("gamer", "Can't Hold Us X Bad Piggies", "SuperSolar", "/music/supersolar_cant_hold_us_bad_piggies.mp3"),
+    ("gamer", "LAST CHANCE FUNK ALT VERSION", "TEENWXVE", "/music/teenwxve_last_chance_funk.mp3"),
+    ("chill", "resonance", "RhythmRebel", "/music/rhythmrebel_resonance.mp3"),
+    ("chill", "Winds Of Fjords", "Soft Knees", "/music/soft_knees_winds_of_fjords.mp3"),
+    ("chill", "Tokyovania", "Charty", "/music/charty_tokyovania.mp3"),
+    ("chill", "Утро", "Дайте танк (!)", "/music/daite_tank_utro.mp3"),
+    ("chill", "Мир с обоев в старом телефоне", "Ksenon", "/music/ksenon_mir_s_oboev.mp3"),
+    ("chill", "Synthetic Flora", "Yuriy Leontiev", "/music/yuriy_leontiev_synthetic_flora.mp3"),
+    ("chill", "i walk this earth all by myself", "EKKSTACY", "/music/ekkstacy_i_walk_this_earth.mp3"),
+    ("chill", "Dirt", "Vandalism", "/music/vandalism_dirt.mp3"),
 ]
 for _f, _t, _a, _u in DEFAULT_MUSIC_SEED:
     cursor.execute("SELECT 1 FROM music_tracks WHERE url=? LIMIT 1", (_u,))
