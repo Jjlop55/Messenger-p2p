@@ -16,7 +16,7 @@ import urllib.error
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -32,7 +32,10 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get("DATA_DIR") or ("/data" if os.path.isdir("/data") and os.access("/data", os.W_OK) else BASE_DIR)
+if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+    DATA_DIR = os.path.join(tempfile.gettempdir(), "utopia_data")
+else:
+    DATA_DIR = os.environ.get("DATA_DIR") or ("/data" if os.path.isdir("/data") and os.access("/data", os.W_OK) else BASE_DIR)
 os.makedirs(DATA_DIR, exist_ok=True)
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -5382,12 +5385,12 @@ def admin_db_backup(admin: str):
 
 
 @app.post("/admin/db/restore")
-async def admin_db_restore(admin: str, file: UploadFile = File(...)):
+async def admin_db_restore(admin: str, request: Request):
     cursor.execute("SELECT is_superadmin, is_owner FROM users WHERE LOWER(nickname)=LOWER(?)", (admin,))
     row = cursor.fetchone()
     if not row or (not row[0] and not row[1] and not is_super(admin)):
         raise HTTPException(status_code=403, detail="Доступ запрещён")
-    raw = await file.read()
+    raw = await request.body()
     if not raw.startswith(b"SQLite format 3\x00"):
         raise HTTPException(status_code=400, detail="Файл не является базой SQLite")
     with _all_conns_lock:
