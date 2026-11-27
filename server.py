@@ -43,6 +43,9 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 BOYKISSER_DIR = os.path.join(BASE_DIR, "boykisser")
 if os.path.isdir(BOYKISSER_DIR):
     app.mount("/boykisser", StaticFiles(directory=BOYKISSER_DIR), name="boykisser")
+MUSIC_DIR = os.path.join(BASE_DIR, "music")
+os.makedirs(MUSIC_DIR, exist_ok=True)
+app.mount("/music", StaticFiles(directory=MUSIC_DIR), name="music")
 
 
 def delete_upload_file(file_url: str) -> bool:
@@ -630,6 +633,24 @@ cursor.execute("""
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
 """)
+
+DEFAULT_MUSIC_SEED = [
+    ("chill", "SONGFORMYDEATH", "YXREMI", "/music/yxremi_songformydeath.mp3"),
+    ("chill", "ural mountains", "prodwhiteball, prodbyjane", "/music/prodbyjane_ural_mountains.mp3"),
+    ("chill", "pepsi p (prod. STAKILLAZ)", "KAMZ0NER", "/music/kamz0ner_pepsi_p.mp3"),
+    ("chill", "ENTITY.096", "KLEAVE, SXCREDMANE", "/music/kleave_entity096.mp3"),
+    ("chill", "LANCA NA MAO (Super Slowed)", "OTVphonk, DJ FZ DA ZN", "/music/otvphonk_lanca_na_mao.mp3"),
+    ("chill", "DARK AGE FUNK", "DJ AURAXÉ, DR FUNKO", "/music/dj_auraxe_dark_age_funk.mp3"),
+    ("chill", "MONTAGEM SANTA FE 2 (Slowed)", "qaraqshy", "/music/qaraqshy_montagem_santa_fe_2.mp3"),
+    ("chill", "Edgy (Slowed)", "luvwillow", "/music/luvwillow_edgy_slowed.mp3"),
+]
+for _f, _t, _a, _u in DEFAULT_MUSIC_SEED:
+    cursor.execute("SELECT 1 FROM music_tracks WHERE url=? LIMIT 1", (_u,))
+    if not cursor.fetchone():
+        cursor.execute(
+            "INSERT INTO music_tracks (fandom, title, artist, url, added_by) VALUES (?, ?, ?, ?, 'admin')",
+            (_f, _t, _a, _u),
+        )
 conn.commit()
 
 # ── Бэкфилл: династия в существующих чатах ──
