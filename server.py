@@ -5433,7 +5433,7 @@ def get_music_tracks():
 async def submit_music_request(data: dict):
     nick = (data.get("nickname") or "").strip()
     fandom = (data.get("fandom") or "gamer").strip().lower()
-    if fandom not in ("gamer", "femboy"):
+    if fandom not in ("gamer", "femboy", "chill"):
         fandom = "gamer"
     url = (data.get("url") or "").strip()
     note = (data.get("note") or "").strip()
@@ -5496,7 +5496,7 @@ async def admin_add_music_track(data: dict):
     admin = (data.get("admin") or "").strip()
     _check_music_admin(admin)
     fandom = (data.get("fandom") or "gamer").strip().lower()
-    if fandom not in ("gamer", "femboy"):
+    if fandom not in ("gamer", "femboy", "chill"):
         fandom = "gamer"
     title = (data.get("title") or "").strip()[:120]
     artist = (data.get("artist") or "").strip()[:80]

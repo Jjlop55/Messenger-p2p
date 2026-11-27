@@ -1166,8 +1166,9 @@
       <button class="icon-btn" onclick="closeModal('music-modal')">✕</button>
     </div>
     <div class="discord-tabs" id="music-tabs">
-      <button class="discord-tab-btn active" data-mtab="gamer" onclick="switchMusicTab('gamer')">🎮 Для геймеров</button>
-      <button class="discord-tab-btn" data-mtab="femboy" onclick="switchMusicTab('femboy')">🎀 Для фембоев</button>
+      <button class="discord-tab-btn active" data-mtab="gamer" onclick="switchMusicTab('gamer')">🎮 Геймеры</button>
+      <button class="discord-tab-btn" data-mtab="femboy" onclick="switchMusicTab('femboy')">🎀 Фембои</button>
+      <button class="discord-tab-btn" data-mtab="chill" onclick="switchMusicTab('chill')">🌌 Загадочная</button>
       <button class="discord-tab-btn" data-mtab="suggest" onclick="switchMusicTab('suggest')">📩 Предложить</button>
       <button class="discord-tab-btn" id="music-admin-tab-btn" data-mtab="admin" style="display:none;" onclick="switchMusicTab('admin')">⚡ Админ</button>
     </div>
@@ -1180,6 +1181,7 @@
       <select id="music-req-fandom" class="modal-input">
         <option value="gamer">🎮 В плейлист для геймеров</option>
         <option value="femboy">🎀 В плейлист для фембоев</option>
+        <option value="chill">🌌 Более спокойная и загадочная музыка</option>
       </select>
       <div style="display:flex; gap:6px; align-items:center;">
         <input type="text" id="music-req-url" class="modal-input" placeholder="Ссылка на трек (https://...) или загрузите файл">
@@ -1199,6 +1201,7 @@
         <select id="music-adm-fandom" class="modal-input" style="padding:8px;">
           <option value="gamer">🎮 Для геймеров</option>
           <option value="femboy">🎀 Для фембоев</option>
+          <option value="chill">🌌 Спокойная и загадочная</option>
         </select>
         <input type="text" id="music-adm-artist" class="modal-input" style="padding:8px;" placeholder="Исполнитель">
       </div>
@@ -11259,8 +11262,8 @@ function switchMusicTab(tab) {
   const sugEl = document.getElementById('music-pane-suggest');
   const admEl = document.getElementById('music-pane-admin');
   const srch = document.getElementById('music-search-input');
-  if (srch) srch.style.display = (tab === 'gamer' || tab === 'femboy') ? 'block' : 'none';
-  listEl.style.display = (tab === 'gamer' || tab === 'femboy') ? 'flex' : 'none';
+  if (srch) srch.style.display = (tab === 'gamer' || tab === 'femboy' || tab === 'chill') ? 'block' : 'none';
+  listEl.style.display = (tab === 'gamer' || tab === 'femboy' || tab === 'chill') ? 'flex' : 'none';
   sugEl.style.display = (tab === 'suggest') ? 'flex' : 'none';
   admEl.style.display = (tab === 'admin') ? 'flex' : 'none';
 
@@ -11272,6 +11275,10 @@ function switchMusicTab(tab) {
     banner.style.display = 'block';
     banner.innerHTML = '🎀 <b>Плейлист для фембоев:</b> Идеально подходит, когда вы переписываетесь со своим семпаем~ :3<br><span style="color:var(--warn); font-size:11px;">⚠️ Предупреждение: в треках может присутствовать ненормативная лексика (мат).</span>';
     renderMusicList('femboy');
+  } else if (tab === 'chill') {
+    banner.style.display = 'block';
+    banner.innerHTML = '🌌 <b>Более спокойная и загадочная музыка:</b> Атмосферные треки для ночных переписок, чилла и раздумий.<br><span style="color:var(--warn); font-size:11px;">⚠️ Предупреждение: в некоторых треках может присутствовать ненормативная лексика (мат).</span>';
+    renderMusicList('chill');
   } else {
     banner.style.display = 'none';
     if (tab === 'admin') loadMusicAdminRequests();
@@ -11326,7 +11333,7 @@ function startCurrentMusicTrack() {
   const bar = document.getElementById('music-mini-bar');
   if (!tr || !au || !bar) return;
   bar.classList.add('active');
-  document.getElementById('music-mini-badge').textContent = tr.fandom === 'femboy' ? '🎀' : '🎮';
+  document.getElementById('music-mini-badge').textContent = tr.fandom === 'femboy' ? '🎀' : (tr.fandom === 'chill' ? '🌌' : '🎮');
   document.getElementById('music-mini-title').textContent = (tr.artist ? tr.artist + ' — ' : '') + tr.title;
   au.src = tr.url.startsWith('/') ? (BACKEND_URL + tr.url) : tr.url;
   au.volume = Math.max(0, Math.min(1, musicVolume / 100));
@@ -11339,7 +11346,7 @@ function startCurrentMusicTrack() {
     showToast('Ссылка не является прямым аудио-потоком — открываю в новой вкладке', 'warning');
     window.open(tr.url, '_blank');
   });
-  if (musicCurrentTab === 'gamer' || musicCurrentTab === 'femboy') renderMusicList(musicCurrentTab);
+  if (musicCurrentTab === 'gamer' || musicCurrentTab === 'femboy' || musicCurrentTab === 'chill') renderMusicList(musicCurrentTab);
 }
 
 function musicTogglePlay() {
@@ -11390,8 +11397,7 @@ function shareMusicTrackToChat(tr) {
   const fullUrl = tr.url.startsWith('/') ? (location.origin + tr.url) : tr.url;
   activeWs.send(JSON.stringify({
     action: 'send', sender: currentUser,
-    text: `🎵 Советую трек (${tr.fandom === 'femboy' ? '🎀 для фембоев' : '🎮 для геймеров'}): ${label}
-🔗 ${fullUrl}`,
+    text: `🎵 Советую трек (${tr.fandom === 'femboy' ? '🎀 для фембоев' : (tr.fandom === 'chill' ? '🌌 спокойная и загадочная' : '🎮 для геймеров')}): ${label}\n🔗 ${fullUrl}`,
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }));
   closeModal('music-modal');
